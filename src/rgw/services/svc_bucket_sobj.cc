@@ -31,6 +31,9 @@ public:
     if (pool) {
       *pool = svc.zone->get_zone_params().domain_root;
     }
+/** comment by hy 2020-03-19
+ * # 普通bucket对象,不用命名空间
+ */
     if (oid) {
       *oid = key;
     }
@@ -65,9 +68,17 @@ public:
 
   void get_pool_and_oid(const string& key, rgw_pool *pool, string *oid) override {
     if (pool) {
+/** comment by hy 2020-03-08
+ * # RGWZoneParams
+     其中 domain_root = .rgw.meta:root
+ */
       *pool = svc.zone->get_zone_params().domain_root;
     }
     if (oid) {
+/** comment by hy 2020-03-19
+ * # bucket instance = ".bucket.meta:XXXX"
+     在root 下的pool 创建对应的空间
+ */
       *oid = key_to_oid(key);
     }
   }
@@ -247,6 +258,11 @@ int RGWSI_Bucket_SObj::store_bucket_entrypoint_info(RGWSI_Bucket_EP_Ctx& ctx,
 
   RGWSI_MBSObj_PutParams params(bl, pattrs, mtime, exclusive);
 
+/** comment by hy 2020-03-08
+ * # 得到对应的pool 并开始写数据
+     RGWSI_MetaBackend::put =
+     RGWSI_MetaBackend_SObj::put
+ */
   int ret = svc.meta_be->put(ctx.get(), key, params, objv_tracker, y);
   if (ret < 0) {
     return ret;
@@ -275,6 +291,9 @@ int RGWSI_Bucket_SObj::read_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
   string cache_key("bi/");
   cache_key.append(key);
 
+/** comment by hy 2020-03-19
+ * # 放入缓存
+ */
   if (auto e = binfo_cache->find(cache_key)) {
     if (refresh_version &&
         e->info.objv_tracker.read_version.compare(&(*refresh_version))) {
@@ -295,6 +314,11 @@ int RGWSI_Bucket_SObj::read_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
   bucket_info_cache_entry e;
   rgw_cache_entry_info ci;
 
+/** comment by hy 2020-03-19
+ * # 读取 bucket instance
+     pool = zone.rgw.meta:root
+     oid = bucket.meta:XXXX
+ */
   int ret = do_read_bucket_instance_info(ctx, key,
                                   &e.info, &e.mtime, &e.attrs,
                                   &ci, refresh_version, y);
@@ -348,6 +372,14 @@ int RGWSI_Bucket_SObj::do_read_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
   auto params = RGWSI_MBSObj_GetParams(&bl, pattrs, pmtime).set_cache_info(cache_info)
                                                            .set_refresh_version(refresh_version);
 
+/** comment by hy 2020-03-19
+ * # RGWSI_MetaBackend_SObj::get_entry
+     通过 调用初始化注册的 moudle
+     # 如 RGWSI_BucketInstance_SObj_Module::get_pool_and_oid
+       确定对应的 pool 下的 与 oid 
+       pool = zone.rgw.meta:root
+       oid = bucket.meta:XXXX
+ */
   int ret = svc.meta_be->get_entry(ctx.get(), key, params, &ot, y);
   if (ret < 0) {
     return ret;
@@ -497,6 +529,11 @@ int RGWSI_Bucket_SObj::store_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
      * we're here because orig_info wasn't passed in
      * we don't have info about what was there before, so need to fetch first
      */
+/** comment by hy 2020-03-19
+ * # 加载 缓存,放入 /bi/XXX 缓存分组上
+     pool = zone.rgw.meta:root
+     oid = bucket.meta:XXXX
+ */
     int r  = read_bucket_instance_info(ctx,
                                        key,
                                        &shared_bucket_info,
@@ -514,6 +551,11 @@ int RGWSI_Bucket_SObj::store_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
   }
 
   if (orig_info && *orig_info && !exclusive) {
+/** comment by hy 2020-03-15
+ * # 记录到日志中
+     RGWSI_BucketIndex_RADOS::handle_overwrite
+ */
+
     int r = svc.bi->handle_overwrite(info, *(orig_info.value()));
     if (r < 0) {
       ldout(cct, 0) << "ERROR: " << __func__ << "(): svc.bi->handle_overwrite() of key=" << key << " returned r=" << r << dendl;
@@ -523,9 +565,18 @@ int RGWSI_Bucket_SObj::store_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
 
   RGWSI_MBSObj_PutParams params(bl, pattrs, mtime, exclusive);
 
+/** comment by hy 2020-03-15
+ * # 写到指定的pool domain_root 中 
+     RGWSI_MetaBackend_SObj::put
+     将 bucket instance 写如 指定的 pool 下
+ */
   int ret = svc.meta_be->put(ctx.get(), key, params, &info.objv_tracker, y);
 
   if (ret >= 0) {
+/** comment by hy 2020-03-15
+ * # RGWSI_Bucket_Sync_SObj::handle_bi_update
+     更新分片信息
+ */
     int r = svc.bucket_sync->handle_bi_update(info,
                                               orig_info.value_or(nullptr),
                                               y);

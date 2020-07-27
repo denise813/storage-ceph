@@ -319,11 +319,17 @@ int RGWZoneGroup::read_default_id(string& default_id, bool old_format)
   if (realm_id.empty()) {
     /* try using default realm */
     RGWRealm realm;
+/** comment by hy 2020-03-11
+ * # 读取域名称对应的信息
+ */
     int ret = realm.init(cct, sysobj_svc);
     // no default realm exist
     if (ret < 0) {
       return read_id(default_zonegroup_name, default_id);
     }
+/** comment by hy 2020-03-11
+ * # 返回域名对应的id
+ */
     realm_id = realm.get_id();
   }
 
@@ -355,8 +361,14 @@ void RGWSystemMetaObj::reinit_instance(CephContext *_cct, RGWSI_SysObj *_sysobj_
 
 int RGWSystemMetaObj::init(CephContext *_cct, RGWSI_SysObj *_sysobj_svc, bool setup_obj, bool old_format)
 {
+/** comment by hy 2020-03-11
+ * # 设置 zone 信息
+ */
   reinit_instance(_cct, _sysobj_svc);
 
+/** comment by hy 2020-03-11
+ * # rgw 客户 不用执行setup
+ */
   if (!setup_obj)
     return 0;
 
@@ -367,14 +379,23 @@ int RGWSystemMetaObj::init(CephContext *_cct, RGWSI_SysObj *_sysobj_svc, bool se
   if (id.empty()) {
     int r;
     if (name.empty()) {
+/** comment by hy 2020-03-11
+ * # 域名,也就是对象名称
+ */
       name = get_predefined_name(cct);
     }
     if (name.empty()) {
+/** comment by hy 2020-03-11
+ * # 默认id 一般是什么
+ */
       r = use_default(old_format);
       if (r < 0) {
 	return r;
       }
     } else if (!old_format) {
+/** comment by hy 2020-03-11
+ * # 读取域信息
+ */
       r = read_id(name, id);
       if (r < 0) {
         if (r != -ENOENT) {
@@ -385,6 +406,9 @@ int RGWSystemMetaObj::init(CephContext *_cct, RGWSI_SysObj *_sysobj_svc, bool se
     }
   }
 
+/** comment by hy 2020-03-11
+ * # 读取域信息
+ */
   return read_info(id, old_format);
 }
 
@@ -460,6 +484,9 @@ int RGWSystemMetaObj::read_id(const string& obj_name, string& object_id)
   rgw_pool pool(get_pool(cct));
   bufferlist bl;
 
+/** comment by hy 2020-03-11
+ * # oid  = 'realms_names.XXX' + obj_name
+ */
   string oid = get_names_oid_prefix() + obj_name;
 
   auto obj_ctx = sysobj_svc->init_obj_ctx();
@@ -588,14 +615,27 @@ int RGWSystemMetaObj::rename(const string& new_name)
 
 int RGWSystemMetaObj::read_info(const string& obj_id, bool old_format)
 {
+/** comment by hy 2020-03-11
+ * # 调用子类的方法
+     如 RGWRealm::get_pool 默认为 root pool
+ */
   rgw_pool pool(get_pool(cct));
 
   bufferlist bl;
 
+/** comment by hy 2020-03-11
+ * # 给对象加上 前缀 'realms.'
+ */
   string oid = get_info_oid_prefix(old_format) + obj_id;
 
+/** comment by hy 2020-03-11
+ * # 生成上下文
+ */
   auto obj_ctx = sysobj_svc->init_obj_ctx();
   auto sysobj = sysobj_svc->get_obj(obj_ctx, rgw_raw_obj{pool, oid});
+/** comment by hy 2020-03-11
+ * # 读取对象
+ */
   int ret = sysobj.rop().read(&bl, null_yield);
   if (ret < 0) {
     ldout(cct, 0) << "failed reading obj info from " << pool << ":" << oid << ": " << cpp_strerror(-ret) << dendl;
@@ -603,6 +643,9 @@ int RGWSystemMetaObj::read_info(const string& obj_id, bool old_format)
   }
   using ceph::decode;
 
+/** comment by hy 2020-03-11
+ * # 开始解密还原数据
+ */
   try {
     auto iter = bl.cbegin();
     decode(*this, iter);
@@ -944,11 +987,17 @@ int RGWPeriod::init(CephContext *_cct, RGWSI_SysObj *_sysobj_svc, bool setup_obj
 	cpp_strerror(-ret) << dendl;
       return ret;
     }
+/** comment by hy 2020-03-15
+ * # 
+ */
     id = realm.get_current_period();
     realm_id = realm.get_id();
   }
 
   if (!epoch) {
+/** comment by hy 2020-03-15
+ * # 
+ */
     int ret = use_latest_epoch();
     if (ret < 0) {
       ldout(cct, 0) << "failed to use_latest_epoch period id " << id << " realm " << realm_name  << " id " << realm_id
@@ -957,6 +1006,9 @@ int RGWPeriod::init(CephContext *_cct, RGWSI_SysObj *_sysobj_svc, bool setup_obj
     }
   }
 
+/** comment by hy 2020-03-15
+ * # 
+ */
   return read_info();
 }
 
@@ -993,6 +1045,9 @@ const string& RGWPeriod::get_info_oid_prefix() const
 
 const string RGWPeriod::get_period_oid_prefix() const
 {
+/** comment by hy 2020-03-15
+ * # "periods."
+ */
   return get_info_oid_prefix() + id;
 }
 
@@ -1311,11 +1366,17 @@ int RGWPeriod::reflect()
   for (auto& iter : period_map.zonegroups) {
     RGWZoneGroup& zg = iter.second;
     zg.reinit_instance(cct, sysobj_svc);
+/** comment by hy 2020-03-11
+ * # 
+ */
     int r = zg.write(false);
     if (r < 0) {
       ldout(cct, 0) << "ERROR: failed to store zonegroup info for zonegroup=" << iter.first << ": " << cpp_strerror(-r) << dendl;
       return r;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     if (zg.is_master_zonegroup()) {
       // set master as default if no default exists
       r = zg.set_as_default(true);
@@ -1326,6 +1387,9 @@ int RGWPeriod::reflect()
     }
   }
 
+/** comment by hy 2020-03-11
+ * # 记录隔离信息
+ */
   int r = period_config.write(sysobj_svc, realm_id);
   if (r < 0) {
     ldout(cct, 0) << "ERROR: failed to store period config: "
@@ -1447,6 +1511,9 @@ int RGWPeriod::commit(rgw::sal::RGWRadosStore *store,
       return r;
     }
     // create an object with a new period id
+/** comment by hy 2020-03-15
+ * # 
+ */
     r = create(true);
     if (r < 0) {
       ldout(cct, 0) << "failed to create new period: " << cpp_strerror(-r) << dendl;
@@ -1461,6 +1528,9 @@ int RGWPeriod::commit(rgw::sal::RGWRadosStore *store,
     }
     ldout(cct, 4) << "Promoted to master zone and committed new period "
         << id << dendl;
+/** comment by hy 2020-03-15
+ * # 
+ */
     realm.notify_new_period(*this);
     return 0;
   }
@@ -1475,9 +1545,15 @@ int RGWPeriod::commit(rgw::sal::RGWRadosStore *store,
   // set period as next epoch
   set_id(current_period.get_id());
   set_epoch(current_period.get_epoch() + 1);
+/** comment by hy 2020-03-15
+ * # 
+ */
   set_predecessor(current_period.get_predecessor());
   realm_epoch = current_period.get_realm_epoch();
   // write the period to rados
+/** comment by hy 2020-03-15
+ * # 
+ */
   int r = store_info(false);
   if (r < 0) {
     ldout(cct, 0) << "failed to store period: " << cpp_strerror(-r) << dendl;
@@ -1493,6 +1569,9 @@ int RGWPeriod::commit(rgw::sal::RGWRadosStore *store,
     ldout(cct, 0) << "failed to set latest epoch: " << cpp_strerror(-r) << dendl;
     return r;
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   r = reflect();
   if (r < 0) {
     ldout(cct, 0) << "failed to update local objects: " << cpp_strerror(-r) << dendl;
@@ -1500,6 +1579,9 @@ int RGWPeriod::commit(rgw::sal::RGWRadosStore *store,
   }
   ldout(cct, 4) << "Committed new epoch " << epoch
       << " for period " << id << dendl;
+/** comment by hy 2020-03-15
+ * # 
+ */
   realm.notify_new_period(*this);
   return 0;
 }
@@ -1607,6 +1689,9 @@ int RGWZoneParams::fix_pool_names()
     return r;
   }
 
+/** comment by hy 2020-03-09
+ * # 对应的 pool 名称,通过命名空间:分割各个 pool
+ */
   domain_root = fix_zone_pool_dup(pools, name, ".rgw.meta:root", domain_root);
   control_pool = fix_zone_pool_dup(pools, name, ".rgw.control", control_pool);
   gc_pool = fix_zone_pool_dup(pools, name ,".rgw.log:gc", gc_pool);

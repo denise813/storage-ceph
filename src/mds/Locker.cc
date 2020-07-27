@@ -3134,7 +3134,7 @@ void Locker::handle_client_caps(const cref_t<MClientCaps> &m)
     }
 
     /*
-     * "handle_client_caps on unknown ino xxx” is normal after migrating a subtree
+     * "handle_client_caps on unknown ino xxx" is normal after migrating a subtree
      * Sequence of events that cause this are:
      *   - client sends caps message to mds.a
      *   - mds finishes subtree migration, send cap export to client

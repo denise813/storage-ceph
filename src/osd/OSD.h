@@ -1726,6 +1726,9 @@ protected:
 
 public:
   // -- shards --
+/** comment by hy 2020-03-20
+ * # 
+ */
   vector<OSDShard*> shards;
   uint32_t num_shards = 0;
 

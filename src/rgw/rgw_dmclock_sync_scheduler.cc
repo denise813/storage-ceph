@@ -18,7 +18,13 @@ int SyncScheduler::add_request(const client_id& client, const ReqParams& params,
   std::mutex req_mtx;
   std::condition_variable req_cv;
   ReqState rstate {ReqState::Wait};
+/** comment by hy 2020-03-07
+ * # 包装请求
+ */
   auto req = SyncRequest{client, time, cost, req_mtx, req_cv, rstate, counters};
+/** comment by hy 2020-03-07
+ * # 放入其队列
+ */
   int r = queue.add_request_time(req, client, params, time, cost);
   if (r == 0) {
     if (auto c = counters(client)) {

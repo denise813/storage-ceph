@@ -109,6 +109,9 @@ WRITE_CLASS_ENCODER(RGWObjManifestPart)
 */
 
 struct RGWObjManifestRule {
+/** comment by hy 2020-03-22
+ * # 段号
+ */
   uint32_t start_part_num;
   uint64_t start_ofs;
   uint64_t part_size; /* each part size, 0 if there's no part size, meaning it's unlimited */
@@ -143,6 +146,9 @@ struct RGWObjManifestRule {
 };
 WRITE_CLASS_ENCODER(RGWObjManifestRule)
 
+/** comment by hy 2020-03-24
+ * # 对象说明
+ */
 class RGWObjManifest {
 protected:
   bool explicit_objs{false}; /* really old manifest? */
@@ -510,6 +516,9 @@ public:
   const obj_iterator& obj_end();
   obj_iterator obj_find(uint64_t ofs);
 
+/** comment by hy 2020-03-24
+ * # 对象说明
+ */
   obj_iterator begin_iter;
   obj_iterator end_iter;
 

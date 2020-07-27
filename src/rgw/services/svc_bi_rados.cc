@@ -81,6 +81,9 @@ int RGWSI_BucketIndex_RADOS::open_bucket_index_base(const RGWBucketInfo& bucket_
     return -EIO;
   }
 
+/** comment by hy 2020-03-09
+ * # 
+ */
   *bucket_oid_base = dir_oid_prefix;
   bucket_oid_base->append(bucket.bucket_id);
 
@@ -122,11 +125,19 @@ static void get_bucket_index_objects(const string& bucket_oid_base,
   } else {
     char buf[bucket_oid_base.size() + 32];
     if (shard_id < 0) {
+/** comment by hy 2020-03-15
+ * # 分片id 小于 0
+     表示出给你剪分片
+     处理默认分片
+ */
       for (uint32_t i = 0; i < num_shards; ++i) {
         snprintf(buf, sizeof(buf), "%s.%d", bucket_oid_base.c_str(), i);
         bucket_objects[i] = buf;
       }
     } else {
+/** comment by hy 2020-03-15
+ * # 指定分片
+ */
       if ((uint32_t)shard_id > num_shards) {
         return;
       }
@@ -319,11 +330,21 @@ int RGWSI_BucketIndex_RADOS::init_index(RGWBucketInfo& bucket_info)
     return r;
   }
 
+/** comment by hy 2020-03-15
+ * # .dir.bucket_id
+ */
   dir_oid.append(bucket_info.bucket.bucket_id);
 
   map<int, string> bucket_objs;
+/** comment by hy 2020-03-15
+ * # 得到 index 对象,索引对象有分片个数
+ */
   get_bucket_index_objects(dir_oid, bucket_info.num_shards, &bucket_objs);
 
+/** comment by hy 2020-03-15
+ * # 包装 bucket index
+     这里为什么是 int
+ */
   return CLSRGWIssueBucketIndexInit(index_pool.ioctx(),
 				    bucket_objs,
 				    cct->_conf->rgw_bucket_index_max_aio)();
@@ -422,6 +443,11 @@ int RGWSI_BucketIndex_RADOS::handle_overwrite(const RGWBucketInfo& info,
     if (!new_sync_enabled) {
       ret = svc.bilog->log_stop(info, -1);
     } else {
+/** comment by hy 2020-03-15
+ * # log 管理
+     RGWSI_BILog_RADOS::log_start
+     打开 index 进行
+ */
       ret = svc.bilog->log_start(info, -1);
     }
     if (ret < 0) {
@@ -430,6 +456,10 @@ int RGWSI_BucketIndex_RADOS::handle_overwrite(const RGWBucketInfo& info,
     }
 
     for (int i = 0; i < shards_num; ++i, ++shard_id) {
+/** comment by hy 2020-03-15
+ * # RGWSI_DataLog_RADOS::add_entry
+     对分片记录日志
+ */
       ret = svc.datalog_rados->add_entry(info, shard_id);
       if (ret < 0) {
         lderr(cct) << "ERROR: failed writing data log (info.bucket=" << info.bucket << ", shard_id=" << shard_id << ")" << dendl;

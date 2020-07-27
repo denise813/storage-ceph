@@ -39,10 +39,17 @@ bool PaxosService::dispatch(MonOpRequestRef op)
 	   << " from " << m->get_orig_source_inst()
 	   << " con " << m->get_connection() << dendl;
 
+/** comment by hy 2020-01-22
+ * # 处于关闭状态
+ */
   if (mon->is_shutdown()) {
     return true;
   }
 
+/** comment by hy 2020-01-22
+ * # 消息来自于mon转发,转发的mon过时与当前的mon,
+     丢弃
+ */
   // make sure this message isn't forwarded from a previous election epoch
   if (m->rx_election_epoch &&
       m->rx_election_epoch < mon->get_epoch()) {
@@ -64,6 +71,9 @@ bool PaxosService::dispatch(MonOpRequestRef op)
   }
 
   // make sure our map is readable and up to date
+/** comment by hy 2020-01-22
+ * # 等候版本最新
+ */
   if (!is_readable(m->version)) {
     dout(10) << " waiting for paxos -> readable (v" << m->version << ")" << dendl;
     wait_for_readable(op, new C_RetryMessage(this, op), m->version);
@@ -71,42 +81,73 @@ bool PaxosService::dispatch(MonOpRequestRef op)
   }
 
   // preprocess
+/** comment by hy 2020-01-22
+ * # 是不是只读消息，处理后直接返回
+ */
   if (preprocess_query(op)) 
     return true;  // easy!
 
   // leader?
+/** comment by hy 2020-01-22
+ * # 如果不是read就转发请求到lead 需要paxos round
+     必须leader节点处理
+ */
   if (!mon->is_leader()) {
+/** comment by hy 2020-04-23
+ * # 转发消息
+ */
     mon->forward_request_leader(op);
     return true;
   }
   
   // writeable?
+/** comment by hy 2020-04-23
+ * # 如果目前不可更新，等待重试
+ */
   if (!is_writeable()) {
     dout(10) << " waiting for paxos -> writeable" << dendl;
     wait_for_writeable(op, new C_RetryMessage(this, op));
     return true;
   }
 
-  // update
+  // update 更新
   if (!prepare_update(op)) {
     // no changes made.
+/** comment by hy 2020-04-23
+ * # 准备更新
+ */
     return true;
   }
 
+/** comment by hy 2020-01-22
+ * # 被设置为立即同步
+ */
   if (need_immediate_propose) {
     dout(10) << __func__ << " forced immediate propose" << dendl;
     need_immediate_propose = false;
+/** comment by hy 2020-04-23
+ * # 发起决议
+ */
     propose_pending();
     return true;
   }
 
+/** comment by hy 2020-01-22
+ * # 返回延迟同步时间
+ */
   double delay = 0.0;
   if (!should_propose(delay)) {
     dout(10) << " not proposing" << dendl;
     return true;
   }
 
+/** comment by hy 2020-01-22
+ * # 到达同步时间
+ */
   if (delay == 0.0) {
+/** comment by hy 2020-04-23
+ * # 发起决议
+ */
     propose_pending();
     return true;
   }
@@ -129,6 +170,9 @@ bool PaxosService::dispatch(MonOpRequestRef op)
     }};
     dout(10) << " setting proposal_timer " << do_propose
              << " with delay of " << delay << dendl;
+/** comment by hy 2020-04-23
+ * # 等待一段时间后再决议
+ */
     proposal_timer = mon->timer.add_event_after(delay, do_propose);
   } else {
     dout(10) << " proposal_timer already set" << dendl;
@@ -205,11 +249,16 @@ void PaxosService::propose_pending()
    *	   bufferlist, so we can then propose that as a value through
    *	   Paxos.
    */
+/** comment by hy 2020-04-23
+ * # 获取paxos的transaction
+ */
   MonitorDBStore::TransactionRef t = paxos->get_pending_transaction();
 
   if (should_stash_full())
     encode_full(t);
-
+/** comment by hy 2020-04-23
+ * # 将决议的内容放入transaction中
+ */
   encode_pending(t);
   have_pending = false;
 
@@ -243,7 +292,13 @@ void PaxosService::propose_pending()
 	ceph_abort_msg("bad return value for C_Committed");
     }
   };
+/** comment by hy 2020-04-23
+ * # 完成后的回调
+ */
   paxos->queue_pending_finisher(new C_Committed(this));
+/** comment by hy 2020-04-23
+ * # 发起决议
+ */
   paxos->trigger_propose();
 }
 
@@ -306,6 +361,9 @@ void PaxosService::_active()
      * our proposed value, to waiting for the Paxos to become active once an
      * election is finished.
      */
+/** comment by hy 2020-01-26
+ * # 函数内部类
+ */
     class C_Active : public Context {
       PaxosService *svc;
     public:
@@ -324,6 +382,9 @@ void PaxosService::_active()
   if (mon->is_leader()) {
     dout(7) << __func__ << " creating new pending" << dendl;
     if (!have_pending) {
+/** comment by hy 2020-01-26
+ * # 检查crush变化,更新最小的crush编号等
+ */
       create_pending();
       have_pending = true;
     }
@@ -341,13 +402,22 @@ void PaxosService::_active()
   // wake up anyone who came in while we were proposing.  note that
   // anyone waiting for the previous proposal to commit is no longer
   // on this list; it is on Paxos's.
+/** comment by hy 2020-01-27
+ * # 调用 finish
+ */
   finish_contexts(g_ceph_context, waiting_for_finished_proposal, 0);
 
   if (mon->is_leader())
+/** comment by hy 2020-01-27
+ * # 认证模块
+ */
     upgrade_format();
 
   // NOTE: it's possible that this will get called twice if we commit
   // an old paxos value.  Implementations should be mindful of that.
+/** comment by hy 2020-04-23
+ * # 
+ */
   on_active();
 }
 

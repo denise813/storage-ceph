@@ -14,6 +14,9 @@ namespace rgw {
 namespace io {
 
 [[nodiscard]] int BasicClient::init(CephContext *cct) {
+/** comment by hy 2020-03-07
+ * # 调用子类接口
+ */
   int init_error = init_env(cct);
 
   if (init_error != 0)

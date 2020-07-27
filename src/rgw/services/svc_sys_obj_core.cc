@@ -213,15 +213,24 @@ int RGWSI_SysObj_Core::read(RGWSysObjectCtxBase& obj_ctx,
   else
     len = end - ofs + 1;
 
+/** comment by hy 2020-03-11
+ * # 这里的版本什么意思
+ */
   if (objv_tracker) {
     objv_tracker->prepare_op_for_read(&op);
   }
 
   ldout(cct, 20) << "rados->read ofs=" << ofs << " len=" << len << dendl;
+/** comment by hy 2020-03-11
+ * # 包装进行读操作的范围
+ */
   op.read(ofs, len, bl, nullptr);
 
   map<string, bufferlist> unfiltered_attrset;
 
+/** comment by hy 2020-03-11
+ * # 包装操作里面的扩展属性
+ */
   if (attrs) {
     if (raw_attrs) {
       op.getxattrs(attrs, nullptr);
@@ -236,6 +245,9 @@ int RGWSI_SysObj_Core::read(RGWSysObjectCtxBase& obj_ctx,
     ldout(cct, 20) << "get_rados_obj() on obj=" << obj << " returned " << r << dendl;
     return r;
   }
+/** comment by hy 2020-03-11
+ * # y这玩意只有在协程有效,而协程是在使用了boost 前端
+ */
   r = rados_obj.operate(&op, nullptr, y);
   if (r < 0) {
     ldout(cct, 20) << "rados_obj.operate() r=" << r << " bl.length=" << bl->length() << dendl;
@@ -245,12 +257,18 @@ int RGWSI_SysObj_Core::read(RGWSysObjectCtxBase& obj_ctx,
 
   uint64_t op_ver = rados_obj.get_last_version();
 
+/** comment by hy 2020-03-11
+ * # 确认消息的有效性,读取的信息是发送请求对应的信息
+ */
   if (read_state.last_ver > 0 &&
       read_state.last_ver != op_ver) {
     ldout(cct, 5) << "raced with an object write, abort" << dendl;
     return -ECANCELED;
   }
 
+/** comment by hy 2020-03-11
+ * # 过滤出 user.rgw 对应的属性
+ */
   if (attrs && !raw_attrs) {
     rgw_filter_attrset(unfiltered_attrset, RGW_ATTR_PREFIX, attrs);
   }

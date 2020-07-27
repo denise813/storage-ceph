@@ -106,6 +106,11 @@ ImageRequestWQ<I>::ImageRequestWQ(I *image_ctx, const string &name,
   ImageCtx::get_timer_instance(cct, &timer, &timer_lock);
 
   for (auto flag : throttle_flags) {
+/** comment by hy 2020-03-21
+ * # 为所有类型的qos创建一个TokenBucketThrottle对象
+     该对象实现了基于令牌桶算法的qos控制策略
+     此时，所有qos控制组件的max和avg都是0，表示关闭qos控制
+ */
     m_throttles.push_back(make_pair(
       flag.first,
       new TokenBucketThrottle(cct, flag.second, 0, 0, timer, timer_lock)));
@@ -130,6 +135,9 @@ ssize_t ImageRequestWQ<I>::read(uint64_t off, uint64_t len,
 
   C_SaferCond cond;
   AioCompletion *c = AioCompletion::create(&cond);
+/** comment by hy 2020-02-21
+ * # 完成后唤醒条件变量
+ */
   aio_read(c, off, len, std::move(read_result), op_flags, false);
   return cond.wait();
 }
@@ -142,6 +150,9 @@ ssize_t ImageRequestWQ<I>::write(uint64_t off, uint64_t len,
                  << "len = " << len << dendl;
 
   m_image_ctx.image_lock.lock_shared();
+/** comment by hy 2020-02-20
+ * # 检查io参数
+ */
   int r = clip_io(util::get_image_ctx(&m_image_ctx), off, &len);
   m_image_ctx.image_lock.unlock_shared();
   if (r < 0) {
@@ -150,9 +161,17 @@ ssize_t ImageRequestWQ<I>::write(uint64_t off, uint64_t len,
   }
 
   C_SaferCond cond;
+/** comment by hy 2020-02-20
+ * # 异步完成唤醒队列,所有加C的表示一种完成
+ */
   AioCompletion *c = AioCompletion::create(&cond);
+/** comment by hy 2020-02-20
+ * # 
+ */
   aio_write(c, off, len, std::move(bl), op_flags, false);
-
+/** comment by hy 2020-02-20
+ * # 阻塞等唤醒
+ */
   r = cond.wait();
   if (r < 0) {
     return r;
@@ -272,6 +291,9 @@ void ImageRequestWQ<I>::aio_read(AioCompletion *c, uint64_t off, uint64_t len,
     trace.event("start");
   }
 
+/** comment by hy 2020-02-21
+ * # 打时间戳
+ */
   c->init_time(util::get_image_ctx(&m_image_ctx), AIO_TYPE_READ);
   ldout(cct, 20) << "ictx=" << &m_image_ctx << ", "
                  << "completion=" << c << ", off=" << off << ", "
@@ -288,6 +310,9 @@ void ImageRequestWQ<I>::aio_read(AioCompletion *c, uint64_t off, uint64_t len,
   // if journaling is enabled -- we need to replay the journal because
   // it might contain an uncommitted write
   std::shared_lock owner_locker{m_image_ctx.owner_lock};
+/** comment by hy 2020-02-21
+ * # 阻塞状态放在队列中等待唤醒后调度
+ */
   if (m_image_ctx.non_blocking_aio || writes_blocked() || !writes_empty() ||
       require_lock_on_read()) {
     queue(ImageDispatchSpec<I>::create_read_request(
@@ -295,6 +320,9 @@ void ImageRequestWQ<I>::aio_read(AioCompletion *c, uint64_t off, uint64_t len,
             trace));
   } else {
     c->start_op();
+/** comment by hy 2020-02-21
+ * # 真正的逻辑
+ */
     ImageRequest<I>::aio_read(&m_image_ctx, c, {{off, len}},
 			      std::move(read_result), op_flags, trace);
     finish_in_flight_io();
@@ -308,12 +336,18 @@ void ImageRequestWQ<I>::aio_write(AioCompletion *c, uint64_t off, uint64_t len,
 				  bool native_async) {
   CephContext *cct = m_image_ctx.cct;
   FUNCTRACE(cct);
+/** comment by hy 2020-02-20
+ * # blkin 模块支持 向blkstrace 信息
+ */
   ZTracer::Trace trace;
   if (m_image_ctx.blkin_trace_all) {
     trace.init("wq: write", &m_image_ctx.trace_endpoint);
     trace.event("init");
   }
 
+/** comment by hy 2020-02-20
+ * # 使用mon时间作为开始时间
+ */
   c->init_time(util::get_image_ctx(&m_image_ctx), AIO_TYPE_WRITE);
   ldout(cct, 20) << "ictx=" << &m_image_ctx << ", "
                  << "completion=" << c << ", off=" << off << ", "
@@ -323,10 +357,17 @@ void ImageRequestWQ<I>::aio_write(AioCompletion *c, uint64_t off, uint64_t len,
     c->set_event_notify(true);
   }
 
+/** comment by hy 2020-02-20
+ * # 统计计数,如果失败了,设置失败错误
+     这里出现错误就在这结束了
+ */
   if (!start_in_flight_io(c)) {
     return;
   }
 
+/** comment by hy 2020-02-20
+ * # 更新设置的传输id
+ */
   auto tid = ++m_last_tid;
 
   {
@@ -334,16 +375,42 @@ void ImageRequestWQ<I>::aio_write(AioCompletion *c, uint64_t off, uint64_t len,
     m_queued_or_blocked_io_tids.insert(tid);
   }
 
+/** comment by hy 2020-02-20
+ * # 创建写请求,这里的工厂为为了以后的兼容?
+ */
   ImageDispatchSpec<I> *req = ImageDispatchSpec<I>::create_write_request(
           m_image_ctx, c, {{off, len}}, std::move(bl), op_flags, trace, tid);
 
   std::shared_lock owner_locker{m_image_ctx.owner_lock};
+/** comment by hy 2020-02-20
+ * # 已经被阻塞,缓存下等待下一次
+ */
   if (m_image_ctx.non_blocking_aio || writes_blocked()) {
     queue(req);
   } else {
+/** comment by hy 2020-02-20
+ * # 正常执行 AioCompletion::start_op
+     实际调用 AsyncOperation::start_op
+     从而将异步操作队列中
+ */
+/** comment by hy 2020-02-20
+ * # 禁止对一段重叠的数据进行写
+     如果阻塞则放入阻塞块缓存中
+     然后   通过 ImageRequest<I>::aio_write 处理写请求
+     放入队列缓存中 
+     最终 ImageRequestWQ<I>::process 进行处理
+     然后 AbstractImageWriteRequest<I>::send_request
+     发送数据
+ */
     process_io(req, false);
+/** comment by hy 2020-02-20
+ * # 完成io处理
+ */
     finish_in_flight_io();
   }
+/** comment by hy 2020-02-20
+ * # trace 跟踪完成
+ */
   trace.event("finish");
 }
 
@@ -811,14 +878,23 @@ bool ImageRequestWQ<I>::needs_throttle(ImageDispatchSpec<I> *item) {
 
   for (auto t : m_throttles) {
     flag = t.first;
+/** comment by hy 2020-03-21
+ * # 判断该类型的qos控制是否已经放行
+ */
     if (item->was_throttled(flag))
       continue;
 
+/** comment by hy 2020-03-21
+ * # 设置flag，表示该类型的qos控制放行
+ */
     if (!(m_qos_enabled_flag & flag)) {
       item->set_throttled(flag);
       continue;
     }
 
+/** comment by hy 2020-03-21
+ * # 判断是否有足够令牌，不足则将请求放入阻塞队列
+ */
     throttle = t.second;
     if (item->tokens_requested(flag, &tokens) &&
         throttle->get<ImageRequestWQ<I>, ImageDispatchSpec<I>,
@@ -842,6 +918,9 @@ void *ImageRequestWQ<I>::_void_dequeue() {
     return nullptr;
   }
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   if (needs_throttle(peek_item)) {
     ldout(cct, 15) << "throttling IO " << peek_item << dendl;
 
@@ -951,6 +1030,13 @@ void ImageRequestWQ<I>::process_io(ImageDispatchSpec<I> *req,
   }
 
   req->start_op();
+/** comment by hy 2020-02-20
+ * # send 调用
+     ImageDispatchSpec<I>::SendVisitor
+     根据消息转化对应的消息处理
+     如 写 将会转化为 ImageRequest<I>::aio_write()
+                最后是 ImageRequest<I>::send
+ */
   req->send();
 
   if (write_op) {

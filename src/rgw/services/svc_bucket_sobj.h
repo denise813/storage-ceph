@@ -67,6 +67,9 @@ class RGWSI_Bucket_SObj : public RGWSI_Bucket
                         optional_yield y);
 
 public:
+/** comment by hy 2020-03-05
+ * # 
+ */
   struct Svc {
     RGWSI_Bucket_SObj *bucket{nullptr};
     RGWSI_BucketIndex *bi{nullptr};
@@ -74,8 +77,14 @@ public:
     RGWSI_SysObj *sysobj{nullptr};
     RGWSI_SysObj_Cache *cache{nullptr};
     RGWSI_Meta *meta{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWSI_MetaBackend = RGWSI_MetaBackend_SObj
+ */
     RGWSI_MetaBackend *meta_be{nullptr};
     RGWSI_SyncModules *sync_modules{nullptr};
+/** comment by hy 2020-03-15
+ * #  = RGWSI_Bucket_Sync_SObj
+ */
     RGWSI_Bucket_Sync *bucket_sync{nullptr};
   } svc;
 

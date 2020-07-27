@@ -808,23 +808,38 @@ void CephContext::start_service_thread()
     if (_service_thread) {
       return;
     }
+/** comment by hy 2020-01-17
+ * # service 线程用来切换日志
+ */
     _service_thread = new CephContextServiceThread(this);
     _service_thread->create("service");
   }
 
+/** comment by hy 2020-01-17
+ * # 没有设置关闭perf特性,添加一些初始化的perf计数
+ */
   if (!(get_init_flags() & CINIT_FLAG_NO_CCT_PERF_COUNTERS))
     _enable_perf_counter();
 
   // make logs flush on_exit()
+/** comment by hy 2020-01-17
+ * # 退出时刷新log,配置文件默认设置为false
+ */
   if (_conf->log_flush_on_exit)
     _log->set_flush_on_exit();
 
   // Trigger callbacks on any config observers that were waiting for
   // it to become safe to start threads.
+/** comment by hy 2020-01-17
+ * # 开始监控配置文件的变化
+ */
   _conf.set_safe_to_start_threads();
   _conf.call_all_observers();
 
   // start admin socket
+/** comment by hy 2020-01-17
+ * # 初始化管理命令套接字资源
+ */
   if (_conf->admin_socket.length())
     _admin_socket->init(_conf->admin_socket);
 }
@@ -879,12 +894,21 @@ PerfCountersCollection *CephContext::get_perfcounters_collection()
 void CephContext::_enable_perf_counter()
 {
   assert(!_cct_perf);
+/** comment by hy 2020-01-17
+ * # 创建ceph cct 字段的perf 关键字
+         添加字段 使用的枚举类型放在对应的关键类中
+       然后使用 perf_conters->set(l, num)
+ */
   PerfCountersBuilder plb(this, "cct", l_cct_first, l_cct_last);
   plb.add_u64(l_cct_total_workers, "total_workers", "Total workers");
   plb.add_u64(l_cct_unhealthy_workers, "unhealthy_workers", "Unhealthy workers");
   _cct_perf = plb.create_perf_counters();
   _perf_counters_collection->add(_cct_perf);
 
+/** comment by hy 2020-01-17
+ * # 添加内存池的perf信息
+         这段代码又看不懂了,这个内存池怎么实现的后面再看
+ */
   assert(_mempool_perf_names.empty());
   assert(_mempool_perf_descriptions.empty());
   _mempool_perf_names.reserve(mempool::num_pools * 2);

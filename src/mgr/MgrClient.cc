@@ -282,6 +282,9 @@ void MgrClient::_send_stats()
 {
   _send_report();
   _send_pgstats();
+/** comment by hy 2020-01-19
+ * # 定时发送
+ */
   if (stats_period != 0) {
     report_callback = timer.add_event_after(
       stats_period,
@@ -582,6 +585,9 @@ int MgrClient::service_daemon_register(
 
   // late register?
   if (msgr->get_mytype() == CEPH_ENTITY_TYPE_CLIENT && session && session->con) {
+/** comment by hy 2020-03-06
+ * # 
+ */
     _send_open();
   }
 

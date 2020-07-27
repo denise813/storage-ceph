@@ -40,23 +40,43 @@ enum {
  * WBThrottle
  *
  * Tracks, throttles, and flushes outstanding IO
+ * 限流是专为FileStore设计的
+ * 防止FileStore写太快，后端存储设备速度跟不上
  */
 class WBThrottle : Thread, public md_config_obs_t {
   ghobject_t clearing;
   /* *_limits.first is the start_flusher limit and
    * *_limits.second is the hard limit
    */
-
+/** comment by hy 2020-04-23
+ * # <soft, hard>
+     当三个粒度的其中一个超过soft值，就开始回刷fd
+     当三个粒度的其中一个超过hard值，throttle就开始起作用，_do_op会阻塞
+ */
   /// Limits on unflushed bytes
+/** comment by hy 2020-04-23
+ * # 未刷新字节数
+ */
   pair<uint64_t, uint64_t> size_limits;
 
   /// Limits on unflushed ios
+/** comment by hy 2020-04-23
+ * # 未刷新io个数
+ */
   pair<uint64_t, uint64_t> io_limits;
 
   /// Limits on unflushed objects
+/** comment by hy 2020-04-23
+ * # 未刷新fd个数，也即对象个数
+ */
   pair<uint64_t, uint64_t> fd_limits;
-
+/** comment by hy 2020-04-23
+ * # 当前未刷新io个数
+ */
   uint64_t cur_ios;  /// Currently unflushed IOs
+/** comment by hy 2020-04-23
+ * # 当前未刷新字节数
+ */
   uint64_t cur_size; /// Currently unflushed bytes
 
   /**
@@ -110,10 +130,16 @@ class WBThrottle : Thread, public md_config_obs_t {
     lru.push_back(oid);
     rev_lru.insert(make_pair(oid, --lru.end()));
   }
-
+/** comment by hy 2020-04-23
+ * #  等待刷新的对象集合
+ */
   ceph::unordered_map<ghobject_t, pair<PendingWB, FDRef> > pending_wbs;
 
   /// get next flush to perform
+/** comment by hy 2020-04-23
+ * # 如果还没达到soft值，就睡眠
+     达到soft值，就从lru中取出一个，然后刷新此对象上的操作
+ */
   bool get_next_should_flush(
     std::unique_lock<ceph::mutex>& locker,
     boost::tuple<ghobject_t, FDRef, PendingWB> *next ///< [out] next to flush
@@ -148,8 +174,13 @@ private:
 public:
   explicit WBThrottle(CephContext *cct);
   ~WBThrottle() override;
-
+/** comment by hy 2020-04-23
+ * # 创建线程
+ */
   void start();
+/** comment by hy 2020-04-23
+ * # 销毁线程
+ */
   void stop();
   /// Set fs as XFS or BTRFS
   void set_fs(FS new_fs) {
@@ -159,6 +190,9 @@ public:
   }
 
   /// Queue wb on oid, fd taking throttle (does not block)
+/** comment by hy 2020-04-23
+ * # 将对象的操作请求，插入到 pending_wbs 以及 lru中，等待刷新
+ */
   void queue_wb(
     FDRef fd,              ///< [in] FDRef to oid
     const ghobject_t &oid, ///< [in] object
@@ -174,6 +208,9 @@ public:
   void clear_object(const ghobject_t &oid);
 
   /// Block until there is throttle available
+/** comment by hy 2020-04-23
+ * # 如果三个指标中的一个超过了hard值，就睡眠
+ */
   void throttle();
 
   /// md_config_obs_t
@@ -182,6 +219,10 @@ public:
 			  const std::set<std::string> &changed) override;
 
   /// Thread
+/** comment by hy 2020-04-23
+ * # 线程入口，调用 get_next_should_flush 获取一个flush的FD
+     然后调用 fdatasync 或 fsync 刷新此对象上的数据
+ */
   void *entry() override;
 };
 

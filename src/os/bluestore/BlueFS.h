@@ -96,6 +96,9 @@ class BlueFS;
 class BlueFS {
 public:
   CephContext* cct;
+/** comment by hy 2020-04-22
+ * # 文件系统支持不同种类的块设备
+ */
   static constexpr unsigned MAX_BDEV = 5;
   static constexpr unsigned BDEV_WAL = 0;
   static constexpr unsigned BDEV_DB = 1;
@@ -105,20 +108,36 @@ public:
 
   enum {
     WRITER_UNKNOWN,
+/** comment by hy 2020-04-22
+ * # RocksDB的log文件
+ */
     WRITER_WAL,
+/** comment by hy 2020-04-22
+ * # RocksDB的sst文件
+ */
     WRITER_SST,
   };
 
   struct File : public RefCountedObject {
     MEMPOOL_CLASS_HELPERS();
-
+/** comment by hy 2020-04-22
+ * # 文件inode
+ */
     bluefs_fnode_t fnode;
+/** comment by hy 2020-04-22
+ * # 引用计数
+ */
     int refs;
+/** comment by hy 2020-04-22
+ * # dirty序列号
+ */
     uint64_t dirty_seq;
     bool locked;
     bool deleted;
     boost::intrusive::list_member_hook<> dirty_item;
-
+/** comment by hy 2020-04-22
+ * # 读写计数
+ */
     std::atomic_int num_readers, num_writers;
     std::atomic_int num_reading;
 
@@ -155,7 +174,9 @@ public:
 
   struct Dir : public RefCountedObject {
     MEMPOOL_CLASS_HELPERS();
-
+/** comment by hy 2020-04-22
+ * # 目录包含的文件
+ */
     mempool::bluefs::map<string,FileRef> file_map;
 
   private:
@@ -286,10 +307,19 @@ private:
   };
 
   // cache
+/** comment by hy 2020-04-22
+ * # 文件系统的内存映像 所有的目录
+ */
   mempool::bluefs::map<string, DirRef> dir_map;              ///< dirname -> Dir
+/** comment by hy 2020-04-22
+ * # 所有的文件
+ */
   mempool::bluefs::unordered_map<uint64_t,FileRef> file_map; ///< ino -> File
 
   // map of dirty files, files of same dirty_seq are grouped into list.
+/** comment by hy 2020-04-22
+ * # 脏文件，根据序列号排列
+ */
   map<uint64_t, dirty_file_list_t> dirty_files;
 
   bluefs_super_t super;        ///< latest superblock (as last written)
@@ -313,9 +343,21 @@ private:
    *  BDEV_WAL  db.wal/  - a small, fast device, specifically for the WAL
    *  BDEV_SLOW db.slow/ - a big, slow device, to spill over to as BDEV_DB fills
    */
+/** comment by hy 2020-04-22
+ * # BlueFS能够使用的所有BlockDevice
+ */
   vector<BlockDevice*> bdev;                  ///< block devices we can use
+/** comment by hy 2020-04-22
+ * # bdev对应的IOContext
+ */
   vector<IOContext*> ioc;                     ///< IOContexts for bdevs
+/** comment by hy 2020-04-22
+ * # bdev对应的磁盘空间
+ */
   vector<interval_set<uint64_t> > block_all;  ///< extents in bdev we own
+/** comment by hy 2020-04-22
+ * # bdev对应的allocator
+ */
   vector<Allocator*> alloc;                   ///< allocators for bdevs
   vector<uint64_t> alloc_size;                ///< alloc size for each device
   vector<interval_set<uint64_t>> pending_release; ///< extents to release

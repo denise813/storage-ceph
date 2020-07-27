@@ -58,6 +58,9 @@ int RGWSI_DataLog_RADOS::get_info(int shard_id, RGWDataChangesLogInfo *info)
 
 int RGWSI_DataLog_RADOS::add_entry(const RGWBucketInfo& bucket_info, int shard_id)
 {
+/** comment by hy 2020-03-15
+ * # RGWDataChangesLog::add_entry
+ */
   return log->add_entry(bucket_info, shard_id);
 }
 

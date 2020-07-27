@@ -49,6 +49,9 @@ int RGWSI_BILog_RADOS::log_start(const RGWBucketInfo& bucket_info, int shard_id)
 {
   RGWSI_RADOS::Pool index_pool;
   map<int, string> bucket_objs;
+/** comment by hy 2020-03-15
+ * # RGWSI_BucketIndex_RADOS::open_bucket_index
+ */
   int r = svc.bi->open_bucket_index(bucket_info, shard_id, &index_pool, &bucket_objs, nullptr);
   if (r < 0)
     return r;

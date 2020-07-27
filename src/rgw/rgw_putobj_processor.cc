@@ -25,12 +25,27 @@ namespace rgw::putobj {
 
 int HeadObjectProcessor::process(bufferlist&& data, uint64_t logical_offset)
 {
+/** comment by hy 2020-03-19
+ * # 处理空数据,一般放在数据的最后
+     用于表示刷数据
+ */
   const bool flush = (data.length() == 0);
 
   // capture the first chunk for special handling
   if (data_offset < head_chunk_size || data_offset == 0) {
     if (flush) {
       // flush partial chunk
+/** comment by hy 2020-03-19
+ * # 注册chunk写执行者
+     对于对象的写调用
+     AtomicObjectProcessor::process_first_chunk
+
+   # 对于多段
+     MultipartObjectProcessor::process_first_chunk
+
+   # 对于压缩,加密
+     AppendObjectProcessor::process_first_chunk
+ */
       return process_first_chunk(std::move(head_data), &processor);
     }
 
@@ -39,6 +54,9 @@ int HeadObjectProcessor::process(bufferlist&& data, uint64_t logical_offset)
     data.splice(0, count, &head_data);
     data_offset += count;
 
+/** comment by hy 2020-03-19
+ * # 最后一个块,把头对象处理掉
+ */
     if (data_offset == head_chunk_size) {
       // process the first complete chunk
       ceph_assert(head_data.length() == head_chunk_size);
@@ -56,6 +74,14 @@ int HeadObjectProcessor::process(bufferlist&& data, uint64_t logical_offset)
   // send everything else through the processor
   auto write_offset = data_offset;
   data_offset += data.length();
+/** comment by hy 2020-03-19
+ * # 真的调用其处理者
+     chunk执行者
+   # 如 上传对象
+       调用其对象 stripe = StripeProcessor
+         StripeProcessor::process
+           执行操作 不断的取下一个操作 即调用其 next 方法
+ */
   return processor->process(std::move(data), write_offset);
 }
 
@@ -86,6 +112,9 @@ int RadosWriter::process(bufferlist&& bl, uint64_t offset)
   if (cost == 0) { // no empty writes, use aio directly for creates
     return 0;
   }
+/** comment by hy 2020-03-19
+ * # 开始写对象
+ */
   librados::ObjectWriteOperation op;
   if (offset == 0) {
     op.write_full(data);
@@ -168,6 +197,9 @@ RadosWriter::~RadosWriter()
 int ManifestObjectProcessor::next(uint64_t offset, uint64_t *pstripe_size)
 {
   // advance the manifest
+/** comment by hy 2020-03-22
+ * # 进一步迭代
+ */
   int r = manifest_gen.create_next(offset);
   if (r < 0) {
     return r;
@@ -180,11 +212,18 @@ int ManifestObjectProcessor::next(uint64_t offset, uint64_t *pstripe_size)
   if (r < 0) {
     return r;
   }
+/** comment by hy 2020-03-19
+ * # 设置写操作
+ */
   r = writer.set_stripe_obj(stripe_obj);
   if (r < 0) {
     return r;
   }
 
+/** comment by hy 2020-03-19
+ * # 继续执行操作
+     ChunkProcessor::process
+ */
   chunk = ChunkProcessor(&writer, chunk_size);
   *pstripe_size = manifest_gen.cur_stripe_max_size();
   return 0;
@@ -208,10 +247,17 @@ int AtomicObjectProcessor::prepare(optional_yield y)
   uint64_t alignment;
   rgw_pool head_pool;
 
+/** comment by hy 2020-03-16
+ * # 获取 bucket 存放数据信息的 head 对象
+     head obj 是什么?
+ */
   if (!store->getRados()->get_obj_data_pool(bucket_info.placement_rule, head_obj, &head_pool)) {
     return -EIO;
   }
 
+/** comment by hy 2020-03-16
+ * # 这个还是有点不是很明白
+ */
   int r = store->getRados()->get_max_chunk_size(head_pool, &max_head_chunk_size, &alignment);
   if (r < 0) {
     return r;
@@ -219,12 +265,18 @@ int AtomicObjectProcessor::prepare(optional_yield y)
 
   bool same_pool = true;
 
+/** comment by hy 2020-03-16
+ * # 
+ */
   if (bucket_info.placement_rule != tail_placement_rule) {
     rgw_pool tail_pool;
     if (!store->getRados()->get_obj_data_pool(tail_placement_rule, head_obj, &tail_pool)) {
       return -EIO;
     }
 
+/** comment by hy 2020-03-16
+ * # 
+ */
     if (tail_pool != head_pool) {
       same_pool = false;
 
@@ -243,12 +295,23 @@ int AtomicObjectProcessor::prepare(optional_yield y)
   }
 
   uint64_t stripe_size;
+/** comment by hy 2020-03-16
+ * # 条带化
+ */
   const uint64_t default_stripe_size = store->ctx()->_conf->rgw_obj_stripe_size;
 
   store->getRados()->get_max_aligned_size(default_stripe_size, alignment, &stripe_size);
 
+/** comment by hy 2020-03-16
+ * # 生成规则记录在内存中
+     RGWObjManifest::set_trivial_rule
+ */
   manifest.set_trivial_rule(head_max_size, stripe_size);
 
+/** comment by hy 2020-03-16
+ * # RGWObjManifest::generator::create_begin
+     设置head 信息
+ */
   r = manifest_gen.create_begin(store->ctx(), &manifest,
                                 bucket_info.placement_rule,
                                 &tail_placement_rule,
@@ -257,8 +320,18 @@ int AtomicObjectProcessor::prepare(optional_yield y)
     return r;
   }
 
+/** comment by hy 2020-03-16
+ * # RGWObjManifest::generator::get_cur_obj = 
+     非zone 模式下
+     rgw_obj_select::get_raw_obj
+     将对象加上 bucket 信息,生成对象
+ */
   rgw_raw_obj stripe_obj = manifest_gen.get_cur_obj(store->getRados());
 
+/** comment by hy 2020-03-16
+ * # 转化为 RGWSI_RADOS::Obj
+     然后打开对象,即初始化上下文
+ */
   r = writer.set_stripe_obj(stripe_obj);
   if (r < 0) {
     return r;
@@ -266,7 +339,15 @@ int AtomicObjectProcessor::prepare(optional_yield y)
 
   set_head_chunk_size(head_max_size);
   // initialize the processors
+/** comment by hy 2020-03-19
+ * # 追加 RadosWriter 追加后续操作
+     ChunkProcessor::::process
+     后续将调用 RadosWriter::process
+ */
   chunk = ChunkProcessor(&writer, chunk_size);
+/** comment by hy 2020-03-19
+ * # 继续追加后续操作
+ */
   stripe = StripeProcessor(&chunk, this, head_max_size);
   return 0;
 }
@@ -283,6 +364,9 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
                                     rgw_zone_set *zones_trace,
                                     bool *pcanceled, optional_yield y)
 {
+/** comment by hy 2020-02-28
+ * # 等待该rgw对象的所有异步写完成
+ */
   int r = writer.drain();
   if (r < 0) {
     return r;
@@ -293,6 +377,9 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
     return r;
   }
 
+/** comment by hy 2020-02-28
+ * # 标识该对象为Atomic类型的对象
+ */
   obj_ctx.set_atomic(head_obj);
 
   RGWRados::Object op_target(store->getRados(), bucket_info, obj_ctx, head_obj);
@@ -300,6 +387,9 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   /* some object types shouldn't be versioned, e.g., multipart parts */
   op_target.set_versioning_disabled(!bucket_info.versioning_enabled());
 
+/** comment by hy 2020-02-28
+ * #将该rgw对象的attrs写入head对象的xattr中 
+ */
   RGWRados::Object::Write obj_op(&op_target);
 
   obj_op.meta.data = &first_chunk;
@@ -317,6 +407,9 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
 
+/** comment by hy 2020-02-28
+ * # 此处进行attribute参数的写入
+ */
   r = obj_op.write_meta(actual_size, accounted_size, attrs, y);
   if (r < 0) {
     return r;
@@ -506,6 +599,9 @@ int AppendObjectProcessor::process_first_chunk(bufferlist &&data, rgw::putobj::D
   if (r < 0) {
     return r;
   }
+/** comment by hy 2020-03-19
+ * # stripe = StripeProcessor
+ */
   *processor = &stripe;
   return 0;
 }
@@ -616,6 +712,9 @@ int AppendObjectProcessor::complete(size_t accounted_size, const string &etag, c
   //For Append obj, disable versioning
   op_target.set_versioning_disabled(true);
   RGWRados::Object::Write obj_op(&op_target);
+/** comment by hy 2020-03-22
+ * # 
+ */
   if (cur_manifest) {
     cur_manifest->append(manifest, store->svc()->zone);
     obj_op.meta.manifest = cur_manifest;

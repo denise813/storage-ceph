@@ -43,8 +43,13 @@ private:
   __u32 flags = 0;
   utime_t mtime;
   int32_t retry_attempt = -1;   // 0 is first attempt.  -1 if we don't know.
-
+/** comment by hy 2020-02-22
+ * # 操作对象
+ */
   hobject_t hobj;
+/** comment by hy 2020-02-22
+ * # 对象所在的pg
+ */
   spg_t pgid;
   ceph::buffer::list::const_iterator p;
   // Decoding flags. Decoding is only needed for messages caught by pipe reader.
@@ -54,6 +59,9 @@ private:
   std::atomic<bool> final_decode_needed;
   //
 public:
+/** comment by hy 2020-02-22
+ * # 针对多个osd的集合
+ */
   std::vector<OSDOp> ops;
 private:
   snapid_t snap_seq;

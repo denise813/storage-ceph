@@ -102,6 +102,9 @@ public:
     RGWSI_SysObj *sysobj{nullptr};
     RGWSI_SysObj_Cache *cache{nullptr};
     RGWSI_Meta *meta{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWSI_MetaBackend_SObj
+ */
     RGWSI_MetaBackend *meta_be{nullptr};
     RGWSI_SyncModules *sync_modules{nullptr};
   } svc;

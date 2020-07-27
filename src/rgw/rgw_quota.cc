@@ -929,6 +929,9 @@ public:
                           uint64_t num_objs,
                           uint64_t size) override {
 
+/** comment by hy 2020-03-16
+ * # 用户和桶配额
+ */
     if (!bucket_quota.enabled && !user_quota.enabled) {
       return 0;
     }
@@ -942,11 +945,17 @@ public:
 
     if (bucket_quota.enabled) {
       RGWStorageStats bucket_stats;
+/** comment by hy 2020-03-16
+ * # 获取桶配额状态
+ */
       int ret = bucket_stats_cache.get_stats(user, bucket, bucket_stats,
                                            bucket_quota);
       if (ret < 0) {
         return ret;
       }
+/** comment by hy 2020-03-16
+ * # 检查配额
+ */
       ret = check_quota("bucket", bucket_quota, bucket_stats, num_objs, size);
       if (ret < 0) {
         return ret;
@@ -955,6 +964,9 @@ public:
 
     if (user_quota.enabled) {
       RGWStorageStats user_stats;
+/** comment by hy 2020-03-16
+ * # 获取用户配额状态
+ */
       int ret = user_stats_cache.get_stats(user, bucket, user_stats, user_quota);
       if (ret < 0) {
         return ret;

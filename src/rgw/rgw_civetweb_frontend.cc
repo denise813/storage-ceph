@@ -46,9 +46,25 @@ RGWCivetWebFrontend::RGWCivetWebFrontend(RGWProcessEnv& env,
 
 }
 
+/*****************************************************************************
+ * 函 数 名  : civetweb_callback
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月6日
+ * 函数功能  : 连接有请求的回调
+ * 输入参数  : struct mg_connection* conn  连接
+ * 输出参数  : 无
+ * 返 回 值  : static
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 static int civetweb_callback(struct mg_connection* conn)
 {
   const struct mg_request_info* const req_info = mg_get_request_info(conn);
+/** comment by hy 2020-02-08
+ * # 调用process函数
+     req_info->user_data = (class RGWCivetWebFrontend) this 
+ */
   return static_cast<RGWCivetWebFrontend *>(req_info->user_data)->process(conn);
 }
 
@@ -58,6 +74,13 @@ int RGWCivetWebFrontend::process(struct mg_connection*  const conn)
   std::shared_lock lock{env.mutex};
 
   RGWCivetWeb cw_client(conn);
+/** comment by hy 2020-03-06
+ * # 
+     RGWCivetWeb
+     ConLenControllingFilter
+     ChunkingFilter
+     ReorderingFilter
+ */
   auto real_client_io = rgw::io::add_reordering(
                           rgw::io::add_buffering(dout_context,
                             rgw::io::add_chunking(
@@ -68,6 +91,9 @@ int RGWCivetWebFrontend::process(struct mg_connection*  const conn)
   RGWRequest req(env.store->getRados()->get_new_req_id());
   int http_ret = 0;
   //assert (scheduler != nullptr);
+/** comment by hy 2020-02-08
+ * # 处理请求
+ */
   int ret = process_request(env.store, env.rest, &req, env.uri_prefix,
                             *env.auth_registry, &client_io, env.olog,
                             null_yield, scheduler.get() ,&http_ret);
@@ -147,6 +173,11 @@ int RGWCivetWebFrontend::run()
   cb.begin_request = civetweb_callback;
   cb.log_message = rgw_civetweb_log_callback;
   cb.log_access = rgw_civetweb_log_access_callback;
+/** comment by hy 2020-02-08
+ * # 启动
+        启动完成后当有连接要处理就回调 RGWCivetWebFrontend::process进程处理请求
+        Mongoose 框架
+ */
   ctx = mg_start(&cb, this, options.data());
 
   return ! ctx ? -EIO : 0;

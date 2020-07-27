@@ -405,6 +405,9 @@ public:
       dout(10) << "osdmap epoch " << epoch << " mapping took "
 	       << (end - start) << " seconds" << dendl;
       osdmon->update_creating_pgs();
+/** comment by hy 2020-01-27
+ * # 创建 pg 消息,并向mon进行消息推送
+ */
       osdmon->check_pg_creates_subs();
     }
   }
@@ -993,6 +996,9 @@ void OSDMonitor::start_mapping()
     mapping_job->abort();
   }
   if (!osdmap.get_pools().empty()) {
+/** comment by hy 2020-01-27
+ * # 开始推送创建 pg
+ */
     auto fin = new C_UpdateCreatingPGs(this, osdmap.get_epoch());
     mapping_job = mapping.start_update(osdmap, mapper,
 				       g_conf()->mon_osd_mapping_pgs_per_chunk);
@@ -1037,6 +1043,9 @@ void OSDMonitor::on_active()
     }
   } else {
     list<MonOpRequestRef> ls;
+/** comment by hy 2020-01-27
+ * # 报告失败消息
+ */
     take_all_failures(ls);
     while (!ls.empty()) {
       MonOpRequestRef op = ls.front();
@@ -1045,6 +1054,9 @@ void OSDMonitor::on_active()
       ls.pop_front();
     }
   }
+/** comment by hy 2020-01-27
+ * # 推送创建 pg
+ */
   start_mapping();
 }
 
@@ -1090,6 +1102,9 @@ void OSDMonitor::create_pending()
 
   // safety checks (this shouldn't really happen)
   {
+/** comment by hy 2020-01-26
+ * # 设置的迁移数据发生的比例
+ */
     if (osdmap.backfillfull_ratio <= 0) {
       pending_inc.new_backfillfull_ratio = g_conf()->mon_osd_backfillfull_ratio;
       if (pending_inc.new_backfillfull_ratio > 1.0)
@@ -1097,6 +1112,9 @@ void OSDMonitor::create_pending()
       dout(1) << __func__ << " setting backfillfull_ratio = "
 	      << pending_inc.new_backfillfull_ratio << dendl;
     }
+/** comment by hy 2020-01-26
+ * # 设置满载比例
+ */
     if (osdmap.full_ratio <= 0) {
       pending_inc.new_full_ratio = g_conf()->mon_osd_full_ratio;
       if (pending_inc.new_full_ratio > 1.0)
@@ -1104,6 +1122,9 @@ void OSDMonitor::create_pending()
       dout(1) << __func__ << " setting full_ratio = "
 	      << pending_inc.new_full_ratio << dendl;
     }
+/** comment by hy 2020-01-26
+ * # 设置满载警告比例
+ */
     if (osdmap.nearfull_ratio <= 0) {
       pending_inc.new_nearfull_ratio = g_conf()->mon_osd_nearfull_ratio;
       if (pending_inc.new_nearfull_ratio > 1.0)
@@ -1130,6 +1151,9 @@ void OSDMonitor::create_pending()
       dout(1) << __func__ << " rewriting pool "
 	      << osdmap.get_pool_name(pool_id) << " crush ruleset "
 	      << pool.crush_rule << " -> rule id " << new_rule_id << dendl;
+/** comment by hy 2020-01-26
+ * # 获取对应的pool
+ */
       if (pending_inc.new_pools.count(pool_id) == 0) {
 	pending_inc.new_pools[pool_id] = pool;
       }
@@ -1399,6 +1423,9 @@ void OSDMonitor::maybe_prime_pg_temp()
     dout(10) << __func__ << " no pools, no pg_temp priming" << dendl;
   } else if (all) {
     PrimeTempJob job(next, this);
+/** comment by hy 2020-01-27
+ * # 默认值为 4096
+ */
     mapper.queue(&job, g_conf()->mon_osd_mapping_pgs_per_chunk, {});
     if (job.wait_for(g_conf()->mon_osd_prime_pg_temp_max_time)) {
       dout(10) << __func__ << " done in " << job.get_duration() << dendl;
@@ -2650,6 +2677,9 @@ bool OSDMonitor::preprocess_query(MonOpRequestRef op)
     return preprocess_beacon(op);
 
   case CEPH_MSG_POOLOP:
+/** comment by hy 2020-01-22
+ * # 查找pool信息
+ */
     return preprocess_pool_op(op);
 
   case MSG_REMOVE_SNAPS:
@@ -4732,14 +4762,23 @@ void OSDMonitor::check_osdmap_sub(Subscription *sub)
 {
   dout(10) << __func__ << " " << sub << " next " << sub->next
 	   << (sub->onetime ? " (onetime)":" (ongoing)") << dendl;
+/** comment by hy 2020-03-20
+ * # 开始发送osdmap 信息
+ */
   if (sub->next <= osdmap.get_epoch()) {
     if (sub->next >= 1)
       send_incremental(sub->next, sub->session, sub->incremental_onetime);
     else
+/** comment by hy 2020-03-20
+ * # 全量发送map
+ */
       sub->session->con->send_message(build_latest_full(sub->session->con_features));
     if (sub->onetime)
       mon->session_map.remove_sub(sub);
     else
+/** comment by hy 2020-03-20
+ * # 更新下次要的map版本
+ */
       sub->next = osdmap.get_epoch() + 1;
   }
 }
@@ -4755,6 +4794,9 @@ void OSDMonitor::check_pg_creates_subs()
       if (pg_creates_subs == session_map.subs.end()) {
 	return;
       }
+/** comment by hy 2020-01-27
+ * # 推送创建pg的消息
+ */
       for (auto sub : *pg_creates_subs->second) {
 	check_pg_creates_sub(sub);
       }
@@ -4769,6 +4811,9 @@ void OSDMonitor::check_pg_creates_sub(Subscription *sub)
   // come up so they will get the creates then.
   if (sub->session->name.is_osd() &&
       mon->osdmon()->osdmap.is_up(sub->session->name.num())) {
+/** comment by hy 2020-01-27
+ * # 创建 pg
+ */
     sub->next = send_pg_creates(sub->session->name.num(),
 				sub->session->con.get(),
 				sub->next);
@@ -4917,6 +4962,9 @@ epoch_t OSDMonitor::send_pg_creates(int osd, Connection *con, epoch_t next) cons
     // the subscribers will be updated when the mapping is completed anyway
     return next;
   }
+/** comment by hy 2020-01-27
+ * # 没有待创建的pg
+ */
   auto creating_pgs_by_epoch = creating_pgs_by_osd_epoch.find(osd);
   if (creating_pgs_by_epoch == creating_pgs_by_osd_epoch.end())
     return next;
@@ -4940,6 +4988,9 @@ epoch_t OSDMonitor::send_pg_creates(int osd, Connection *con, epoch_t next) cons
       // last_scrub_stamp upon pg creation.
       auto create = creating_pgs.pgs.find(pg.pgid);
       ceph_assert(create != creating_pgs.pgs.end());
+/** comment by hy 2020-01-27
+ * # 以 CEPH_RELEASE_NAUTILUS 版本为分界
+ */
       if (old) {
 	if (!oldm) {
 	  oldm = new MOSDPGCreate(creating_pgs_epoch);
@@ -5059,6 +5110,9 @@ void OSDMonitor::tick()
 	utime_t grace = orig_grace;
 	double my_grace = 0.0;
 
+/** comment by hy 2020-03-31
+ * # 通过历史数据, 自动调节功能
+ */
 	if (g_conf()->mon_osd_adjust_down_out_interval) {
 	  // scale grace period the same way we do the heartbeat grace.
 	  const osd_xinfo_t& xi = osdmap.get_xinfo(o);
@@ -7499,6 +7553,9 @@ int OSDMonitor::prepare_pool_size(const unsigned pool_type,
   int err = 0;
   switch (pool_type) {
   case pg_pool_t::TYPE_REPLICATED:
+/** comment by hy 2020-01-20
+ * # 在副本模式下设置默认的副本数
+ */
     if (repl_size == 0) {
       repl_size = g_conf().get_val<uint64_t>("osd_pool_default_size");
     }
@@ -7507,6 +7564,9 @@ int OSDMonitor::prepare_pool_size(const unsigned pool_type,
     break;
   case pg_pool_t::TYPE_ERASURE:
     {
+/** comment by hy 2020-01-20
+ * # 在纠删码下
+ */
       ErasureCodeInterfaceRef erasure_code;
       err = get_erasure_code(erasure_code_profile, &erasure_code, ss);
       if (err == 0) {
@@ -7577,6 +7637,9 @@ int OSDMonitor::prepare_pool_crush_rule(const unsigned pool_type,
     switch (pool_type) {
     case pg_pool_t::TYPE_REPLICATED:
       {
+/** comment by hy 2020-01-23
+ * # 查找crush rule
+ */
 	if (rule_name == "") {
 	  // Use default rule
 	  *crush_rule = osdmap.crush->get_osd_pool_default_crush_replicated_ruleset(cct);
@@ -7639,8 +7702,13 @@ int OSDMonitor::get_crush_rule(const string &rule_name,
     *crush_rule = ret;
   } else {
     CrushWrapper newcrush;
+/** comment by hy 2020-01-23
+ * # 如果处于pending状态返回对应pending的crush,否则返回osdmap中的默认的crush
+ */
     _get_pending_crush(newcrush);
-
+/** comment by hy 2020-01-23
+ * # 检查pool对应的是最新的规则
+ */
     ret = newcrush.get_rule_id(rule_name);
     if (ret != -ENOENT) {
       // found it, wait for it to be proposed
@@ -7665,6 +7733,9 @@ int OSDMonitor::check_pg_num(int64_t pool, int pg_num, int size, ostream *ss)
   if (pool < 0) {
     projected += pg_num * size;
   }
+/** comment by hy 2020-01-23
+ * # 找到对应的pool
+ */
   for (const auto& i : osdmap.get_pools()) {
     if (i.first == pool) {
       projected += pg_num * size;
@@ -7718,6 +7789,9 @@ int OSDMonitor::prepare_new_pool(string& name,
 {
   if (name.length() == 0)
     return -EINVAL;
+/** comment by hy 2020-01-22
+ * # 使用默认pg数
+ */
   if (pg_num == 0)
     pg_num = g_conf().get_val<uint64_t>("osd_pool_default_pg_num");
   if (pgp_num == 0)
@@ -7739,6 +7813,9 @@ int OSDMonitor::prepare_new_pool(string& name,
     *ss << "'fast_read' can only apply to erasure coding pool";
     return -EINVAL;
   }
+/** comment by hy 2020-01-23
+ * # 查找对应的crush
+ */
   int r;
   r = prepare_pool_crush_rule(pool_type, erasure_code_profile,
 				 crush_rule_name, &crush_rule, ss);
@@ -7746,6 +7823,9 @@ int OSDMonitor::prepare_new_pool(string& name,
     dout(10) << "prepare_pool_crush_rule returns " << r << dendl;
     return r;
   }
+/** comment by hy 2020-01-23
+ * # 测试crush有效
+ */
   if (g_conf()->mon_osd_crush_smoke_test) {
     CrushWrapper newcrush;
     _get_pending_crush(newcrush);
@@ -7766,6 +7846,9 @@ int OSDMonitor::prepare_new_pool(string& name,
     dout(10) << __func__ << " crush smoke test duration: "
              << duration << dendl;
   }
+/** comment by hy 2020-01-23
+ * # size 准备副本数
+ */
   unsigned size, min_size;
   r = prepare_pool_size(pool_type, erasure_code_profile, repl_size,
                         &size, &min_size, ss);
@@ -7773,16 +7856,25 @@ int OSDMonitor::prepare_new_pool(string& name,
     dout(10) << "prepare_pool_size returns " << r << dendl;
     return r;
   }
+/** comment by hy 2020-01-23
+ * # 价差pg数限制
+ */
   r = check_pg_num(-1, pg_num, size, ss);
   if (r) {
     dout(10) << "check_pg_num returns " << r << dendl;
     return r;
   }
 
+/** comment by hy 2020-01-23
+ * # 检查crush基本内容
+ */
   if (!osdmap.crush->check_crush_rule(crush_rule, pool_type, size, *ss)) {
     return -EINVAL;
   }
 
+/** comment by hy 2020-01-23
+ * # 纠删码处理条带
+ */
   uint32_t stripe_width = 0;
   r = prepare_pool_stripe_width(pool_type, erasure_code_profile, &stripe_width, ss);
   if (r) {
@@ -7842,6 +7934,9 @@ int OSDMonitor::prepare_new_pool(string& name,
   pi->min_size = min_size;
   pi->crush_rule = crush_rule;
   pi->expected_num_objects = expected_num_objects;
+/** comment by hy 2020-04-30
+ * # 这里写死了hash 类型,还有一个普通的类型为 CEPH_STR_HASH_LINUX
+ */
   pi->object_hash = CEPH_STR_HASH_RJENKINS;
 
   if (auto m = pg_pool_t::get_pg_autoscale_mode_by_name(
@@ -7851,7 +7946,13 @@ int OSDMonitor::prepare_new_pool(string& name,
   } else {
     pi->pg_autoscale_mode = pg_pool_t::pg_autoscale_mode_t::OFF;
   }
+/** comment by hy 2020-01-25
+ * # 设置最大pg数
+ */
   auto max = g_conf().get_val<int64_t>("mon_osd_max_initial_pgs");
+/** comment by hy 2020-01-25
+ * # 不限制最大pg数
+ */
   pi->set_pg_num(
     max > 0 ? std::min<uint64_t>(pg_num, std::max<int64_t>(1, max))
     : pg_num);
@@ -7859,6 +7960,9 @@ int OSDMonitor::prepare_new_pool(string& name,
   pi->set_pg_num_target(pg_num);
   pi->set_pgp_num(pi->get_pg_num());
   pi->set_pgp_num_target(pgp_num);
+/** comment by hy 2020-01-25
+ * # 设置最小pg数
+ */
   if (osdmap.require_osd_release >= ceph_release_t::nautilus &&
       pg_num_min) {
     pi->opts.set(pool_opts_t::PG_NUM_MIN, static_cast<int64_t>(pg_num_min));
@@ -7890,6 +7994,9 @@ int OSDMonitor::prepare_new_pool(string& name,
     pi->opts.set(pool_opts_t::TARGET_SIZE_RATIO, target_size_ratio);
   }
 
+/** comment by hy 2020-01-23
+ * # cache 设置
+ */
   pi->cache_target_dirty_ratio_micro =
     g_conf()->osd_pool_default_cache_target_dirty_ratio * 1000000;
   pi->cache_target_dirty_high_ratio_micro =
@@ -7899,6 +8006,9 @@ int OSDMonitor::prepare_new_pool(string& name,
   pi->cache_min_flush_age = g_conf()->osd_pool_default_cache_min_flush_age;
   pi->cache_min_evict_age = g_conf()->osd_pool_default_cache_min_evict_age;
 
+/** comment by hy 2020-01-25
+ * # 将入到pending_inc.pool列表中
+ */
   pending_inc.new_pool_names[pool] = name;
   return 0;
 }

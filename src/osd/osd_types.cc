@@ -1751,10 +1751,27 @@ SnapContext pg_pool_t::get_snap_context() const
   return SnapContext(get_snap_seq(), s);
 }
 
+/*****************************************************************************
+ * 函 数 名  : pg_pool_t.hash_key
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月12日
+ * 函数功能  : 对象生成hash值
+ * 输入参数  : const string& key  对象名称或者指定短小key
+               const string& ns   命名空间
+ * 输出参数  : 无
+ * 返 回 值  : uint32_t
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 uint32_t pg_pool_t::hash_key(const string& key, const string& ns) const
 {
  if (ns.empty()) 
     return ceph_str_hash(object_hash, key.data(), key.length());
+
+/** comment by hy 2020-03-12
+ * # 加上命名空间名称一起进行 hash
+ */
   int nsl = ns.length();
   int len = key.length() + nsl + 1;
   char buf[len];

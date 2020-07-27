@@ -66,6 +66,12 @@ bool RGWSI_Zone::zone_syncs_from(const RGWZone& target_zone, const RGWZone& sour
 
 int RGWSI_Zone::do_start()
 {
+/** comment by hy 2020-03-11
+ * # RGWSI_SysObj::start
+     调用基类的方法
+       RGWServiceInstance::start
+       基类的方法就是啥也不做
+ */
   int ret = sysobj_svc->start();
   if (ret < 0) {
     return ret;
@@ -73,11 +79,19 @@ int RGWSI_Zone::do_start()
 
   assert(sysobj_svc->is_started()); /* if not then there's ordering issue */
 
+/** comment by hy 2020-03-11
+ * # rados连接,并且启动异步线程组等待干活
+     异步线程就是用来发消息的
+     RGWSI_RADOS::do_start
+ */
   ret = rados_svc->start();
   if (ret < 0) {
     return ret;
   }
 
+/** comment by hy 2020-03-11
+ * # RGWRealm
+ */
   ret = realm->init(cct, sysobj_svc);
   if (ret < 0 && ret != -ENOENT) {
     ldout(cct, 0) << "failed reading realm info: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
@@ -92,12 +106,18 @@ int RGWSI_Zone::do_start()
     ldout(cct, 20) << "current period " << current_period->get_id() << dendl;  
   }
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   ret = replace_region_with_zonegroup();
   if (ret < 0) {
     lderr(cct) << "failed converting region to zonegroup : ret "<< ret << " " << cpp_strerror(-ret) << dendl;
     return ret;
   }
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   ret = convert_regionmap();
   if (ret < 0) {
     lderr(cct) << "failed converting regionmap: " << cpp_strerror(-ret) << dendl;
@@ -166,6 +186,9 @@ int RGWSI_Zone::do_start()
     return -EINVAL;
   }
 
+/** comment by hy 2020-03-12
+ * # 
+ */
   zone_short_id = current_period->get_map().get_zone_short_id(zone_params->get_id());
 
   for (auto ziter : zonegroup->zones) {
@@ -183,6 +206,9 @@ int RGWSI_Zone::do_start()
   set<rgw_zone_id> source_zones;
   set<rgw_zone_id> target_zones;
 
+/** comment by hy 2020-03-12
+ * # 
+ */
   sync_policy_handler->reflect(nullptr, nullptr,
                                nullptr, nullptr,
                                &source_zones,
@@ -227,6 +253,9 @@ int RGWSI_Zone::do_start()
       continue;
     }
     ldout(cct, 20) << "generating connection object for zone " << z.name << " id " << z.id << dendl;
+/** comment by hy 2020-03-12
+ * # 
+ */
     RGWRESTConn *conn = new RGWRESTConn(cct, this, z.id, z.endpoints);
     zone_conn_map[id] = conn;
 
@@ -271,6 +300,9 @@ int RGWSI_Zone::list_regions(list<string>& regions)
   RGWZoneGroup zonegroup;
   RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(zonegroup.get_pool(cct));
 
+/** comment by hy 2020-03-11
+ * # 查询分区信息
+ */
   return syspool.list_prefixed_objs(region_info_oid_prefix, &regions);
 }
 
@@ -352,14 +384,28 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     default_oid = default_region_info_oid;
   }
 
+/** comment by hy 2020-03-11
+ * # zone信息存放对应的 pool
+ */
   RGWZoneGroup default_zonegroup;
   rgw_pool pool{default_zonegroup.get_pool(cct)};
   string oid  = "converted";
   bufferlist bl;
 
+/** comment by hy 2020-03-11
+ * # RGWSI_SysObj::init_obj_ctx
+     直接生成一个上下文实例
+ */
   RGWSysObjectCtx obj_ctx = sysobj_svc->init_obj_ctx();
+/** comment by hy 2020-03-11
+ * # 返回其内部对象 RGWSI_SysObj::Obj
+ */
   RGWSysObj sysobj = sysobj_svc->get_obj(obj_ctx, rgw_raw_obj(pool, oid));
 
+/** comment by hy 2020-03-11
+ * # 使用读对象进行读操作
+     RGWSI_SysObj_Core::read 读取对应的对象，以及对象属性值
+ */
   int ret = sysobj.rop().read(&bl, null_yield);
   if (ret < 0 && ret !=  -ENOENT) {
     ldout(cct, 0) << __func__ << " failed to read converted: ret "<< ret << " " << cpp_strerror(-ret)
@@ -371,11 +417,19 @@ int RGWSI_Zone::replace_region_with_zonegroup()
   }
 
   string default_region;
+/** comment by hy 2020-03-11
+ * # RGWZoneGroup::init =
+     RGWSystemMetaObj::init
+     读取域名称对应的信息
+ */
   ret = default_zonegroup.init(cct, sysobj_svc, false, true);
   if (ret < 0) {
     ldout(cct, 0) <<  __func__ << " failed init default region: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
     return ret;
-  }    
+  }
+/** comment by hy 2020-03-11
+ * # 读取域名
+ */
   ret  = default_zonegroup.read_default_id(default_region, true);
   if (ret < 0 && ret != -ENOENT) {
     ldout(cct, 0) <<  __func__ << " failed reading old default region: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
@@ -384,12 +438,18 @@ int RGWSI_Zone::replace_region_with_zonegroup()
 
   /* convert regions to zonegroups */
   list<string> regions;
+/** comment by hy 2020-03-11
+ * # 获取分区
+ */
   ret = list_regions(regions);
   if (ret < 0 && ret != -ENOENT) {
     ldout(cct, 0) <<  __func__ << " failed to list regions: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
     return ret;
   } else if (ret == -ENOENT || regions.empty()) {
     RGWZoneParams zoneparams(default_zone_name);
+/** comment by hy 2020-03-11
+ * # 获取隔离域名称
+ */
     int ret = zoneparams.init(cct, sysobj_svc);
     if (ret < 0 && ret != -ENOENT) {
       ldout(cct, 0) << __func__ << ": error initializing default zone params: " << cpp_strerror(-ret) << dendl;
@@ -397,18 +457,27 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     }
     /* update master zone */
     RGWZoneGroup default_zg(default_zonegroup_name);
+/** comment by hy 2020-03-11
+ * # 获取zone
+ */
     ret = default_zg.init(cct, sysobj_svc);
     if (ret < 0 && ret != -ENOENT) {
       ldout(cct, 0) << __func__ << ": error in initializing default zonegroup: " << cpp_strerror(-ret) << dendl;
       return ret;
     }
     if (ret != -ENOENT && default_zg.master_zone.empty()) {
+/** comment by hy 2020-03-11
+ * # 
+ */
       default_zg.master_zone = zoneparams.get_id();
       return default_zg.update();
     }
     return 0;
   }
 
+/** comment by hy 2020-03-11
+ * # 分区信息
+ */
   string master_region;
   rgw_zone_id master_zone;
   for (list<string>::iterator iter = regions.begin(); iter != regions.end(); ++iter) {
@@ -430,6 +499,9 @@ int RGWSI_Zone::replace_region_with_zonegroup()
      The realm name will be the region and zone concatenated
      realm id will be mds of its name */
   if (realm->get_id().empty() && !master_region.empty() && !master_zone.empty()) {
+/** comment by hy 2020-03-11
+ * # 
+ */
     string new_realm_name = master_region + "." + master_zone.id;
     unsigned char md5[CEPH_CRYPTO_MD5_DIGESTSIZE];
     char md5_str[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
@@ -439,21 +511,33 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     buf_to_hex(md5, CEPH_CRYPTO_MD5_DIGESTSIZE, md5_str);
     string new_realm_id(md5_str);
     RGWRealm new_realm(new_realm_id,new_realm_name);
+/** comment by hy 2020-03-11
+ * # id 为其 md5值
+ */
     ret = new_realm.init(cct, sysobj_svc, false);
     if (ret < 0) {
       ldout(cct, 0) <<  __func__ << " Error initing new realm: " << cpp_strerror(-ret)  << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     ret = new_realm.create();
     if (ret < 0 && ret != -EEXIST) {
       ldout(cct, 0) <<  __func__ << " Error creating new realm: " << cpp_strerror(-ret)  << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     ret = new_realm.set_as_default();
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " Error setting realm as default: " << cpp_strerror(-ret)  << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     ret = realm->init(cct, sysobj_svc);
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " Error initing realm: " << cpp_strerror(-ret)  << dendl;
@@ -468,6 +552,10 @@ int RGWSI_Zone::replace_region_with_zonegroup()
 
   list<string>::iterator iter;
   /* create zonegroups */
+/** comment by hy 2020-03-11
+ * # regions zonegroup zone
+     ream 
+ */
   for (iter = regions.begin(); iter != regions.end(); ++iter)
   {
     ldout(cct, 0) << __func__ << " Converting  " << *iter << dendl;
@@ -492,18 +580,27 @@ int RGWSI_Zone::replace_region_with_zonegroup()
       ldout(cct, 0) << __func__ << " Setting default zone as master for default region" << dendl;
       zonegroup.master_zone = default_zone_name;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     ret = zonegroup.update();
     if (ret < 0 && ret != -EEXIST) {
       ldout(cct, 0) << __func__ << " failed to update zonegroup " << *iter << ": ret "<< ret << " " << cpp_strerror(-ret)
         << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     ret = zonegroup.update_name();
     if (ret < 0 && ret != -EEXIST) {
       ldout(cct, 0) << __func__ << " failed to update_name for zonegroup " << *iter << ": ret "<< ret << " " << cpp_strerror(-ret)
         << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     if (zonegroup.get_name() == default_region) {
       ret = zonegroup.set_as_default();
       if (ret < 0) {
@@ -512,11 +609,17 @@ int RGWSI_Zone::replace_region_with_zonegroup()
         return ret;
       }
     }
+/** comment by hy 2020-03-11
+ * # 
+ */
     for (auto iter = zonegroup.zones.begin(); iter != zonegroup.zones.end();
          ++iter) {
       ldout(cct, 0) << __func__ << " Converting zone" << iter->first << dendl;
       RGWZoneParams zoneparams(iter->first, iter->second.name);
       zoneparams.set_id(iter->first.id);
+/** comment by hy 2020-03-11
+ * # 
+ */
       zoneparams.realm_id = realm->get_id();
       ret = zoneparams.init(cct, sysobj_svc);
       if (ret < 0 && ret != -ENOENT) {
@@ -526,6 +629,9 @@ int RGWSI_Zone::replace_region_with_zonegroup()
         ldout(cct, 0) << __func__ << " zone is part of another cluster " << iter->first <<  " skipping " << dendl;
         continue;
       }
+/** comment by hy 2020-03-11
+ * # 
+ */
       zonegroup.realm_id = realm->get_id();
       ret = zoneparams.update();
       if (ret < 0 && ret != -EEXIST) {
@@ -539,6 +645,10 @@ int RGWSI_Zone::replace_region_with_zonegroup()
       }
     }
 
+/** comment by hy 2020-03-11
+ * # RGWPeriod::get_id
+     这个需要按照 ream 进行
+ */
     if (!current_period->get_id().empty()) {
       ret = current_period->add_zonegroup(zonegroup);
       if (ret < 0) {
@@ -548,17 +658,27 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     }
   }
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   if (!current_period->get_id().empty()) {
     ret = current_period->update();
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " failed to update new period: " << cpp_strerror(-ret) << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # RGWPeriod::store_info
+     加前缀 period
+ */
     ret = current_period->store_info(false);
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " failed to store new period: " << cpp_strerror(-ret) << dendl;
       return ret;
     }
+/** comment by hy 2020-03-11
+ * # RGWPeriod::reflect
+ */
     ret = current_period->reflect();
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " failed to update local objects: " << cpp_strerror(-ret) << dendl;
@@ -566,6 +686,9 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     }
   }
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   for (auto const& iter : regions) {
     RGWZoneGroup zonegroup(iter);
     int ret = zonegroup.init(cct, sysobj_svc, true, true);
@@ -812,6 +935,9 @@ int RGWSI_Zone::convert_regionmap()
     }
   }
 
+/** comment by hy 2020-03-12
+ * # 
+ */
   current_period->set_user_quota(zonegroupmap.user_quota);
   current_period->set_bucket_quota(zonegroupmap.bucket_quota);
 
@@ -1112,6 +1238,9 @@ int RGWSI_Zone::select_bucket_placement(const RGWUserInfo& user_info, const stri
                                         const rgw_placement_rule& placement_rule,
                                         rgw_placement_rule *pselected_rule, RGWZonePlacementInfo *rule_info)
 {
+/** comment by hy 2020-03-15
+ * # 指定 bucket 布局
+ */
   if (!zone_params->placement_pools.empty()) {
     return select_new_bucket_location(user_info, zonegroup_id, placement_rule,
                                       pselected_rule, rule_info);
@@ -1122,6 +1251,10 @@ int RGWSI_Zone::select_bucket_placement(const RGWUserInfo& user_info, const stri
   }
 
   if (rule_info) {
+/** comment by hy 2020-03-15
+ * # 设置bucket 数据存储布局 pool
+     设置 bucket 索引布局 pool
+ */
     return select_legacy_bucket_placement(rule_info);
   }
 
@@ -1135,11 +1268,17 @@ int RGWSI_Zone::select_legacy_bucket_placement(RGWZonePlacementInfo *rule_info)
   string pool_name;
   bool write_map = false;
 
+/** comment by hy 2020-03-15
+ * # .pools.avail 对象
+ */
   rgw_raw_obj obj(zone_params->domain_root, avail_pools);
 
   auto obj_ctx = sysobj_svc->init_obj_ctx();
   auto sysobj = obj_ctx.get_obj(obj);
 
+/** comment by hy 2020-03-15
+ * # 这个 .pools.avail 是一个 map
+ */
   int ret = sysobj.rop().read(&map_bl, null_yield);
   if (ret < 0) {
     goto read_omap;
@@ -1161,13 +1300,25 @@ read_omap:
 
   if (ret < 0 || m.empty()) {
     vector<rgw_pool> pools;
+/** comment by hy 2020-03-15
+ * # 前缀 rgw.buckets.data
+ */
     string s = string("default.") + default_storage_pool_suffix;
+/** comment by hy 2020-03-15
+ * # 变成 pool
+ */
     pools.push_back(rgw_pool(s));
     vector<int> retcodes;
     bufferlist bl;
+/** comment by hy 2020-03-15
+ * # 创建该 pool
+ */
     ret = rados_svc->pool().create(pools, &retcodes);
     if (ret < 0)
       return ret;
+/** comment by hy 2020-03-15
+ * # 从 .pool.avail 里面 获取 omap 信息
+ */
     ret = sysobj.omap().set(s, bl, null_yield);
     if (ret < 0)
       return ret;
@@ -1177,6 +1328,9 @@ read_omap:
   if (write_map) {
     bufferlist new_bl;
     encode(m, new_bl);
+/** comment by hy 2020-03-15
+ * # 
+ */
     ret = sysobj.wop().write(new_bl, null_yield);
     if (ret < 0) {
       ldout(cct, 0) << "WARNING: could not save avail pools map info ret=" << ret << dendl;
@@ -1187,13 +1341,23 @@ read_omap:
   if (m.size() > 1) {
     // choose a pool at random
     auto r = ceph::util::generate_random_number<size_t>(0, m.size() - 1);
+/** comment by hy 2020-03-15
+ * # 迭代器前进
+ */
     std::advance(miter, r);
   }
   pool_name = miter->first;
 
   rgw_pool pool = pool_name;
 
+/** comment by hy 2020-03-15
+ * # 设置 存储布局
+ */
   rule_info->storage_classes.set_storage_class(RGW_STORAGE_CLASS_STANDARD, &pool, nullptr);
+/** comment by hy 2020-03-15
+ * # 记录 数据 pool
+     记录 索引 pool
+ */
   rule_info->data_extra_pool = pool_name;
   rule_info->index_pool = pool_name;
   rule_info->index_type = RGWBIType_Normal;

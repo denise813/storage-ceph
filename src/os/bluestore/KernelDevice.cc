@@ -94,6 +94,9 @@ int KernelDevice::open(const string& p)
       r = -errno;
       break;
     }
+/** comment by hy 2020-04-22
+ * # 分别以fd_direct/fd_buffered方式打开块设备
+ */
     fd_directs[i] = fd;
 
     fd  = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
@@ -101,6 +104,9 @@ int KernelDevice::open(const string& p)
       r = -errno;
       break;
     }
+/** comment by hy 2020-04-22
+ * # 分别以fd_direct/fd_buffered方式打开块设备
+ */
     fd_buffereds[i] = fd;
   }
 
@@ -162,6 +168,9 @@ int KernelDevice::open(const string& p)
   // blksize doesn't strictly matter except that some file systems may
   // require a read/modify/write if we write something smaller than
   // it.
+/** comment by hy 2020-04-22
+ * # 读取block size等参数
+ */
   block_size = cct->_conf->bdev_block_size;
   if (block_size != (unsigned)st.st_blksize) {
     dout(1) << __func__ << " backing device/file reports st_blksize "
@@ -199,7 +208,9 @@ int KernelDevice::open(const string& p)
       _detect_vdo();
     }
   }
-
+/** comment by hy 2020-04-22
+ * # 如果是aio，初始化aio相关参数，并启动aio线程
+ */
   r = _aio_start();
   if (r < 0) {
     goto out_fail;
@@ -393,7 +404,9 @@ int KernelDevice::flush()
   // stable on disk: whichever thread sees the flag first will block
   // followers until the aio is stable.
   std::lock_guard l(flush_mutex);
-
+/** comment by hy 2020-04-24
+ * # 如果 io_since_flush 为false，则没有要sync的数据，直接退出
+ */
   bool expect = true;
   if (!io_since_flush.compare_exchange_strong(expect, false)) {
     dout(10) << __func__ << " no-op (no ios since last flush), flag is "
@@ -413,6 +426,9 @@ int KernelDevice::flush()
     _exit(1);
   }
   utime_t start = ceph_clock_now();
+/** comment by hy 2020-04-24
+ * # 调用 fdatasync 同步数据到磁盘
+ */
   int r = ::fdatasync(fd_directs[WRITE_LIFE_NOT_SET]);
   utime_t end = ceph_clock_now();
   utime_t dur = end - start;
@@ -511,6 +527,9 @@ void KernelDevice::_aio_thread()
     dout(40) << __func__ << " polling" << dendl;
     int max = cct->_conf->bdev_aio_reap_max;
     aio_t *aio[max];
+/** comment by hy 2020-04-22
+ * # 获取完成的aio 调用libaio相关的api，检查io是否完成
+ */
     int r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
 					 aio, max);
     if (r < 0) {
@@ -533,6 +552,9 @@ void KernelDevice::_aio_thread()
 	// that an earlier, racing flush() could observe and clear this
 	// flag, but that also ensures that the IO will be stable before the
 	// later flush() occurs.
+/** comment by hy 2020-04-24
+ * # 设置 io_since_flush 为true，等待元数据写完的时候一起做 fdatasync
+ */
 	io_since_flush.store(true);
 
 	long r = aio[i]->get_return_value();
@@ -582,6 +604,9 @@ void KernelDevice::_aio_thread()
 	// may free it.
 	if (ioc->priv) {
 	  if (--ioc->num_running == 0) {
+/** comment by hy 2020-04-22
+ * # 调用aio完成的回调函数
+ */
 	    aio_callback(aio_callback_priv, ioc->priv);
 	  }
 	} else {
@@ -634,6 +659,9 @@ void KernelDevice::_discard_thread()
   discard_cond.notify_all();
   while (true) {
     ceph_assert(discard_finishing.empty());
+/** comment by hy 2020-04-24
+ * # 如果没有需要做Discard的Extent就等待
+ */
     if (discard_queued.empty()) {
       if (discard_stop)
 	break;
@@ -646,6 +674,9 @@ void KernelDevice::_discard_thread()
       discard_running = true;
       l.unlock();
       dout(20) << __func__ << " finishing" << dendl;
+/** comment by hy 2020-04-24
+ * # 对需要做Discard的Extent依次调用discard函数
+ */
       for (auto p = discard_finishing.begin();p != discard_finishing.end(); ++p) {
 	discard(p.get_start(), p.get_len());
       }
@@ -669,6 +700,9 @@ int KernelDevice::queue_discard(interval_set<uint64_t> &to_release)
     return 0;
 
   std::lock_guard l(discard_lock);
+/** comment by hy 2020-04-24
+ * # 插入需要做Discard的Extent
+ */
   discard_queued.insert(to_release);
   discard_cond.notify_all();
   return 0;
@@ -756,6 +790,9 @@ void KernelDevice::aio_submit(IOContext *ioc)
   // move these aside, and get our end iterator position now, as the
   // aios might complete as soon as they are submitted and queue more
   // wal aio's.
+/** comment by hy 2020-04-22
+ * # 获取pending的aio
+ */
   list<aio_t>::iterator e = ioc->running_aios.begin();
   ioc->running_aios.splice(e, ioc->pending_aios);
 
@@ -776,6 +813,9 @@ void KernelDevice::aio_submit(IOContext *ioc)
 
   void *priv = static_cast<void*>(ioc);
   int r, retries = 0;
+/** comment by hy 2020-04-22
+ * # 批量提交aio
+ */
   r = io_queue->submit_batch(ioc->running_aios.begin(), e,
 			     pending, priv, &retries);
 
@@ -806,6 +846,9 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   auto o = off;
   size_t idx = 0;
   do {
+/** comment by hy 2020-02-05
+ * # 调用pwritev写入PageCache
+ */
     auto r = ::pwritev(choose_fd(buffered, write_hint),
       &iov[idx], iov.size() - idx, o);
 
@@ -834,8 +877,14 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   } while (left);
 
 #ifdef HAVE_SYNC_FILE_RANGE
+/** comment by hy 2020-02-05
+ * # 预防掉电
+ */
   if (buffered) {
     // initiate IO and wait till it completes
+/** comment by hy 2020-04-24
+ * # 强制数据落盘才返回
+ */
     auto r = ::sync_file_range(fd_buffereds[WRITE_LIFE_NOT_SET], off, len, SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER|SYNC_FILE_RANGE_WAIT_BEFORE);
     if (r < 0) {
       r = -errno;
@@ -904,6 +953,9 @@ int KernelDevice::aio_write(
   bl.hexdump(*_dout);
   *_dout << dendl;
 
+/** comment by hy 2020-02-05
+ * # 调试信息?
+ */
   _aio_log_start(ioc, off, len);
 
 #ifdef HAVE_LIBAIO
@@ -931,6 +983,9 @@ int KernelDevice::aio_write(
 	auto& aio = ioc->pending_aios.back();
 	bl.prepare_iov(&aio.iov);
 	aio.bl.claim_append(bl);
+/** comment by hy 2020-02-05
+ * # aio_t::pwritev
+ */
 	aio.pwritev(off, len);
 	dout(30) << aio << dendl;
 	dout(5) << __func__ << " 0x" << std::hex << off << "~" << len
@@ -946,11 +1001,20 @@ int KernelDevice::aio_write(
 	    tmp.substr_of(bl, prev_len, bl.length() - prev_len);
 	  }
 	  auto len = tmp.length();
+/** comment by hy 2020-04-22
+ * #  放入IOContext的pending队列，等待执行
+ */
 	  ioc->pending_aios.push_back(aio_t(ioc, choose_fd(false, write_hint)));
 	  ++ioc->num_pending;
+/** comment by hy 2020-04-22
+ * # 将待写入的数据准备在aio的buffer中
+ */
 	  auto& aio = ioc->pending_aios.back();
 	  tmp.prepare_iov(&aio.iov);
 	  aio.bl.claim_append(tmp);
+/** comment by hy 2020-04-22
+ * # 写buffer
+ */
 	  aio.pwritev(off + prev_len, len);
 	  dout(30) << aio << dendl;
 	  dout(5) << __func__ << " 0x" << std::hex << off + prev_len

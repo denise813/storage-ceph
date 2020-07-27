@@ -12,8 +12,17 @@
 
 class bluefs_extent_t {
 public:
+/** comment by hy 2020-02-27
+ * # 逻辑段起始地址
+ */
   uint64_t offset = 0;
+/** comment by hy 2020-02-27
+ * # 逻辑段长度
+ */
   uint32_t length = 0;
+/** comment by hy 2020-04-22
+ * # 属于哪个block device
+ */
   uint8_t bdev;
 
   bluefs_extent_t(uint8_t b = 0, uint64_t o = 0, uint32_t l = 0)
@@ -36,16 +45,30 @@ WRITE_CLASS_DENC(bluefs_extent_t)
 ostream& operator<<(ostream& out, const bluefs_extent_t& e);
 
 struct bluefs_fnode_t {
+/** comment by hy 2020-02-27
+ * # 唯一标识
+ */
   uint64_t ino;
+/** comment by hy 2020-02-27
+ * # 文件大小
+ */
   uint64_t size;
+/** comment by hy 2020-02-27
+ * # 修改时间
+ */
   utime_t mtime;
   uint8_t __unused__; // was prefer_bdev
+/** comment by hy 2020-02-27
+ * # 磁盘上的物理段集合
+ */
   mempool::bluefs::vector<bluefs_extent_t> extents;
 
   // precalculated logical offsets for extents vector entries
   // allows fast lookup for extent index by the offset value via upper_bound()
   mempool::bluefs::vector<uint64_t> extents_index;
-
+/** comment by hy 2020-04-22
+ * # 文件实际占用的空间大小，extents的length之和。应该是小于等于size
+ */
   uint64_t allocated;
 
   bluefs_fnode_t() : ino(0), size(0), __unused__(0), allocated(0) {}
@@ -154,11 +177,25 @@ struct bluefs_layout_t {
 WRITE_CLASS_ENCODER(bluefs_layout_t)
 
 struct bluefs_super_t {
+/** comment by hy 2020-04-22
+ * # 唯一的uuid
+ */
   uuid_d uuid;      ///< unique to this bluefs instance
+/** comment by hy 2020-02-27
+ * # osd 的 id
+ */
   uuid_d osd_uuid;  ///< matches the osd that owns us
+/** comment by hy 2020-02-27
+ * # 超级块当前版本
+ */
   uint64_t version;
+/** comment by hy 2020-02-27
+ * # DB/WAL 设备块大小 固定为4K
+ */
   uint32_t block_size;
-
+/** comment by hy 2020-02-27
+ * # 日志文件对应的fnode
+ */
   bluefs_fnode_t log_fnode;
 
   std::optional<bluefs_layout_t> memorized_layout;
@@ -185,20 +222,41 @@ struct bluefs_transaction_t {
   typedef enum {
     OP_NONE = 0,
     OP_INIT,        ///< initial (empty) file system marker
+/** comment by hy 2020-04-22
+ * # 给文件分配和释放空间
+ */
     OP_ALLOC_ADD,   ///< add extent to available block storage (extent)
     OP_ALLOC_RM,    ///< remove extent from available block storage (extent)
+/** comment by hy 2020-04-22
+ * # 创建和删除目录项
+ */
     OP_DIR_LINK,    ///< (re)set a dir entry (dirname, filename, ino)
     OP_DIR_UNLINK,  ///< remove a dir entry (dirname, filename)
+/** comment by hy 2020-04-22
+ * # 创建和删除目录
+ */
     OP_DIR_CREATE,  ///< create a dir (dirname)
     OP_DIR_REMOVE,  ///< remove a dir (dirname)
+/** comment by hy 2020-04-22
+ * # 文件更新
+ */
     OP_FILE_UPDATE, ///< set/update file metadata (file)
     OP_FILE_REMOVE, ///< remove file (ino)
+/** comment by hy 2020-04-22
+ * # bluefs日志文件的compaction操作
+ */
     OP_JUMP,        ///< jump the seq # and offset
     OP_JUMP_SEQ,    ///< jump the seq #
   } op_t;
 
   uuid_d uuid;          ///< fs uuid
+/** comment by hy 2020-02-27
+ * # 全局唯一序号
+ */
   uint64_t seq;         ///< sequence number
+/** comment by hy 2020-02-27
+ * # 编码后的日志事务条目
+ */
   bufferlist op_bl;     ///< encoded transaction ops
 
   bluefs_transaction_t() : seq(0) {}

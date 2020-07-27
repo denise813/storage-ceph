@@ -609,6 +609,9 @@ int RGWSI_User_RADOS::cls_user_update_buckets(rgw_raw_obj& obj, list<cls_user_bu
   }
 
   librados::ObjectWriteOperation op;
+/** comment by hy 2020-03-09
+ * # 远程调用
+ */
   cls_user_set_buckets(op, entries, add);
   r = rados_obj.operate(&op, null_yield);
   if (r < 0) {
@@ -660,6 +663,9 @@ int RGWSI_User_RADOS::add_bucket(RGWSI_MetaBackend::Context *ctx,
     new_bucket.creation_time = creation_time;
 
   rgw_raw_obj obj = get_buckets_obj(user);
+/** comment by hy 2020-03-09
+ * # 向osd 发送 call 消息
+ */
   ret = cls_user_add_bucket(obj, new_bucket);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: error adding bucket to user: ret=" << ret << dendl;

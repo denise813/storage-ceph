@@ -235,22 +235,49 @@ void *RGWLC::LCWorker::entry() {
   return NULL;
 }
 
+/*****************************************************************************
+ * 函 数 名  : RGWLC.initialize
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月5日
+ * 函数功能  : lifecycle初始化
+                 初始化lifecycle 的指定index 对象名称
+                 生成lifecycle 指定的cookie
+ * 输入参数  : CephContext *_cct                 
+               rgw::sal::RGWRadosStore *_store   
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void RGWLC::initialize(CephContext *_cct, rgw::sal::RGWRadosStore *_store) {
   cct = _cct;
   store = _store;
   max_objs = cct->_conf->rgw_lc_max_objs;
+/** comment by hy 2020-03-05
+ * # lifecycle 最大迭代数 7877
+ */
   if (max_objs > HASH_PRIME)
     max_objs = HASH_PRIME;
 
   obj_names = new string[max_objs];
-
+/** comment by hy 2020-03-05
+ * # 生成对应的对象名称
+ */
   for (int i = 0; i < max_objs; i++) {
     obj_names[i] = lc_oid_prefix;
+/** comment by hy 2020-03-05
+ * # 这里对此一步
+ */
     char buf[32];
     snprintf(buf, 32, ".%d", i);
     obj_names[i].append(buf);
   }
 
+/** comment by hy 2020-03-05
+ * # 生成 cookie buffer
+     随机选择映射表中的16个字符
+ */
 #define COOKIE_LEN 16
   char cookie_buf[COOKIE_LEN + 1];
   gen_rand_alphanumeric(cct, cookie_buf, sizeof(cookie_buf) - 1);

@@ -658,6 +658,9 @@ int RGWAccessKeyPool::generate_key(RGWUserAdminOpState& op_state, std::string *e
 
     do {
       int id_buf_size = sizeof(public_id_buf);
+/** comment by hy 2020-02-10
+ * # 产生密钥
+ */
       gen_rand_alphanumeric_upper(g_ceph_context, public_id_buf, id_buf_size);
       id = public_id_buf;
       if (!validate_access_key(id))
@@ -1376,11 +1379,20 @@ RGWUser::RGWUser() : caps(this), keys(this), subusers(this)
 
 int RGWUser::init(rgw::sal::RGWRadosStore *storage, RGWUserAdminOpState& op_state)
 {
+/** comment by hy 2020-02-10
+ * # 清理用户数据
+ */
   init_default();
+/** comment by hy 2020-02-10
+ * # 生成用户访问秘钥处理者,权限处理者,子用户处理者
+ */
   int ret = init_storage(storage);
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-02-10
+ * # 生成用户数据
+ */
   ret = init(op_state);
   if (ret < 0)
     return ret;
@@ -1551,6 +1563,9 @@ int RGWUser::check_op(RGWUserAdminOpState& op_state, std::string *err_msg)
     return -EINVAL;
   }
 
+/** comment by hy 2020-03-15
+ * # 名称检查
+ */
   int ret = rgw_validate_tenant_name(op_id.tenant);
   if (ret) {
     set_err_msg(err_msg,
@@ -1731,6 +1746,9 @@ int RGWUser::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg)
 
 		
   // set the user info
+/** comment by hy 2020-02-10
+ * # 用户信息
+ */
   user_id = uid;
   user_info.user_id = user_id;
   user_info.display_name = display_name;
@@ -1787,6 +1805,9 @@ int RGWUser::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg)
   op_state.set_populated();
 
   // update the helper objects
+/** comment by hy 2020-02-10
+ * # 用户信息
+ */
   ret = init_members(op_state);
   if (ret < 0) {
     set_err_msg(err_msg, "unable to initialize user");
@@ -1795,6 +1816,9 @@ int RGWUser::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg)
 
   // see if we need to add an access key
   if (op_state.has_key_op()) {
+/** comment by hy 2020-02-10
+ * # 用户密钥,权限都在 用户pool中
+ */
     ret = keys.add(op_state, &subprocess_msg, defer_user_update);
     if (ret < 0) {
       set_err_msg(err_msg, "unable to create access key, " + subprocess_msg);
@@ -1824,12 +1848,18 @@ int RGWUser::add(RGWUserAdminOpState& op_state, std::string *err_msg)
   std::string subprocess_msg;
   int ret;
 
+/** comment by hy 2020-02-10
+ * # 检查用户操作参数
+ */
   ret = check_op(op_state, &subprocess_msg);
   if (ret < 0) {
     set_err_msg(err_msg, "unable to parse parameters, " + subprocess_msg);
     return ret;
   }
 
+/** comment by hy 2020-02-10
+ * # 创建s3对象放到指定的pool下
+ */
   ret = execute_add(op_state, &subprocess_msg);
   if (ret < 0) {
     set_err_msg(err_msg, "unable to create user, " + subprocess_msg);
@@ -2143,6 +2173,9 @@ int RGWUser::list(RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher)
     op_state.max_entries = 1000;
   }
 
+/** comment by hy 2020-07-22
+ * # meta_mgr = RGWMetadataManager
+ */
   auto meta_mgr = store->ctl()->meta.mgr;
 
   int ret = meta_mgr->list_keys_init(metadata_key, op_state.marker, &handle);
@@ -2803,6 +2836,9 @@ int RGWUserCtl::add_bucket(const rgw_user& user,
 
 {
   return be_handler->call([&](RGWSI_MetaBackend_Handler::Op *op) {
+/** comment by hy 2020-03-15
+ * # RGWSI_User_RADOS::add_bucket
+ */
     return svc.user->add_bucket(op->ctx(), user, bucket, creation_time);
   });
 }

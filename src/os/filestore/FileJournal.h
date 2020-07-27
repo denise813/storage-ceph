@@ -47,19 +47,49 @@ class FileJournal :
   public md_config_obs_t {
 public:
   /// Protected by finisher_lock
+/** comment by hy 2020-02-22
+ * # 准备提交的日志
+ */
   struct completion_item {
+/** comment by hy 2020-02-22
+ * # 日志序号
+ */
     uint64_t seq;
+/** comment by hy 2020-02-22
+ * # 完成后的回调
+ */
     Context *finish;
+/** comment by hy 2020-02-22
+ * # 提交时间
+ */
     utime_t start;
+/** comment by hy 2020-02-22
+ * # 跟踪信息
+ */
     TrackedOpRef tracked_op;
     completion_item(uint64_t o, Context *c, utime_t s, TrackedOpRef opref)
       : seq(o), finish(c), start(s), tracked_op(opref) {}
     completion_item() : seq(0), finish(0), start(0) {}
   };
+/** comment by hy 2020-02-22
+ * # 一条日志提交的内容
+ */
   struct write_item {
+/** comment by hy 2020-02-22
+ * # 日志序号
+ */
     uint64_t seq;
+/** comment by hy 2020-02-22
+ * # 日志内容
+ */
     bufferlist bl;
+/** comment by hy 2020-02-22
+ * # 日志的原始长度
+ */
     uint32_t orig_len;
+/** comment by hy 2020-02-22
+ * # 操作日志的跟踪记录
+ */
     TrackedOpRef tracked_op;
     ZTracer::Trace trace;
     write_item(uint64_t s, bufferlist& b, int ol, TrackedOpRef opref) :
@@ -76,6 +106,9 @@ public:
 
   ceph::mutex writeq_lock = ceph::make_mutex("FileJournal::writeq_lock");
   ceph::condition_variable writeq_cond;
+/** comment by hy 2020-02-22
+ * # 提交的日志
+ */
   list<write_item> writeq;
   bool writeq_empty();
   write_item &peek_write();
@@ -85,6 +118,9 @@ public:
 
   ceph::mutex completions_lock =
     ceph::make_mutex("FileJournal::completions_lock");
+/** comment by hy 2020-02-22
+ * # 准备提交的日志
+ */
   list<completion_item> completions;
   bool completions_empty() {
     std::lock_guard l{completions_lock};
@@ -126,11 +162,29 @@ public:
     };
 
     uint64_t flags;
+/** comment by hy 2020-02-22
+ * # 文件系统的id
+ */
     uuid_d fsid;
+/** comment by hy 2020-02-22
+ * # 系统的块大小
+ */
     __u32 block_size;
+/** comment by hy 2020-02-22
+ * # 对齐
+ */
     __u32 alignment;
+/** comment by hy 2020-02-22
+ * # 日志的最大空间
+ */
     int64_t max_size;   // max size of journal ring buffer
+/** comment by hy 2020-02-22
+ * # 日志事务的起始时间
+ */
     int64_t start;      // offset of first entry
+/** comment by hy 2020-02-22
+ * # 已经提交的日志的序号 = journaled_seq + 1
+ */
     uint64_t committed_up_to; // committed up to
 
     /**
@@ -147,6 +201,9 @@ public:
      * if start_seq > committed_up_to because the entry would have
      * a sequence >= start_seq and therefore > committed_up_to.
      */
+/** comment by hy 2020-02-22
+ * # 日志起始 = last_commited_seq + 1,可以理解为第一条有效执行日志,
+ */
     uint64_t start_seq;
 
     header_t() :
@@ -248,7 +305,13 @@ private:
   size_t block_size;
   bool directio, aio, force_aio;
   bool must_write_header;
+/** comment by hy 2020-02-22
+ * # 日志写的开始位置
+ */
   off64_t write_pos;      // byte where the next entry to be written will go
+/** comment by hy 2020-02-22
+ * # 日志读的开始位置
+ */
   off64_t read_pos;       //
   bool discard;	  //for block journal whether support discard
 
@@ -256,11 +319,26 @@ private:
   /// state associated with an in-flight aio request
   /// Protected by aio_lock
   struct aio_info {
+/** comment by hy 2020-02-22
+ * # 异步提交块
+ */
     struct iocb iocb {};
+/** comment by hy 2020-02-22
+ * # aio的数据
+ */
     bufferlist bl;
+/** comment by hy 2020-02-22
+ * # 异步aio方式的数据
+ */
     struct iovec *iov;
+/** comment by hy 2020-02-22
+ * # 完成标识
+ */
     bool done;
     uint64_t off, len;    ///< these are for debug only
+/** comment by hy 2020-02-22
+ * # aio 序号
+ */
     uint64_t seq;         ///< seq number to complete on aio completion, if non-zero
 
     aio_info(bufferlist& b, uint64_t o, uint64_t s)
@@ -274,7 +352,13 @@ private:
   ceph::mutex aio_lock = ceph::make_mutex("FileJournal::aio_lock");
   ceph::condition_variable aio_cond;
   ceph::condition_variable write_finish_cond;
+/** comment by hy 2020-02-23
+ * # 异步io上下文
+ */
   io_context_t aio_ctx = 0;
+/** comment by hy 2020-02-23
+ * # 已经提交的aio请求队列
+ */
   list<aio_info> aio_queue;
   int aio_num = 0, aio_bytes = 0;
   uint64_t aio_write_queue_ops = 0;
@@ -282,6 +366,9 @@ private:
   /// End protected by aio_lock
 #endif
 
+/** comment by hy 2020-02-22
+ * # 最后同步完成的序号,可以理解为trim的日志序号
+ */
   uint64_t last_committed_seq;
   uint64_t journaled_since_start;
 
@@ -304,7 +391,13 @@ private:
   int fd;
 
   // in journal
+/** comment by hy 2020-02-22
+ * # 用于记录日志在日志文件中的结束偏移,便于删除
+ */
   deque<pair<uint64_t, off64_t> > journalq;  // track seq offsets, so we can trim later.
+/** comment by hy 2020-02-22
+ * # 本次正在写入的最大序号
+ */
   uint64_t writing_seq;
 
 
@@ -329,6 +422,9 @@ private:
 
   // write thread
   ceph::mutex write_lock = ceph::make_mutex("FileJournal::write_lock");
+/** comment by hy 2020-02-22
+ * # 写线程停止标识
+ */
   bool write_stop;
   bool aio_stop;
 

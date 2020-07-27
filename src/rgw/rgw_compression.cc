@@ -67,6 +67,9 @@ int RGWPutObj_Compress::process(bufferlist&& in, uint64_t logical_offset)
     }
     // end of compression stuff
   }
+/** comment by hy 2020-03-19
+ * # 回溯
+ */
   return Pipe::process(std::move(out), logical_offset);
 }
 

@@ -133,6 +133,9 @@ public:
 
   void insert_user(utime_t& timestamp, const rgw_user& user, rgw_usage_log_entry& entry) {
     lock.lock();
+/** comment by hy 2020-03-07
+ * # 转化未小时
+ */
     if (timestamp.sec() > round_timestamp + 3600)
       recalc_round_timestamp(timestamp);
     entry.epoch = round_timestamp.sec();
@@ -140,13 +143,22 @@ public:
     string u = user.to_str();
     rgw_user_bucket ub(u, entry.bucket);
     real_time rt = round_timestamp.to_real_time();
+/** comment by hy 2020-03-07
+ * # 插入 RGWUsageBatch 对象
+ */
     usage_map[ub].insert(rt, entry, &account);
     if (account)
       num_entries++;
+/** comment by hy 2020-03-07
+ * # 开启日志功能
+ */
     bool need_flush = (num_entries > cct->_conf->rgw_usage_log_flush_threshold);
     lock.unlock();
     if (need_flush) {
       std::lock_guard l{timer_lock};
+/** comment by hy 2020-03-07
+ * # 放入对应的log pool中
+ */
       flush();
     }
   }
@@ -232,7 +244,9 @@ static void log_usage(struct req_state *s, const string& op_name)
   entry.add(op_name, data);
 
   utime_t ts = ceph_clock_now();
-
+/** comment by hy 2020-03-07
+ * # 咦计费则的名义处理,默认计费者就是所有者
+ */
   usage_logger->insert(ts, entry);
 }
 
@@ -320,6 +334,10 @@ int rgw_log_op(RGWRados *store, RGWREST* const rest, struct req_state *s,
   struct rgw_log_entry entry;
   string bucket_id;
 
+/** comment by hy 2020-03-07
+ * # 向 UsageLogger 实例输出信息
+     这里与计费相关
+ */
   if (s->enable_usage_log)
     log_usage(s, op_name);
 
@@ -339,6 +357,9 @@ int rgw_log_op(RGWRados *store, RGWREST* const rest, struct req_state *s,
   } else {
     bucket_id = s->bucket.bucket_id;
   }
+/** comment by hy 2020-03-07
+ * # 
+ */
   entry.bucket = rgw_make_bucket_entry_name(s->bucket_tenant, s->bucket_name);
 
   if (check_utf8(entry.bucket.c_str(), entry.bucket.size()) != 0) {
@@ -440,13 +461,17 @@ int rgw_log_op(RGWRados *store, RGWREST* const rest, struct req_state *s,
     localtime_r(&t, &bdt);
 
   int ret = 0;
-
+/** comment by hy 2020-03-07
+ * # log pool 相关流程
+ */
   if (s->cct->_conf->rgw_ops_log_rados) {
     string oid = render_log_object_name(s->cct->_conf->rgw_log_object_name, &bdt,
 				        s->bucket.bucket_id, entry.bucket);
 
     rgw_raw_obj obj(store->svc.zone->get_zone_params().log_pool, oid);
-
+/** comment by hy 2020-03-07
+ * # 应用信息
+ */
     ret = store->append_async(obj, bl.length(), bl);
     if (ret == -ENOENT) {
       ret = store->create_pool(store->svc.zone->get_zone_params().log_pool);

@@ -16,10 +16,25 @@
   */
 
 struct SnapSetContext {
+/** comment by hy 2020-02-22
+ * # 对象
+ */
   hobject_t oid;
+/** comment by hy 2020-02-22
+ * # 对象快照相关记录
+ */
   SnapSet snapset;
+/** comment by hy 2020-02-22
+* # 本结构的引用计数
+*/
   int ref;
+/** comment by hy 2020-02-22
+ * # 时候在 snapset cache中记录
+ */
   bool registered : 1;
+/** comment by hy 2020-02-22
+ * # snapset 是否已存在
+ */
   bool exists : 1;
 
   explicit SnapSetContext(const hobject_t& o) :
@@ -29,10 +44,18 @@ class ObjectContext;
 typedef std::shared_ptr<ObjectContext> ObjectContextRef;
 
 struct ObjectContext {
+/** comment by hy 2020-02-22
+ * # 描述对象信息
+ */
   ObjectState obs;
-
+/** comment by hy 2020-02-22
+ * # 快照上下文,没有则为空
+ */
   SnapSetContext *ssc;  // may be null
-
+/** comment by hy 2020-02-22
+ * # 析构函数
+     = C_PG_ObjectContext
+ */
   Context *destructor_callback;
 
 public:
@@ -41,8 +64,13 @@ public:
   map<pair<uint64_t, entity_name_t>, WatchRef> watchers;
 
   // attr cache
+/** comment by hy 2020-02-27
+ * # 属性缓存
+ */
   map<string, bufferlist> attr_cache;
-
+/** comment by hy 2020-02-22
+ * # 实现对象的读写锁
+ */
   RWState rwstate;
   std::list<OpRequestRef> waiters;  ///< ops waiting on state change
   bool get_read(OpRequestRef& op) {

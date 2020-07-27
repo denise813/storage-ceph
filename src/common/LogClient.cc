@@ -247,6 +247,9 @@ ceph::ref_t<Message> LogClient::get_mon_log_message(bool flush)
     // reset session
     last_log_sent = log_queue.front().seq;
   }
+/** comment by hy 2020-01-16
+ * # 包装 推送log信息的消息
+ */
   return _get_mon_log_message();
 }
 
@@ -272,6 +275,10 @@ ceph::ref_t<Message> LogClient::_get_mon_log_message()
   // limit entries per message
   unsigned num_unsent = last_log - last_log_sent;
   unsigned num_send;
+/** comment by hy 2020-01-16
+ * # 按照指定一条消息包装的log数量进行打包
+     如果没有指定则全部发动出去
+ */
   if (cct->_conf->mon_client_max_log_entries_per_message > 0)
     num_send = std::min(num_unsent, (unsigned)cct->_conf->mon_client_max_log_entries_per_message);
   else
@@ -284,10 +291,16 @@ ceph::ref_t<Message> LogClient::_get_mon_log_message()
   ceph_assert(num_unsent <= log_queue.size());
   std::deque<LogEntry>::iterator p = log_queue.begin();
   std::deque<LogEntry> o;
+/** comment by hy 2020-01-16
+ * # 跳过上一次已经发送完成的log 实例
+ */
   while (p->seq <= last_log_sent) {
     ++p;
     ceph_assert(p != log_queue.end());
   }
+/** comment by hy 2020-01-16
+ * # 从 log_queue 获取 num_send 未发送的log信息
+ */
   while (num_send--) {
     ceph_assert(p != log_queue.end());
     o.push_back(*p);
@@ -295,7 +308,9 @@ ceph::ref_t<Message> LogClient::_get_mon_log_message()
     ldout(cct,10) << " will send " << *p << dendl;
     ++p;
   }
-  
+/** comment by hy 2020-01-16
+ * # 包装log推送消息
+ */
   return ceph::make_message<MLog>(monmap->get_fsid(),
 				  std::move(o));
 }

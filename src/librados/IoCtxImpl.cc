@@ -592,16 +592,40 @@ int librados::IoCtxImpl::create(const object_t& oid, bool exclusive)
   return pop;
 }
 
+/*****************************************************************************
+ * 函 数 名  : librados.IoCtxImpl.write
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 客户端向rados系统写对象数据
+ * 输入参数  : const object_t& oid  对象信息
+               bufferlist& bl       对象数据
+               size_t len           数据大小
+               uint64_t off         对象偏移
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int librados::IoCtxImpl::write(const object_t& oid, bufferlist& bl,
 			       size_t len, uint64_t off)
 {
   if (len > UINT_MAX/2)
     return -E2BIG;
   ::ObjectOperation op;
+/** comment by hy 2020-01-28
+ * # 核查版本
+ */
   prepare_assert_ops(&op);
   bufferlist mybl;
   mybl.substr_of(bl, 0, len);
+/** comment by hy 2020-02-18
+ * # 封装写相关参数
+ */
   op.write(off, mybl);
+/** comment by hy 2020-02-18
+ * # 向rados发送数据
+ */
   return operate(oid, &op, NULL);
 }
 
@@ -622,6 +646,9 @@ int librados::IoCtxImpl::write_full(const object_t& oid, bufferlist& bl)
   if (bl.length() > UINT_MAX/2)
     return -E2BIG;
   ::ObjectOperation op;
+/** comment by hy 2020-01-21
+ * # 版本断言
+ */
   prepare_assert_ops(&op);
   op.write_full(bl);
   return operate(oid, &op, NULL);
@@ -645,6 +672,9 @@ int librados::IoCtxImpl::writesame(const object_t& oid, bufferlist& bl,
 int librados::IoCtxImpl::operate(const object_t& oid, ::ObjectOperation *o,
 				 ceph::real_time *pmtime, int flags)
 {
+/** comment by hy 2020-02-18
+ * # 设置更新时间
+ */
   ceph::real_time ut = (pmtime ? *pmtime :
     ceph::real_clock::now());
 
@@ -666,11 +696,21 @@ int librados::IoCtxImpl::operate(const object_t& oid, ::ObjectOperation *o,
   int op = o->ops[0].op.op;
   ldout(client->cct, 10) << ceph_osd_op_name(op) << " oid=" << oid
 			 << " nspace=" << oloc.nspace << dendl;
+/** comment by hy 2020-01-28
+ * # 将 ObjectOperation 转化为 Objecter::Op
+     并添加object_locator_t 相关的pool信息
+     便于发送消息
+ */
   Objecter::Op *objecter_op = objecter->prepare_mutate_op(oid, oloc,
 							  *o, snapc, ut, flags,
 							  oncommit, &ver);
+/** comment by hy 2020-02-18
+ * # 发送消息
+ */
   objecter->op_submit(objecter_op);
-
+/** comment by hy 2020-02-18
+ * # 等待完成,有接收到的消息触发条件变量
+ */
   {
     std::unique_lock l{mylock};
     cond.wait(l, [&done] { return done;});
@@ -688,6 +728,9 @@ int librados::IoCtxImpl::operate_read(const object_t& oid,
 				      bufferlist *pbl,
 				      int flags)
 {
+/** comment by hy 2020-01-13
+ * # 没有需要执行的操作
+ */
   if (!o->size())
     return 0;
 
@@ -698,12 +741,20 @@ int librados::IoCtxImpl::operate_read(const object_t& oid,
   version_t ver;
 
   Context *onack = new C_SafeCond(mylock, cond, &done, &r);
-
+/** comment by hy 2020-01-13
+ * # 获取操作码
+ */
   int op = o->ops[0].op.op;
   ldout(client->cct, 10) << ceph_osd_op_name(op) << " oid=" << oid << " nspace=" << oloc.nspace << dendl;
+/** comment by hy 2020-03-11
+ * # 再度上包装为读请求
+ */
   Objecter::Op *objecter_op = objecter->prepare_read_op(oid, oloc,
 	                                      *o, snap_seq, pbl, flags,
 	                                      onack, &ver);
+/** comment by hy 2020-03-11
+ * # 发出去
+ */
   objecter->op_submit(objecter_op);
 
   {
@@ -713,6 +764,9 @@ int librados::IoCtxImpl::operate_read(const object_t& oid,
   ldout(client->cct, 10) << "Objecter returned from "
 	<< ceph_osd_op_name(op) << " r=" << r << dendl;
 
+/** comment by hy 2020-03-11
+ * # 等候对应的版本,别读到老请求
+ */
   set_sync_op_version(ver);
 
   return r;
@@ -1365,17 +1419,33 @@ int librados::IoCtxImpl::aio_exec(const object_t& oid, AioCompletionImpl *c,
 int librados::IoCtxImpl::read(const object_t& oid,
 			      bufferlist& bl, size_t len, uint64_t off)
 {
+/** comment by hy 2020-01-13
+ * # 参数判断 INT_MAX = +2^7
+ */
   if (len > (size_t) INT_MAX)
     return -EDOM;
   OID_EVENT_TRACE(oid.name.c_str(), "RADOS_READ_OP_BEGIN");
 
+/** comment by hy 2020-01-13
+ * # 如果需要检查版本,将在操作中添加检查版本 (CEPH_OSD_OP_ASSERT_VER) op
+ 		注意这里 ObjectOperation 是全局不带librados命名空间
+ */
   ::ObjectOperation rd;
   prepare_assert_ops(&rd);
+/** comment by hy 2020-01-13
+ * # 包装读取启动
+ */
   rd.read(off, len, &bl, NULL, NULL);
+/** comment by hy 2020-01-13
+ * #执行读取 
+ */
   int r = operate_read(oid, &rd, &bl);
   if (r < 0)
     return r;
 
+/** comment by hy 2020-01-13
+ * # 成功,但是读到末尾
+ */
   if (bl.length() < len) {
     ldout(client->cct, 10) << "Returned length " << bl.length()
 	     << " less than original length "<< len << dendl;
@@ -1636,19 +1706,36 @@ int librados::IoCtxImpl::watch(const object_t& oid, uint64_t *handle,
   version_t objver;
   C_SaferCond onfinish;
 
+/** comment by hy 2020-04-23
+ * # new一个LingerOp对象，并记录在objecter的map/set中
+ */
   Objecter::LingerOp *linger_op = objecter->linger_register(oid, oloc, 0);
+/** comment by hy 2020-04-23
+ * # cookie就是刚才new的LingerOp的地址转换为int64
+ */
   *handle = linger_op->get_cookie();
+/** comment by hy 2020-04-23
+ * # ctx为NULL，废弃的参数, ctx2为ImageWatcher类的成员: m_watch_ctx
+ */
   linger_op->watch_context = new WatchInfo(this,
 					   oid, ctx, ctx2, internal);
 
   prepare_assert_ops(&wr);
+/** comment by hy 2020-04-23
+ * # 给wr增加一个watch操作，op的类型是：CEPH_OSD_WATCH_OP_WATCH
+ */
   wr.watch(*handle, CEPH_OSD_WATCH_OP_WATCH, timeout);
   bufferlist bl;
+/** comment by hy 2020-04-23
+ * # 请求objecter发送
+ */
   objecter->linger_watch(linger_op, wr,
 			 snapc, ceph::real_clock::now(), bl,
 			 &onfinish,
 			 &objver);
-
+/** comment by hy 2020-04-23
+ * # 等待回调
+ */
   int r = onfinish.wait();
 
   set_sync_op_version(objver);
@@ -1680,6 +1767,9 @@ int librados::IoCtxImpl::aio_watch(const object_t& oid,
 {
   Objecter::LingerOp *linger_op = objecter->linger_register(oid, oloc, 0);
   c->io = this;
+/** comment by hy 2020-02-19
+ * # c = C_RegisterWatch
+ */
   Context *oncomplete = new C_aio_linger_Complete(c, linger_op, false);
 
   ::ObjectOperation wr;
@@ -1692,6 +1782,9 @@ int librados::IoCtxImpl::aio_watch(const object_t& oid,
   objecter->linger_watch(linger_op, wr,
                          snapc, ceph::real_clock::now(), bl,
                          oncomplete, &c->objver);
+/** comment by hy 2020-02-19
+ * # 完成后 将 C_RegisterWatch->finish 函数 让其完成操作完成队列中
+ */
 
   return 0;
 }
@@ -1744,6 +1837,9 @@ int librados::IoCtxImpl::aio_unwatch(uint64_t cookie, AioCompletionImpl *c)
   ::ObjectOperation wr;
   prepare_assert_ops(&wr);
   wr.watch(cookie, CEPH_OSD_WATCH_OP_UNWATCH);
+/** comment by hy 2020-03-21
+ * # 
+ */
   objecter->mutate(linger_op->target.base_oid, oloc, wr,
 		   snapc, ceph::real_clock::now(), 0,
 		   oncomplete, &c->objver);
@@ -1776,11 +1872,17 @@ int librados::IoCtxImpl::notify(const object_t& oid, bufferlist& bl,
   // Issue RADOS op
   C_SaferCond onack;
   version_t objver;
+/** comment by hy 2020-04-23
+ * # allback当操作成功并收到OP回包后会回调
+ */
   objecter->linger_notify(linger_op,
 			  rd, snap_seq, inbl, NULL,
 			  &onack, &objver);
 
   ldout(client->cct, 10) << __func__ << " issued linger op " << linger_op << dendl;
+/** comment by hy 2020-04-23
+ * # 等待OP成功执行
+ */
   int r = onack.wait();
   ldout(client->cct, 10) << __func__ << " linger op " << linger_op
 			 << " acked (" << r << ")" << dendl;

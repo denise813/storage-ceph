@@ -192,9 +192,19 @@ void ParallelPGMapper::queue(
   }
   // no input pgs, load all from map
   for (auto& p : job->osdmap->get_pools()) {
+/** comment by hy 2020-01-27
+ * # 每个pool下的pgs按照预定的数进行消息封装
+ */
     for (unsigned ps = 0; ps < p.second.get_pg_num(); ps += pgs_per_item) {
       unsigned ps_end = std::min(ps + pgs_per_item, p.second.get_pg_num());
+/** comment by hy 2020-01-27
+ * # 设置引用计数
+         job = MappingJob
+ */
       job->start_one();
+/** comment by hy 2020-01-27
+ * # ParallelPGMapper::WQ::_process
+ */
       wq.queue(new Item(job, p.first, ps, ps_end));
       ldout(cct, 20) << __func__ << " " << job << " " << p.first << " [" << ps
 		     << "," << ps_end << ")" << dendl;

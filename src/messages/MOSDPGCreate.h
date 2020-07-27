@@ -29,6 +29,9 @@ public:
   static constexpr int COMPAT_VERSION = 3;
 
   version_t          epoch = 0;
+/** comment by hy 2020-02-23
+ * # 要创建的pg列表
+ */
   map<pg_t,pg_create_t> mkpg;
   map<pg_t,utime_t> ctimes;
 

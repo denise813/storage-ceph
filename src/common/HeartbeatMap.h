@@ -43,6 +43,9 @@ struct heartbeat_handle_d {
   // TODO: use atomic<time_point>, once we can ditch GCC 4.8
   std::atomic<unsigned> timeout = { 0 }, suicide_timeout = { 0 };
   time_t grace, suicide_grace;
+/** comment by hy 2020-04-24
+ * # 超过grace时间，表示timeout；超过suicide_grace，进程会退出
+ */
   std::list<heartbeat_handle_d*>::iterator list_item;
 
   explicit heartbeat_handle_d(const std::string& n)
@@ -53,6 +56,9 @@ struct heartbeat_handle_d {
 class HeartbeatMap {
  public:
   // register/unregister
+/** comment by hy 2020-04-24
+ * # 注册handler
+ */
   heartbeat_handle_d *add_worker(const std::string& name, pthread_t thread_id);
   void remove_worker(const heartbeat_handle_d *h);
 
@@ -83,10 +89,15 @@ class HeartbeatMap {
   ceph::shared_mutex m_rwlock =
     ceph::make_shared_mutex("HeartbeatMap::m_rwlock");
   ceph::coarse_mono_clock::time_point m_inject_unhealthy_until;
+/** comment by hy 2020-04-24
+ * # 注册的所有timeout handler集合
+ */
   std::list<heartbeat_handle_d*> m_workers;
   std::atomic<unsigned> m_unhealthy_workers = { 0 };
   std::atomic<unsigned> m_total_workers = { 0 };
-
+/** comment by hy 2020-04-24
+ * # 检查是否超时
+ */
   bool _check(const heartbeat_handle_d *h, const char *who,
 	      ceph::coarse_mono_clock::rep now);
 };

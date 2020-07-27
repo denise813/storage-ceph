@@ -181,34 +181,86 @@ struct ceph_msg_header_old {
 } __attribute__ ((packed));
 
 struct ceph_msg_header {
+/** comment by hy 2020-02-18
+ * # 当前 session·内消息的唯一号
+ */
 	__le64 seq;       /* message seq# for this session */
+/** comment by hy 2020-02-18
+ * # 消息全局唯一号
+ */
 	__le64 tid;       /* transaction id */
+/** comment by hy 2020-02-18
+ * # 消息类型
+ */
 	__le16 type;      /* message type */
+/** comment by hy 2020-02-18
+ * # 消息优先级
+ */
 	__le16 priority;  /* priority.  higher value == higher priority */
+/** comment by hy 2020-02-18
+ * # 消息编码的版本
+ */
 	__le16 version;   /* version of message encoding */
-
+/** comment by hy 2020-02-18
+ * # 消息 payload 的长度
+ */
 	__le32 front_len; /* bytes in main payload */
+/** comment by hy 2020-02-18
+ * # 消息 moddle 的长度
+ */
 	__le32 middle_len;/* bytes in middle payload */
+/** comment by hy 2020-02-18
+ * # 消息数据的长度
+ */
 	__le32 data_len;  /* bytes of data payload */
+/** comment by hy 2020-02-18
+ * # 数据的长度
+ */
 	__le16 data_off;  /* sender: include full offset;
 			     receiver: mask against ~PAGE_MASK */
-
+/** comment by hy 2020-02-18
+ * # 消息源
+ */
 	struct ceph_entity_name src;
 
 	/* oldest code we think can decode this.  unknown if zero. */
+/** comment by hy 2020-02-18
+ * # 旧代码兼容使用
+ */
 	__le16 compat_version;
 	__le16 reserved;
+/** comment by hy 2020-02-18
+ * # 消息的crc
+ */
 	__le32 crc;       /* header crc32c */
 } __attribute__ ((packed));
 
 struct ceph_msg_header2 {
+/** comment by hy 2020-02-18
+ * # 当前 session 内消息唯一号
+ */
 	__le64 seq;       /* message seq# for this session */
+/** comment by hy 2020-02-18
+ * # 消息唯一号
+ */
 	__le64 tid;       /* transaction id */
+/** comment by hy 2020-02-18
+ * # 消息类型
+ */
 	__le16 type;      /* message type */
+/** comment by hy 2020-02-18
+ * # 消息类型
+ */
 	__le16 priority;  /* priority.  higher value == higher priority */
+/** comment by hy 2020-02-18
+ * # 优先级
+ */
 	__le16 version;   /* version of message encoding */
 
 	__le32 data_pre_padding_len;
+/** comment by hy 2020-02-18
+ * # 数据长度
+ */
 	__le16 data_off;  /* sender: include full offset;
 			     receiver: mask against ~PAGE_MASK */
 
@@ -235,9 +287,18 @@ struct ceph_msg_footer_old {
 } __attribute__ ((packed));
 
 struct ceph_msg_footer {
+/** comment by hy 2020-02-18
+ * # 对应的 crc
+ */
 	__le32 front_crc, middle_crc, data_crc;
 	// sig holds the 64 bits of the digital signature for the message PLR
+/** comment by hy 2020-02-18
+ * # 消息的64位签名
+ */
 	__le64  sig;
+/** comment by hy 2020-02-18
+ * # 结束标志
+ */
 	__u8 flags;
 } __attribute__ ((packed));
 

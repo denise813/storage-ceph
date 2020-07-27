@@ -203,6 +203,9 @@ int radosgw_Main(int argc, const char **argv)
   }
 
   int flags = CINIT_FLAG_UNPRIVILEGED_DAEMON_DEFAULTS;
+/** comment by hy 2019-12-21
+ * # 初始化g_ceph_context、g_conf等全局变量
+ */
   // Prevent global_init() from dropping permissions until frontends can bind
   // privileged ports
   flags |= CINIT_FLAG_DEFER_DROP_PRIVILEGES;
@@ -215,15 +218,26 @@ int radosgw_Main(int argc, const char **argv)
   list<string> frontends;
   string rgw_frontends_str = g_conf().get_val<string>("rgw_frontends");
   g_conf().early_expand_meta(rgw_frontends_str, &cerr);
+/** comment by hy 2020-03-03
+ * # 根据配置文件加载前端
+ */
   get_str_list(rgw_frontends_str, ",", frontends);
   multimap<string, RGWFrontendConfig *> fe_map;
   list<RGWFrontendConfig *> configs;
+/** comment by hy 2020-01-07
+ * # 设置默认的前端HTTP
+ */
   if (frontends.empty()) {
     frontends.push_back("civetweb");
   }
   for (list<string>::iterator iter = frontends.begin(); iter != frontends.end(); ++iter) {
     string& f = *iter;
 
+/** comment by hy 2020-01-08
+ * # 检查配置文件中 http 服务的名称与端口号
+     civetweb
+     boost.beast 
+ */
     if (f.find("civetweb") != string::npos || f.find("beast") != string::npos) {
       if (f.find("port") != string::npos) {
         // check for the most common ws problems
@@ -236,7 +250,13 @@ int radosgw_Main(int argc, const char **argv)
       }
     }
 
+/** comment by hy 2020-03-03
+ * # 根据配置文件中的字符生成前端配置信息
+ */
     RGWFrontendConfig *config = new RGWFrontendConfig(f);
+/** comment by hy 2020-03-03
+ * # 包装好配置信息内容
+ */
     int r = config->init();
     if (r < 0) {
       delete config;
@@ -272,14 +292,28 @@ int radosgw_Main(int argc, const char **argv)
   }
 
   // maintain existing region root pool for new multisite objects
+/** comment by hy 2020-03-03
+ * # 读取root pool 默认的配置现象
+ */
   if (!g_conf()->rgw_region_root_pool.empty()) {
     const char *root_pool = g_conf()->rgw_region_root_pool.c_str();
+/** comment by hy 2020-03-03
+ * # 根据root pool 设置 zone 信息 对应的 pool
+     如果没设定root 就使用默认的 .rgw.root
+ */
     if (g_conf()->rgw_zonegroup_root_pool.empty()) {
       g_conf().set_val_or_die("rgw_zonegroup_root_pool", root_pool);
     }
+/** comment by hy 2020-03-03
+ * # 根据root pool 设置 period 信息 对应的 pool
+ */
     if (g_conf()->rgw_period_root_pool.empty()) {
       g_conf().set_val_or_die("rgw_period_root_pool", root_pool);
     }
+/** comment by hy 2020-03-03
+ * # 根据root pool 设置 realm 信息 对应的 pool
+     这是用来进行隔离域
+ */
     if (g_conf()->rgw_realm_root_pool.empty()) {
       g_conf().set_val_or_die("rgw_realm_root_pool", root_pool);
     }
@@ -287,41 +321,83 @@ int radosgw_Main(int argc, const char **argv)
 
   // for region -> zonegroup conversion (must happen before common_init_finish())
   if (!g_conf()->rgw_region.empty() && g_conf()->rgw_zonegroup.empty()) {
+/** comment by hy 2020-03-03
+ * # 设置域
+ */
     g_conf().set_val_or_die("rgw_zonegroup", g_conf()->rgw_region.c_str());
   }
 
   if (g_conf()->daemonize) {
     global_init_daemonize(g_ceph_context);
   }
+/** comment by hy 2020-01-08
+ * # 执行启动
+ */
   ceph::mutex mutex = ceph::make_mutex("main");
   SafeTimer init_timer(g_ceph_context, mutex);
   init_timer.init();
+/** comment by hy 2020-01-08
+ * # 守护进程化时,避免竞争
+ */
   mutex.lock();
   init_timer.add_event_after(g_conf()->rgw_init_timeout, new C_InitTimeout);
   mutex.unlock();
 
+/** comment by hy 2019-12-21
+ * # 启动admin socket线程,log模块线程
+ */
   common_init_finish(g_ceph_context);
 
   init_async_signal_handler();
   register_async_signal_handler(SIGHUP, sighup_handler);
 
+/** comment by hy 2020-01-08
+ * # 检查库文件
+ */
   TracepointProvider::initialize<rgw_rados_tracepoint_traits>(g_ceph_context);
   TracepointProvider::initialize<rgw_op_tracepoint_traits>(g_ceph_context);
 
+/** comment by hy 2020-01-08
+ * # mime_map 返回 Content-Type,即后缀解析使用
+ */
   int r = rgw_tools_init(g_ceph_context);
   if (r < 0) {
     derr << "ERROR: unable to initialize rgw tools" << dendl;
     return -r;
   }
 
+/** comment by hy 2019-12-27
+ * # 准备加载域名解析服务
+     生成域名解析服务实例 rgw_resolver
+     这是一个单例
+ */
   rgw_init_resolver();
+/** comment by hy 2020-03-03
+ * # 生成客户端用来发消息的handler
+     handles = liburl.so
+     单例
+ */
   rgw::curl::setup_curl(fe_map);
+/** comment by hy 2020-02-07
+ * # 准备加载http客户端
+     调用   curl_global_init
+     生成 rgw_http_manager 单例
+ */
   rgw_http_client_init(g_ceph_context);
   
 #if defined(WITH_RADOSGW_FCGI_FRONTEND)
   FCGX_Init();
 #endif
 
+/** comment by hy 2020-02-07
+ * # 创建对象存储引擎(rados客户端)
+     默认情况下开启cache
+     动态 resharding
+     开启 gc
+     开启 lifecycle
+     开启配额控制
+     必须开启 run_sync
+ */
   rgw::sal::RGWRadosStore *store =
     RGWStoreManager::get_storage(g_ceph_context,
 				 g_conf()->rgw_enable_gc_threads,
@@ -339,27 +415,46 @@ int radosgw_Main(int argc, const char **argv)
     derr << "Couldn't init storage provider (RADOS)" << dendl;
     return EIO;
   }
+/** comment by hy 2020-02-07
+ * # 性能数据监控
+ */
   r = rgw_perf_start(g_ceph_context);
   if (r < 0) {
     derr << "ERROR: failed starting rgw perf" << dendl;
     return -r;
   }
 
+/** comment by hy 2020-02-07
+ * # 准备rest请求解析服务
+     常用http 头属性,hostname列表
+ */
   rgw_rest_init(g_ceph_context, store->svc()->zone->get_zonegroup());
 
   mutex.lock();
+/** comment by hy 2020-03-06
+ * # 这个时候认为启动完成
+ */
   init_timer.cancel_all_events();
   init_timer.shutdown();
   mutex.unlock();
 
+/** comment by hy 2020-03-06
+ * # 
+ */
   rgw_log_usage_init(g_ceph_context, store->getRados());
 
   RGWREST rest;
 
   list<string> apis;
 
+/** comment by hy 2020-02-07
+ * # 获取服务支持的API
+ */
   get_str_list(g_conf()->rgw_enable_apis, apis);
 
+/** comment by hy 2020-02-07
+ * # 生成接口列表
+ */
   map<string, bool> apis_map;
   for (list<string>::iterator li = apis.begin(); li != apis.end(); ++li) {
     apis_map[*li] = true;
@@ -377,8 +472,14 @@ int radosgw_Main(int argc, const char **argv)
   const bool iam_enabled = apis_map.count("iam") > 0;
   const bool pubsub_enabled = apis_map.count("pubsub") > 0;
   // Swift API entrypoint could placed in the root instead of S3
+/** comment by hy 2020-02-07
+ * # swift API可能与s3的API造成冲突
+ */
   const bool swift_at_root = g_conf()->rgw_swift_url_prefix == "/";
   if (apis_map.count("s3") > 0 || s3website_enabled) {
+/** comment by hy 2020-02-07
+ * # 注册s3restful,并设置为管理者
+ */
     if (! swift_at_root) {
       rest.register_default_mgr(set_logging(rest_filter(store->getRados(), RGW_REST_S3,
                                                         new RGWRESTMgr_S3(s3website_enabled, sts_enabled, iam_enabled, pubsub_enabled))));
@@ -389,6 +490,9 @@ int radosgw_Main(int argc, const char **argv)
     }
   }
 
+/** comment by hy 2020-03-14
+ * # 消息队列
+ */
   if (pubsub_enabled) {
 #ifdef WITH_RADOSGW_AMQP_ENDPOINT
     if (!rgw::amqp::init(cct.get())) {
@@ -402,6 +506,9 @@ int radosgw_Main(int argc, const char **argv)
 #endif
   }
 
+/** comment by hy 2019-12-21
+ * # 注册RGWREST类
+ */
   if (apis_map.count("swift") > 0) {
     RGWRESTMgr_SWIFT* const swift_resource = new RGWRESTMgr_SWIFT;
 
@@ -417,6 +524,9 @@ int radosgw_Main(int argc, const char **argv)
                           set_logging(new RGWRESTMgr_SWIFT_Info));
 
     if (! swift_at_root) {
+/** comment by hy 2020-02-07
+ * # 注册 swift restful
+ */
       rest.register_resource(g_conf()->rgw_swift_url_prefix,
                           set_logging(rest_filter(store->getRados(), RGW_REST_SWIFT,
                                                   swift_resource)));
@@ -427,6 +537,9 @@ int radosgw_Main(int argc, const char **argv)
              << " with S3 API enabled!" << dendl;
       }
 
+/** comment by hy 2020-02-07
+ * # 设置管理者
+ */
       rest.register_default_mgr(set_logging(swift_resource));
     }
   }
@@ -436,12 +549,15 @@ int radosgw_Main(int argc, const char **argv)
                set_logging(new RGWRESTMgr_SWIFT_Auth));
   }
 
+/** comment by hy 2020-02-07
+ * # 原生admin接口注册
+ */
   if (apis_map.count("admin") > 0) {
     RGWRESTMgr_Admin *admin_resource = new RGWRESTMgr_Admin;
     admin_resource->register_resource("usage", new RGWRESTMgr_Usage);
     admin_resource->register_resource("user", new RGWRESTMgr_User);
     admin_resource->register_resource("bucket", new RGWRESTMgr_Bucket);
-  
+
     /*Registering resource for /admin/metadata */
     admin_resource->register_resource("metadata", new RGWRESTMgr_Metadata);
     admin_resource->register_resource("log", new RGWRESTMgr_Log);
@@ -458,6 +574,9 @@ int radosgw_Main(int argc, const char **argv)
     rgw::auth::StrategyRegistry::create(g_ceph_context, implicit_tenant_context, store->getRados()->pctl);
 
   /* Header custom behavior */
+/** comment by hy 2020-02-07
+ * # 监控操作日志
+ */
   rest.register_x_headers(g_conf()->rgw_log_http_headers);
 
   if (cct->_conf.get_val<std::string>("rgw_scheduler_type") == "dmclock" &&
@@ -512,7 +631,9 @@ int radosgw_Main(int argc, const char **argv)
   }
 
   int fe_count = 0;
-
+/** comment by hy 2020-02-07
+ * # httpd服务准备
+ */
   for (multimap<string, RGWFrontendConfig *>::iterator fiter = fe_map.begin();
        fiter != fe_map.end(); ++fiter, ++fe_count) {
     RGWFrontendConfig *config = fiter->second;
@@ -525,11 +646,17 @@ int radosgw_Main(int argc, const char **argv)
 
     RGWFrontend *fe = NULL;
 
+/** comment by hy 2020-03-17
+ * # boost mongoose 库 据说性能不是很好
+ */
     if (framework == "civetweb" || framework == "mongoose") {
       framework = "civetweb";
       std::string uri_prefix;
       config->get_val("prefix", "", &uri_prefix);
 
+/** comment by hy 2020-02-07
+ * # 创建上下文
+ */
       RGWProcessEnv env = { store, &rest, olog, 0, uri_prefix, auth_registry };
       //TODO: move all of scheduler initializations to frontends?
 
@@ -547,6 +674,14 @@ int radosgw_Main(int argc, const char **argv)
     }
 #if defined(WITH_RADOSGW_BEAST_FRONTEND)
     else if (framework == "beast") {
+/** comment by hy 2020-03-06
+ * # boost 的 HTTP parsing
+     Boost.Asio 异步io 处理
+     这个库这里开启了协程处理
+     https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/4/html-
+     single/object_gateway_configuration_and_administration_guide/index#using-the-
+     beast-front-end-rgw
+ */
       int port;
       config->get_val("port", 80, &port);
       std::string uri_prefix;
@@ -556,6 +691,9 @@ int radosgw_Main(int argc, const char **argv)
     }
 #endif /* WITH_RADOSGW_BEAST_FRONTEND */
 #if defined(WITH_RADOSGW_FCGI_FRONTEND)
+/** comment by hy 2020-03-11
+ * # 用了其他前端,进入阿帕奇,nigix
+ */
     else if (framework == "fastcgi" || framework == "fcgi") {
       framework = "fastcgi";
       std::string uri_prefix;
@@ -575,11 +713,30 @@ int radosgw_Main(int argc, const char **argv)
     }
 
     dout(0) << "starting handler: " << fiter->first << dendl;
+/** comment by hy 2020-02-07
+ * # 执行准备工作
+     RGWAsioFrontend::init = AsioFrontend::init
+        进行异步监听端口等
+     RGWCivetWebFrontend::init nothing to do
+ */
     int r = fe->init();
     if (r < 0) {
       derr << "ERROR: failed initializing frontend" << dendl;
       return -r;
     }
+/** comment by hy 2020-02-07
+ * # 准备接受处理工作
+     如以下两个
+     RGWAsioFrontend::run
+        = AsioFrontend::run
+        最终根据配置文件线程数启动 boost::asio::io_service.run 启动
+
+     RGWCivetWebFrontend::run
+         注册请求对应的回调
+           cb.begin_request = civetweb_callback;通过框架连接有请求的回调 派发消息
+           cb.log_message = rgw_civetweb_log_callback; 通过 调用mg_cry回调 记录消息日志
+           cb.log_access = rgw_civetweb_log_access_callback;通过框架有连接请求的回调 输出访问日志
+ */
     r = fe->run();
     if (r < 0) {
       derr << "ERROR: failed run" << dendl;
@@ -589,6 +746,9 @@ int radosgw_Main(int argc, const char **argv)
     fes.push_back(fe);
   }
 
+/** comment by hy 2020-02-07
+ * # 加入到服务表等待MGR 服务监控
+ */
   r = store->getRados()->register_to_service_map("rgw", service_map_meta);
   if (r < 0) {
     derr << "ERROR: failed to register to service map: " << cpp_strerror(-r) << dendl;
@@ -614,6 +774,9 @@ int radosgw_Main(int argc, const char **argv)
 
   wait_shutdown();
 
+/** comment by hy 2019-12-22
+ * # 退出流程
+ */
   derr << "shutting down" << dendl;
 
   for (list<RGWFrontend *>::iterator liter = fes.begin(); liter != fes.end();

@@ -98,6 +98,10 @@ public:
   struct Context_SObj : public RGWSI_MetaBackend::Context {
     RGWSI_SysObj *sysobj_svc{nullptr};
 
+/** comment by hy 2020-03-19
+ * # RGWSI_Bucket_SObj_Module
+     RGWSI_BucketInstance_SObj_Module
+ */
     RGWSI_MBSObj_Handler_Module *module{nullptr};
     std::optional<RGWSysObjectCtx> _obj_ctx;
     RGWSysObjectCtx *obj_ctx{nullptr};

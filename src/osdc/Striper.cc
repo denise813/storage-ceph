@@ -52,6 +52,25 @@ struct OrderByObject {
 
 } // anonymous namespace
 
+/*****************************************************************************
+ * 函 数 名  : Striper.file_to_extents
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  :  
+ * 输入参数  : CephContext *cct                     
+               const char *object_format            
+               const file_layout_t *layout         分片信息
+               uint64_t offset                     文件的偏移
+               uint64_t len                        文件的长度
+               uint64_t trunc_size                 
+               std::vector<ObjectExtent>& extents  分不到每个对象的数据段
+               uint64_t buffer_offset              在buffer中的偏移
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void Striper::file_to_extents(CephContext *cct, const char *object_format,
 			      const file_layout_t *layout,
 			      uint64_t offset, uint64_t len,
@@ -133,6 +152,9 @@ void Striper::file_to_extents(
     ldout(cct, 20) << " sc is one, reset su to os" << dendl;
     su = object_size;
   }
+/** comment by hy 2020-02-20
+ * # 每个对象的条带数
+ */
   uint64_t stripes_per_object = object_size / su;
   ldout(cct, 20) << " su " << su << " sc " << stripe_count << " os "
 		 << object_size << " stripes_per_object " << stripes_per_object
@@ -172,6 +194,10 @@ void Striper::file_to_extents(
 		   << dendl;
 
     striper::LightweightObjectExtent* ex = nullptr;
+/** comment by hy 2020-02-20
+ * # 按照对象号升序,每一次都排序？
+     这是要做尾插入排序, 这样好吗?
+ */
     auto it = std::upper_bound(object_extents->begin(), object_extents->end(),
                                objectno, OrderByObject());
     striper::LightweightObjectExtents::reverse_iterator rev_it(it);
@@ -191,6 +217,9 @@ void Striper::file_to_extents(
       ex->length += x_len;
     }
 
+/** comment by hy 2020-02-20
+ * # 将数据交换到 buffer_extent 段
+ */
     ex->buffer_extents.emplace_back(cur - offset + buffer_offset, x_len);
 
     ldout(cct, 15) << "file_to_extents  " << *ex << dendl;

@@ -173,6 +173,9 @@ class PrioritizedQueue : public OpQueue <T, K> {
     }
     total_priority += priority;
     SubQueue *sq = &queue[priority];
+/** comment by hy 2020-04-07
+ * # 设置令牌
+ */
     sq->set_max_tokens(max_tokens_per_subqueue);
     return sq;
   }
@@ -245,6 +248,11 @@ public:
   }
 
   void enqueue_strict(K cl, unsigned priority, T&& item) final {
+/** comment by hy 2020-04-07
+ * # cl 又一个类型集合 的对象
+     SubQueue::enqueue
+     从尾巴上加元素
+ */
     high_queue[priority].enqueue(cl, 0, std::move(item));
   }
 
@@ -252,11 +260,37 @@ public:
     high_queue[priority].enqueue_front(cl, 0, std::move(item));
   }
 
+/*****************************************************************************
+ * 函 数 名  : PrioritizedQueue.enqueue
+ * 负 责 人  : hy
+ * 创建日期  : 2020年4月7日
+ * 函数功能  : 将元素添加进队列
+ * 输入参数  : K cl                
+               unsigned priority  优先级
+               unsigned cost      数据长度
+               T&& item            
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
   void enqueue(K cl, unsigned priority, unsigned cost, T&& item) final {
+/** comment by hy 2020-04-07
+ * # 给一个基本权重
+ */
     if (cost < min_cost)
       cost = min_cost;
+/** comment by hy 2020-04-07
+ * # 给一个最大权重
+ */
     if (cost > max_tokens_per_subqueue)
       cost = max_tokens_per_subqueue;
+/** comment by hy 2020-04-07
+ * # 
+     queue 是一个队列组, 每个优先级对应一个队列
+     cost 对应数据长度,将类实例放入队列中
+ */
     create_queue(priority)->enqueue(cl, cost, std::move(item));
   }
 
@@ -277,6 +311,12 @@ public:
   T dequeue() final {
     ceph_assert(!empty());
 
+/** comment by hy 2020-04-07
+ * # 先处理高级别的,
+     高优先级里面的高优先级 从后往前,是因为后面的优先级最高
+     优先级 <代价 操作>
+     优先级最高的里面 遵循 FIFO 操作
+ */
     if (!(high_queue.empty())) {
       T ret = std::move(high_queue.rbegin()->second.front().second);
       high_queue.rbegin()->second.pop_front();
@@ -293,14 +333,30 @@ public:
 	 i != queue.end();
 	 ++i) {
       ceph_assert(!(i->second.empty()));
+/** comment by hy 2020-04-07
+ * # 这里就是包含令牌的处理
+     队列中的令牌数量 与 cost 关系
+ */
       if (i->second.front().first < i->second.num_tokens()) {
+/** comment by hy 2020-04-07
+ * # 判断令牌,代价 小于 存在的令牌数量
+ */
 	unsigned cost = i->second.front().first;
+/** comment by hy 2020-04-07
+ * # 消耗令牌
+ */
 	i->second.take_tokens(cost);
+/** comment by hy 2020-04-07
+ * # 摘除等待处理对象
+ */
 	T ret = std::move(i->second.front().second);
 	i->second.pop_front();
 	if (i->second.empty()) {
 	  remove_queue(i->first);
 	}
+/** comment by hy 2020-04-07
+ * # 准备生成令牌, 按照优先级生成 令牌
+ */
 	distribute_tokens(cost);
 	return ret;
       }
@@ -308,6 +364,9 @@ public:
 
     // if no subqueues have sufficient tokens, we behave like a strict
     // priority queue.
+/** comment by hy 2020-04-07
+ * # 没有令牌，也就是没有流量处理
+ */
     unsigned cost = queue.rbegin()->second.front().first;
     T ret = std::move(queue.rbegin()->second.front().second);
     queue.rbegin()->second.pop_front();

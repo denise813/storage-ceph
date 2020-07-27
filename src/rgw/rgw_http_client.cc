@@ -811,6 +811,9 @@ void *RGWHTTPManager::ReqsThread::entry()
 RGWHTTPManager::RGWHTTPManager(CephContext *_cct, RGWCompletionManager *_cm) : cct(_cct),
                                                     completion_mgr(_cm)
 {
+/** comment by hy 2019-12-28
+ * # 初始化一个curl批处理句柄资源
+ */
   multi_handle = (void *)curl_multi_init();
   thread_pipe[0] = -1;
   thread_pipe[1] = -1;
@@ -1234,6 +1237,9 @@ void *RGWHTTPManager::reqs_thread_entry()
 
 void rgw_http_client_init(CephContext *cct)
 {
+/** comment by hy 2020-03-03
+ * # 初始化handler实例
+ */
   curl_global_init(CURL_GLOBAL_ALL);
   rgw_http_manager = new RGWHTTPManager(cct);
   rgw_http_manager->start();

@@ -225,6 +225,9 @@ int librados::RadosClient::connect()
     return -EINPROGRESS;
   if (state == CONNECTED)
     return -EISCONN;
+/** comment by hy 2020-01-15
+ * # 切换连接状态
+ */
   state = CONNECTING;
 
   if (cct->_conf->log_early &&
@@ -234,19 +237,31 @@ int librados::RadosClient::connect()
 
   {
     MonClient mc_bootstrap(cct);
+/** comment by hy 2020-01-17
+ * # 创建临时通络,获取mon信息以及配置文件
+ */
     err = mc_bootstrap.get_monmap_and_config();
     if (err < 0)
       return err;
   }
 
+/** comment by hy 2020-01-19
+ * # 初始化管理命令,以及配置文件监控等功能
+ */
   common_init_finish(cct);
 
   // get monmap
+/** comment by hy 2020-01-17
+ * # config 已经读过了,这里只要内存中获取最新的monmap信息
+ */
   err = monclient.build_initial_monmap();
   if (err < 0)
     goto out;
 
   err = -ENOMEM;
+/** comment by hy 2020-01-19
+ * # 现在的阶段只让用async 类型通路
+ */
   messenger = Messenger::create_client_messenger(cct, "radosclient");
   if (!messenger)
     goto out;
@@ -254,12 +269,25 @@ int librados::RadosClient::connect()
   // require OSDREPLYMUX feature.  this means we will fail to talk to
   // old servers.  this is necessary because otherwise we won't know
   // how to decompose the reply data into its constituent pieces.
+/** comment by hy 2020-01-19
+ * # 策略暂时有4种 lossy 错误发生 丢弃就好 默认为假
+                   server 连接失败不在连接 默认为假
+                   standby
+                   resetcheck 检查会话 默认为真
+     lossy_client = true false false true
+ */
   messenger->set_default_policy(Messenger::Policy::lossy_client(CEPH_FEATURE_OSDREPLYMUX));
 
+/** comment by hy 2020-01-19
+ * # 启动日志调试信息
+ */
   ldout(cct, 1) << "starting msgr at " << messenger->get_myaddrs() << dendl;
 
   ldout(cct, 1) << "starting objecter" << dendl;
 
+/** comment by hy 2020-01-19
+ * # 创建与osd通信的客户端
+ */
   objecter = new (std::nothrow) Objecter(cct, messenger, &monclient,
 			  &finisher,
 			  cct->_conf->rados_mon_op_timeout,
@@ -268,20 +296,44 @@ int librados::RadosClient::connect()
     goto out;
   objecter->set_balanced_budget();
 
+/** comment by hy 2020-01-19
+ * # 设置链路
+ */
   monclient.set_messenger(messenger);
   mgrclient.set_messenger(messenger);
 
+/** comment by hy 2020-01-19
+ * # 注册 perf 
+          命令行
+          配置文件监控
+          消息顺序 monc mgrc osdc radosc
+ */
   objecter->init();
+/** comment by hy 2020-04-07
+ * # 将分发放入接收处理中
+ */
   messenger->add_dispatcher_head(&mgrclient);
+/** comment by hy 2020-04-07
+ * # 将分发放入接收处理中
+ */
   messenger->add_dispatcher_tail(objecter);
+/** comment by hy 2020-04-07
+ * # 将分放入接收处理中
+ */
   messenger->add_dispatcher_tail(this);
 
+/** comment by hy 2020-01-19
+ * # 启动对应线程
+ */
   messenger->start();
 
   ldout(cct, 1) << "setting wanted keys" << dendl;
   monclient.set_want_keys(
       CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_OSD | CEPH_ENTITY_TYPE_MGR);
   ldout(cct, 1) << "calling monclient init" << dendl;
+/** comment by hy 2020-01-19
+ * # 执行绑定的客户端初始化
+ */
   err = monclient.init();
   if (err) {
     ldout(cct, 0) << conf->name << " initialization error " << cpp_strerror(-err) << dendl;
@@ -289,12 +341,18 @@ int librados::RadosClient::connect()
     goto out;
   }
 
+/** comment by hy 2020-01-19
+ * # 长期绑定的mon开始进行认证
+ */
   err = monclient.authenticate(conf->client_mount_timeout);
   if (err) {
     ldout(cct, 0) << conf->name << " authentication error " << cpp_strerror(-err) << dendl;
     shutdown();
     goto out;
   }
+/** comment by hy 2020-01-19
+ * # 初始化阶段从 mon 获取来的
+ */
   messenger->set_myname(entity_name_t::CLIENT(monclient.get_global_id()));
 
   // Detect older cluster, put mgrclient into compatible mode
@@ -306,12 +364,18 @@ int librados::RadosClient::connect()
   monclient.sub_want("mgrmap", 0, 0);
   monclient.renew_subs();
 
+/** comment by hy 2020-01-19
+ * # 定时报告状态
+ */
   if (service_daemon) {
     ldout(cct, 10) << __func__ << " registering as " << service_name << "."
 		   << daemon_name << dendl;
     mgrclient.service_daemon_register(service_name, daemon_name,
 				      daemon_metadata);
   }
+/** comment by hy 2020-01-19
+ * # 启动定时器
+ */
   mgrclient.init();
 
   objecter->set_client_incarnation(0);
@@ -476,8 +540,24 @@ librados::RadosClient::~RadosClient()
   cct = NULL;
 }
 
+/*****************************************************************************
+ * 函 数 名  : librados.RadosClient.create_ioctx
+ * 负 责 人  : hy
+ * 创建日期  : 2020年1月21日
+ * 函数功能  : 创建pool句柄
+ * 输入参数  : const char *name  pool名称
+               IoCtxImpl **io    pool的io句柄
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int librados::RadosClient::create_ioctx(const char *name, IoCtxImpl **io)
 {
+/** comment by hy 2020-01-21
+ * # 确定参数合法性,并获得pool id
+ */
   int64_t poolid = lookup_pool(name);
   if (poolid < 0) {
     return (int)poolid;
@@ -489,6 +569,9 @@ int librados::RadosClient::create_ioctx(const char *name, IoCtxImpl **io)
 
 int librados::RadosClient::create_ioctx(int64_t pool_id, IoCtxImpl **io)
 {
+/** comment by hy 2020-01-21
+ * # 确定参数合法性
+ */
   std::string pool_name;
   int r = pool_get_name(pool_id, &pool_name, true);
   if (r < 0)
@@ -565,6 +648,10 @@ int librados::RadosClient::wait_for_osdmap()
   }
 
   bool need_map = false;
+/** comment by hy 2020-01-22
+ * # 调用模板方法检查是否拥有 osdmap
+     匿名函数 & 用到的任何外部变量都隐式按引用捕获
+ */
   objecter->with_osdmap([&](const OSDMap& o) {
       if (o.get_epoch() == 0) {
         need_map = true;
@@ -572,6 +659,9 @@ int librados::RadosClient::wait_for_osdmap()
     });
 
   if (need_map) {
+/** comment by hy 2020-01-22
+ * # 没有osdmap 就去获取一个版本的osdmap
+ */
     std::unique_lock l(lock);
 
     ceph::timespan timeout{0};
@@ -579,12 +669,22 @@ int librados::RadosClient::wait_for_osdmap()
       timeout = ceph::make_timespan(cct->_conf->rados_mon_op_timeout);
     }
 
+/** comment by hy 2020-01-22
+ * # mem_fn 把成员函数转为函数对象,使用对象指针或对象(引用)进行绑定
+     bind   包括但不限于mem_fn的功能,更为通用的解决方案,详见目录里std::bind
+ */
     if (objecter->with_osdmap(std::mem_fn(&OSDMap::get_epoch)) == 0) {
       ldout(cct, 10) << __func__ << " waiting" << dendl;
+/** comment by hy 2020-01-22
+ * # 循环等待 事件 更新osdmap
+ */
       while (objecter->with_osdmap(std::mem_fn(&OSDMap::get_epoch)) == 0) {
         if (timeout == timeout.zero()) {
           cond.wait(l);
         } else {
+/** comment by hy 2020-01-22
+ * # 设置了超时时间
+ */
           if (cond.wait_for(l, timeout) == std::cv_status::timeout) {
             lderr(cct) << "timed out waiting for first osdmap from monitors"
                        << dendl;
@@ -687,13 +787,29 @@ bool librados::RadosClient::put() {
   refcnt--;
   return (refcnt == 0);
 }
- 
+/*****************************************************************************
+ * 函 数 名  : librados.RadosClient.pool_create
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 同步创建pool
+ * 输入参数  : string& name        pool名称
+               int16_t crush_rule  选择的规则
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int librados::RadosClient::pool_create(string& name,
 				       int16_t crush_rule)
 {
   if (!name.length())
     return -EINVAL;
 
+/** comment by hy 2020-01-22
+ * # 循环等待有 osdmap 信息,
+     这里可以被设置了默认的超时时间 rados_mon_op_timeout
+ */
   int r = wait_for_osdmap();
   if (r < 0) {
     return r;
@@ -704,17 +820,43 @@ int librados::RadosClient::pool_create(string& name,
   ceph::condition_variable cond;
   bool done;
   Context *onfinish = new C_SafeCond(mylock, cond, &done, &reply);
+/** comment by hy 2020-01-20
+ * # crush_rule 默认参数为-1,创建完成后等待唤醒
+ */
   reply = objecter->create_pool(name, onfinish, crush_rule);
 
   if (reply < 0) {
+/** comment by hy 2020-01-22
+ * # 命令失败了就不需要异步监控事件的完成
+ */
     delete onfinish;
   } else {
+/** comment by hy 2020-01-22
+ * # 成功执行命令,等待完成标识被设置
+ */
+/** comment by hy 2020-01-22
+ * # 循环等待
+ */
     std::unique_lock l{mylock};
     cond.wait(l, [&done] { return done; });
   }
   return reply;
 }
 
+/*****************************************************************************
+ * 函 数 名  : librados.RadosClient.pool_create_async
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 异步创建pool
+ * 输入参数  : string& name                pool的名称
+               PoolAsyncCompletionImpl *c  异步回调
+               int16_t crush_rule          选择的规则
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int librados::RadosClient::pool_create_async(string& name,
 					     PoolAsyncCompletionImpl *c,
 					     int16_t crush_rule)
@@ -723,6 +865,9 @@ int librados::RadosClient::pool_create_async(string& name,
   if (r < 0)
     return r;
 
+/** comment by hy 2020-02-18
+ * # 注册监控完成通知
+ */
   Context *onfinish = new C_PoolAsync_Safe(c);
   r = objecter->create_pool(name, onfinish, crush_rule);
   if (r < 0) {
@@ -843,6 +988,23 @@ int librados::RadosClient::mon_command(const vector<string>& cmd,
   return ctx.wait();
 }
 
+/*****************************************************************************
+ * 函 数 名  : librados.RadosClient.mon_command_async
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月26日
+ * 函数功能  : 执行mon相关的命令
+ * 输入参数  : const vector<string>& cmd  命令名称
+               const bufferlist &inbl     输入数据
+               bufferlist *outbl          输出数据
+               string *outs                
+               Context *on_finish         回调函数
+                  这里的回调函数时条件变量等待操作完成
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void librados::RadosClient::mon_command_async(const vector<string>& cmd,
                                               const bufferlist &inbl,
                                               bufferlist *outbl, string *outs,
@@ -1093,7 +1255,9 @@ int librados::RadosClient::service_daemon_register(
   if (service.empty() || name.empty()) {
     return -EINVAL;
   }
-
+/** comment by hy 2020-03-06
+ * # 运行环境的信息,包括内存等等信息
+ */
   collect_sys_info(&daemon_metadata, cct);
 
   ldout(cct,10) << __func__ << " " << service << "." << name << dendl;
@@ -1108,6 +1272,9 @@ int librados::RadosClient::service_daemon_register(
   if (state == CONNECTING) {
     return -EBUSY;
   }
+/** comment by hy 2020-03-06
+ * # 
+ */
   mgrclient.service_daemon_register(service_name, daemon_name,
 				    daemon_metadata);
   return 0;

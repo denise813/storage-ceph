@@ -85,6 +85,9 @@ void OpHistory::_insert_delayed(const utime_t& now, TrackedOpRef op)
 
 void OpHistory::cleanup(utime_t now)
 {
+/** comment by hy 2020-04-24
+ * # 时间超时
+ */
   while (arrived.size() &&
 	 (now - arrived.begin()->first >
 	  (double)(history_duration.load()))) {
@@ -93,7 +96,9 @@ void OpHistory::cleanup(utime_t now)
 	arrived.begin()->second));
     arrived.erase(arrived.begin());
   }
-
+/** comment by hy 2020-04-24
+ * # 个数超额
+ */
   while (duration.size() > history_size.load()) {
     arrived.erase(make_pair(
 	duration.begin()->second->get_initiated(),
@@ -249,16 +254,31 @@ bool OpTracker::dump_ops_in_flight(Formatter *f, bool print_only_blocked, set<st
 
 bool OpTracker::register_inflight_op(TrackedOp *i)
 {
+/** comment by hy 2020-04-24
+ * # 没有激活跟踪，什么也不干
+ */
   if (!tracking_enabled)
     return false;
 
   std::shared_lock l{lock};
+/** comment by hy 2020-04-24
+ * # 原子计数器自增
+ */
   uint64_t current_seq = ++seq;
+/** comment by hy 2020-04-24
+ * # 根据seq取模，获取分片索引
+ */
   uint32_t shard_index = current_seq % num_optracker_shards;
+/** comment by hy 2020-04-24
+ * # 获取分片数据结构
+ */
   ShardedTrackingData* sdata = sharded_in_flight_list[shard_index];
   ceph_assert(NULL != sdata);
   {
     std::lock_guard locker(sdata->ops_in_flight_lock_sharded);
+/** comment by hy 2020-04-24
+ * # 插入分片
+ */
     sdata->ops_in_flight_sharded.push_back(*i);
     i->seq = current_seq;
   }

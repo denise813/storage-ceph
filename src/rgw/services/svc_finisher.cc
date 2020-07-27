@@ -10,6 +10,11 @@ int RGWSI_Finisher::do_start()
   finisher = new Finisher(cct);
   finisher->start();
 
+/** comment by hy 2020-03-11
+ * # 后续等待队列中有元素
+     然后 调用
+        Finisher::finisher_thread_entry
+ */
   return 0;
 }
 

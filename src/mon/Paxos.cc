@@ -69,10 +69,25 @@ void Paxos::read_and_prepare_transactions(MonitorDBStore::TransactionRef tx,
 
 void Paxos::init()
 {
+/** comment by hy 2020-04-23
+ * # 加载paxos算法相关变量
+ */
   // load paxos variables from stable storage
+/** comment by hy 2020-04-23
+ * # 最后一次提议编号
+ */
   last_pn = get_store()->get(get_name(), "last_pn");
+/** comment by hy 2020-04-23
+ * # 最后一次接受的提议编号
+ */
   accepted_pn = get_store()->get(get_name(), "accepted_pn");
+/** comment by hy 2020-04-23
+ * # 最后一次commit的版本
+ */
   last_committed = get_store()->get(get_name(), "last_committed");
+/** comment by hy 2020-04-23
+ * # 第一次commit的版本
+ */
   first_committed = get_store()->get(get_name(), "first_committed");
 
   dout(10) << __func__ << " last_pn: " << last_pn << " accepted_pn: "
@@ -1040,6 +1055,9 @@ bool Paxos::do_refresh()
 
   // make sure we have the latest state loaded up
   auto start = ceph::coarse_mono_clock::now();
+/** comment by hy 2020-04-23
+ * # 更新
+ */
   mon->refresh_from_paxos(&need_bootstrap);
   auto end = ceph::coarse_mono_clock::now();
 
@@ -1060,7 +1078,10 @@ void Paxos::commit_proposal()
   dout(10) << __func__ << dendl;
   ceph_assert(mon->is_leader());
   ceph_assert(is_refresh());
-
+/** comment by hy 2020-04-23
+ * # 调用应用 PaxosService::propose_pending-+->PaxosService::_active -+-> 
+     PaxosService::on_active
+ */
   finish_contexts(g_ceph_context, committing_finishers);
 }
 
@@ -1188,6 +1209,9 @@ void Paxos::lease_ack_timeout()
   ceph_assert(is_active());
   logger->inc(l_paxos_lease_ack_timeout);
   lease_ack_timeout_event = 0;
+/** comment by hy 2020-04-23
+ * # 重启
+ */
   mon->bootstrap();
 }
 
@@ -1257,9 +1281,15 @@ void Paxos::trim()
 version_t Paxos::get_new_proposal_number(version_t gt)
 {
   if (last_pn < gt) 
+/** comment by hy 2020-04-23
+ * # 保存旧值
+ */
     last_pn = gt;
   
   // update. make it unique among all monitors.
+/** comment by hy 2020-04-23
+ * # 更新
+ */
   last_pn /= 100;
   last_pn++;
   last_pn *= 100;
@@ -1341,6 +1371,9 @@ void Paxos::shutdown()
 
 void Paxos::leader_init()
 {
+/** comment by hy 2020-04-23
+ * # 清理工作
+ */
   cancel_events();
   new_value.clear();
 
@@ -1350,31 +1383,49 @@ void Paxos::leader_init()
   reset_pending_committing_finishers();
 
   logger->inc(l_paxos_start_leader);
-
+/** comment by hy 2020-04-23
+ * # 如果只有一个moitor，不需要collet其他monitor信息，直接进入active状态
+ */
   if (mon->get_quorum().size() == 1) {
     state = STATE_ACTIVE;
     return;
   }
-
+/** comment by hy 2020-04-23
+ * # 否则需要collect，进入recovering状态
+ */
   state = STATE_RECOVERING;
   lease_expire = {};
   dout(10) << "leader_init -- starting paxos recovery" << dendl;
+/** comment by hy 2020-04-23
+ * # 收集信息
+ */
   collect(0);
 }
 
 void Paxos::peon_init()
 {
+/** comment by hy 2020-04-23
+ * # 清理工作
+ */
   cancel_events();
   new_value.clear();
-
+/** comment by hy 2020-04-23
+ * # peon进入recovering状态，等待leader的collect消息
+ */
   state = STATE_RECOVERING;
   lease_expire = {};
   dout(10) << "peon_init -- i am a peon" << dendl;
 
   // start a timer, in case the leader never manages to issue a lease
+/** comment by hy 2020-04-23
+ * # 如果长时间没收到collect消息，会重新选举
+ */
   reset_lease_timeout();
 
   // discard pending transaction
+/** comment by hy 2020-04-23
+ * # 清理工作
+ */
   pending_proposal.reset();
 
   // no chance to write now!
@@ -1387,19 +1438,34 @@ void Paxos::peon_init()
 void Paxos::restart()
 {
   dout(10) << "restart -- canceling timeouts" << dendl;
+/** comment by hy 2020-04-23
+ * # 取消所有timeout事件
+ */
   cancel_events();
+/** comment by hy 2020-04-23
+ * # 清理提议的值
+ */
   new_value.clear();
 
   if (is_writing() || is_writing_previous()) {
     dout(10) << __func__ << " flushing" << dendl;
     mon->lock.unlock();
+/** comment by hy 2020-04-23
+ * # 等待写完成
+ */
     mon->store->flush();
     mon->lock.lock();
     dout(10) << __func__ << " flushed" << dendl;
   }
+/** comment by hy 2020-04-23
+ * # 重新回到recovering状态
+ */
   state = STATE_RECOVERING;
 
   // discard pending transaction
+/** comment by hy 2020-04-23
+ * # 重置待决议的事务
+ */
   pending_proposal.reset();
 
   reset_pending_committing_finishers();

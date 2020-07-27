@@ -25,6 +25,9 @@ class SubsystemMap {
   // The rest. Should be as small as possible to not unnecessarily
   // enlarge md_config_t and spread it other elements across cache
   // lines. Access can be slow.
+/** comment by hy 2020-04-24
+ * # 每个子系统会占据vector一项
+ */
   std::vector<ceph_subsys_item_t> m_subsys;
 
   friend class Log;
@@ -68,6 +71,13 @@ public:
     return ceph_subsys_get_as_array()[subsys].name;
   }
 
+/** comment by hy 2020-04-24
+ * # 是否需要打印日志
+     sub 就是vector的下标，用来寻址当前是哪个子系统的日志信息
+     level为当前这条日志信息的级别
+     比如对某个子系统设置的级别是5，
+     如果当前这个子系统的这条日志的级别是3，那么就会被打印
+ */
   template <unsigned SubV, int LvlV>
   bool should_gather() const {
     static_assert(SubV < get_num(), "wrong subsystem ID");

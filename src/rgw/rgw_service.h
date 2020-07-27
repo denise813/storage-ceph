@@ -148,10 +148,16 @@ struct RGWServices
   int do_init(CephContext *cct, bool have_cache, bool raw_storage, bool run_sync);
 
   int init(CephContext *cct, bool have_cache, bool run_sync) {
+/** comment by hy 2020-03-11
+ * # rgw 服务端初始化
+ */
     return do_init(cct, have_cache, false, run_sync);
   }
 
   int init_raw(CephContext *cct, bool have_cache) {
+/** comment by hy 2020-03-11
+ * # rgw 客户端的初始化
+ */
     return do_init(cct, have_cache, true, false);
   }
   void shutdown() {
@@ -168,9 +174,21 @@ class RGWOTPCtl;
 struct RGWCtlDef {
   struct _meta {
     std::unique_ptr<RGWMetadataManager> mgr;
+/** comment by hy 2020-03-15
+ * # = RGWBucketMetadataHandler
+ */
     std::unique_ptr<RGWMetadataHandler> bucket;
+/** comment by hy 2020-03-15
+ * # = RGWBucketInstanceMetadataHandler
+ */
     std::unique_ptr<RGWMetadataHandler> bucket_instance;
+/** comment by hy 2020-03-15
+ * # RGWUserMetadataHandler
+ */
     std::unique_ptr<RGWMetadataHandler> user;
+/** comment by hy 2020-03-15
+ * # RGWOTPMetadataHandler
+ */
     std::unique_ptr<RGWMetadataHandler> otp;
 
     _meta();
@@ -195,10 +213,21 @@ struct RGWCtl {
 
   struct _meta {
     RGWMetadataManager *mgr{nullptr};
-
+/** comment by hy 2020-03-15
+  * # = RGWBucketMetadataHandler
+  */
     RGWMetadataHandler *bucket{nullptr};
+/** comment by hy 2020-03-15
+ * # = RGWBucketInstanceMetadataHandler
+ */
     RGWMetadataHandler *bucket_instance{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWUserMetadataHandler
+ */
     RGWMetadataHandler *user{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWOTPMetadataHandler
+ */
     RGWMetadataHandler *otp{nullptr};
   } meta;
 

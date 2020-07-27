@@ -16,7 +16,9 @@
 class StupidAllocator : public Allocator {
   CephContext* cct;
   ceph::mutex lock = ceph::make_mutex("StupidAllocator::lock");
-
+/** comment by hy 2020-04-22
+ * # 总的空闲大小
+ */
   int64_t num_free;     ///< total bytes in freelist
   int64_t block_size;
 
@@ -24,6 +26,10 @@ class StupidAllocator : public Allocator {
     pair<const uint64_t,uint64_t>> allocator_t;
   typedef btree::btree_map<uint64_t,uint64_t,std::less<uint64_t>,allocator_t> interval_set_map_t;
   typedef interval_set<uint64_t,interval_set_map_t> interval_set_t;
+/** comment by hy 2020-04-22
+ * # 初始化的时候，free数组的长度为10，即有十颗区间树
+     根据每个区间的长度，分别插入不同的区间树
+ */
   std::vector<interval_set_t> free;  ///< leading-edge copy
 
   uint64_t last_alloc = 0;

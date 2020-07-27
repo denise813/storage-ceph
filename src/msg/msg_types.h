@@ -249,6 +249,9 @@ struct entity_addr_t {
   };
 
   __u32 type;
+/** comment by hy 2020-03-20
+ * # 随机数,表示网络信息表示,可以用来标识进程的通信通道
+ */
   __u32 nonce;
   union {
     sockaddr sa;

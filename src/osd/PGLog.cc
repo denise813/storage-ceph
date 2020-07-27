@@ -646,6 +646,9 @@ void PGLog::write_log_and_missing(
       write_from_dups,
       &may_include_deletes_in_missing_dirty,
       (pg_log_debug ? &log_keys_debug : nullptr));
+/** comment by hy 2020-07-13
+ * # 
+ */
     undirty();
   } else {
     dout(10) << "log is not dirty" << dendl;
@@ -846,12 +849,18 @@ void PGLog::_write_log_and_missing(
 
   if (touch_log)
     t.touch(coll, log_oid);
+/** comment by hy 2020-07-13
+ * # 版本
+ */
   if (dirty_to != eversion_t()) {
     t.omap_rmkeyrange(
       coll, log_oid,
       eversion_t().get_key_name(), dirty_to.get_key_name());
     clear_up_to(log_keys_debug, dirty_to.get_key_name());
   }
+/** comment by hy 2020-07-13
+ * # 
+ */
   if (dirty_to != eversion_t::max() && dirty_from != eversion_t::max()) {
     //   dout(10) << "write_log_and_missing, clearing from " << dirty_from << dendl;
     t.omap_rmkeyrange(
@@ -935,6 +944,9 @@ void PGLog::_write_log_and_missing(
     (*km)["may_include_deletes_in_missing"] = bufferlist();
     *may_include_deletes_in_missing_dirty = false;
   }
+/** comment by hy 2020-07-13
+ * # 
+ */
   missing.get_changed(
     [&](const hobject_t &obj) {
       string key = string("missing/") + obj.to_str();

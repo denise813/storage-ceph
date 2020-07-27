@@ -920,8 +920,14 @@ void rgw_build_iam_environment(rgw::sal::RGWRadosStore* store,
 void rgw_bucket_object_pre_exec(struct req_state *s)
 {
   if (s->expect_cont)
+/** comment by hy 2020-03-19
+ * # 检查链接状态
+ */
     dump_continue(s);
 
+/** comment by hy 2020-03-19
+ * # 验证bucket 状态
+ */
   dump_bucket_from_state(s);
 }
 
@@ -1406,6 +1412,9 @@ int RGWOp::init_quota()
   rgw::sal::RGWRadosUser owner_user(store);
   rgw::sal::RGWUser *user;
 
+/** comment by hy 2020-03-08
+ * # 请求用户 = 所有者用户
+ */
   if (s->user->get_id() == s->bucket_owner.get_id()) {
     user = s->user;
   } else {
@@ -1415,6 +1424,9 @@ int RGWOp::init_quota()
     user = &owner_user;
   }
 
+/** comment by hy 2020-03-08
+ * # 桶配额信息
+ */
   if (s->bucket_info.quota.enabled) {
     bucket_quota = s->bucket_info.quota;
   } else if (user->get_info().bucket_quota.enabled) {
@@ -1423,6 +1435,9 @@ int RGWOp::init_quota()
     bucket_quota = store->svc()->quota->get_bucket_quota();
   }
 
+/** comment by hy 2020-03-08
+ * # 用户配额信息
+ */
   if (user->get_info().user_quota.enabled) {
     user_quota = user->get_info().user_quota;
   } else {
@@ -1729,6 +1744,9 @@ static int iterate_user_manifest_parts(CephContext * const cct,
   MD5 etag_sum;
   do {
 #define MAX_LIST_OBJS 100
+/** comment by hy 2020-03-21
+ * # 获取bucket 下对象
+ */
     int r = list_op.list_objects(MAX_LIST_OBJS, &objs, NULL, &is_truncated, null_yield);
     if (r < 0) {
       return r;
@@ -1736,6 +1754,9 @@ static int iterate_user_manifest_parts(CephContext * const cct,
 
     for (rgw_bucket_dir_entry& ent : objs) {
       const uint64_t cur_total_len = obj_ofs;
+/** comment by hy 2020-03-21
+ * # rgw_bucket_dir_entry
+ */
       const uint64_t obj_size = ent.meta.accounted_size;
       uint64_t start_ofs = 0, end_ofs = obj_size;
 
@@ -1917,6 +1938,9 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
   if (bucket_name.compare(s->bucket.name) != 0) {
     map<string, bufferlist> bucket_attrs;
     auto obj_ctx = store->svc()->sysobj->init_obj_ctx();
+/** comment by hy 2020-03-21
+ * # 获取桶信息
+ */
     int r = store->getRados()->get_bucket_info(store->svc(), s->user->get_tenant(),
 				  bucket_name, bucket_info, NULL,
 				  s->yield, &bucket_attrs);
@@ -1928,11 +1952,17 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
     bucket = bucket_info.bucket;
     pbucket_info = &bucket_info;
     bucket_acl = &_bucket_acl;
+/** comment by hy 2020-03-21
+ * # 桶策略
+ */
     r = read_bucket_policy(store, s, bucket_info, bucket_attrs, bucket_acl, bucket);
     if (r < 0) {
       ldpp_dout(this, 0) << "failed to read bucket policy" << dendl;
       return r;
     }
+/** comment by hy 2020-03-21
+ * # iam 策略,对桶的操作
+ */
     _bucket_policy = get_iam_policy_from_attr(s->cct, store, bucket_attrs,
 					      bucket_info.bucket.tenant);
     bucket_policy = &_bucket_policy;
@@ -1947,6 +1977,9 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
    * - total length (of the parts we are going to send to client),
    * - overall DLO's content size,
    * - md5 sum of overall DLO's content (for etag of Swift API). */
+/** comment by hy 2020-03-21
+ * # 有点看不懂
+ */
   int r = iterate_user_manifest_parts(s->cct, store, ofs, end,
         pbucket_info, obj_prefix, bucket_acl, *bucket_policy,
         nullptr, &s->obj_size, &lo_etag,
@@ -1955,6 +1988,9 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
     return r;
   }
 
+/** comment by hy 2020-03-21
+ * # 对象范围操作
+ */
   r = RGWRados::Object::Read::range_to_ofs(s->obj_size, ofs, end);
   if (r < 0) {
     return r;
@@ -1968,6 +2004,9 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
     return r;
   }
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   if (!get_data) {
     bufferlist bl;
     send_response_data(bl, 0, 0);
@@ -2215,8 +2254,14 @@ void RGWGetObj::execute()
   perfcounter->inc(l_rgw_get);
 
   RGWRados::Object op_target(store->getRados(), s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), obj);
+/** comment by hy 2020-03-21
+ * # 声明一个ObjectRead类为读取object做准备
+ */
   RGWRados::Object::Read read_op(&op_target);
 
+/** comment by hy 2020-03-21
+ * # 参数
+ */
   op_ret = get_params();
   if (op_ret < 0)
     goto done_err;
@@ -2236,12 +2281,18 @@ void RGWGetObj::execute()
   read_op.params.lastmod = &lastmod;
   read_op.params.obj_size = &s->obj_size;
 
+/** comment by hy 2020-03-21
+ * # 获取头文件中的基本信息
+ */
   op_ret = read_op.prepare(s->yield);
   if (op_ret < 0)
     goto done_err;
   version_id = read_op.state.obj.key.instance;
 
   /* STAT ops don't need data, and do no i/o */
+/** comment by hy 2020-03-19
+ * # 看看状态,读到元数据就完成了
+ */
   if (get_type() == RGW_OP_STAT_OBJ) {
     return;
   }
@@ -2274,19 +2325,33 @@ void RGWGetObj::execute()
   }
   /* end gettorrent */
 
+/** comment by hy 2020-03-19
+ * # 压缩属性
+ */
   op_ret = rgw_compression_info_from_attrset(attrs, need_decompress, cs_info);
   if (op_ret < 0) {
     ldpp_dout(s, 0) << "ERROR: failed to decode compression info, cannot decompress" << dendl;
     goto done_err;
   }
+/** comment by hy 2020-03-19
+ * # filter = 解压
+ */
   if (need_decompress) {
       s->obj_size = cs_info.orig_size;
       decompress.emplace(s->cct, &cs_info, partial_content, filter);
       filter = &*decompress;
   }
 
+/** comment by hy 2020-03-19
+ * # 用户的一些信息
+      bucket 信息确认
+     这个信息还没弄明白什么意思
+ */
   attr_iter = attrs.find(RGW_ATTR_USER_MANIFEST);
   if (attr_iter != attrs.end() && !skip_manifest) {
+/** comment by hy 2020-03-21
+ * # 
+ */
     op_ret = handle_user_manifest(attr_iter->second.c_str());
     if (op_ret < 0) {
       ldpp_dout(this, 0) << "ERROR: failed to handle user manifest ret="
@@ -2298,6 +2363,10 @@ void RGWGetObj::execute()
 
   attr_iter = attrs.find(RGW_ATTR_SLO_MANIFEST);
   if (attr_iter != attrs.end() && !skip_manifest) {
+/** comment by hy 2020-03-19
+ * # 这是单个大对象?
+     static  large object
+ */
     is_slo = true;
     op_ret = handle_slo_manifest(attr_iter->second);
     if (op_ret < 0) {
@@ -2315,6 +2384,9 @@ void RGWGetObj::execute()
     goto done_err;
   }
 
+/** comment by hy 2020-03-19
+ * # j校正非法范围
+ */
   op_ret = read_op.range_to_ofs(s->obj_size, ofs, end);
   if (op_ret < 0)
     goto done_err;
@@ -2322,17 +2394,29 @@ void RGWGetObj::execute()
 
   /* Check whether the object has expired. Swift API documentation
    * stands that we should return 404 Not Found in such case. */
+/** comment by hy 2020-03-21
+ * # 过去对象
+ */
   if (need_object_expiration() && object_is_expired(attrs)) {
     op_ret = -ENOENT;
     goto done_err;
   }
 
   /* Decode S3 objtags, if any */
+/** comment by hy 2020-03-19
+ * # 请求中包含tag信息
+ */
   rgw_cond_decode_objtags(s, attrs);
 
   start = ofs;
 
   attr_iter = attrs.find(RGW_ATTR_MANIFEST);
+/** comment by hy 2020-03-21
+ * # filter = 解密处理
+     上传普通对象
+         RGWGetObj_ObjStore_S3::get_decrypt_filter
+         filter = RGWGetObj_CB
+ */
   op_ret = this->get_decrypt_filter(&decrypt, filter,
                                     attr_iter != attrs.end() ? &(attr_iter->second) : nullptr);
   if (decrypt != nullptr) {
@@ -2342,6 +2426,9 @@ void RGWGetObj::execute()
     goto done_err;
   }
 
+/** comment by hy 2020-03-19
+ * # 参数错误
+ */
   if (!get_data || ofs > end) {
     send_response_data(bl, 0, 0);
     return;
@@ -2349,12 +2436,28 @@ void RGWGetObj::execute()
 
   perfcounter->inc(l_rgw_get_b, end - ofs);
 
+/** comment by hy 2020-03-19
+ * # filter = RGWGetObj_CB
+ */
   ofs_x = ofs;
   end_x = end;
+/** comment by hy 2020-03-21
+ * # RGWGetObj_Filter::fixup_range
+     加密解压操作
+     普通操作什么什么也不做
+ */
   filter->fixup_range(ofs_x, end_x);
+/** comment by hy 2020-03-19
+ * # 里面一个大循环
+      开始读取数据,具体如下
+      通过head,然后回调继续其下一个对象
+ */
   op_ret = read_op.iterate(ofs_x, end_x, filter, s->yield);
 
   if (op_ret >= 0)
+/** comment by hy 2020-03-21
+ * # 普通操作什么也不做
+ */
     op_ret = filter->flush();
 
   perfcounter->tinc(l_rgw_get_lat, s->time_elapsed());
@@ -2362,6 +2465,10 @@ void RGWGetObj::execute()
     goto done_err;
   }
 
+/** comment by hy 2020-03-21
+ * # 封装http 响应消息
+     RGWGetObj_ObjStore_S3::send_response_data
+ */
   op_ret = send_response_data(bl, 0, 0);
   if (op_ret < 0) {
     goto done_err;
@@ -3028,6 +3135,9 @@ int forward_request_to_master(struct req_state *s, obj_version *objv,
 
 void RGWCreateBucket::pre_exec()
 {
+/** comment by hy 2020-03-15
+ * # 
+ */
   rgw_bucket_object_pre_exec(s);
 }
 
@@ -3110,6 +3220,9 @@ static int filter_out_quota_info(std::map<std::string, bufferlist>& add_attrs,
   auto iter = add_attrs.find(RGW_ATTR_QUOTA_NOBJS);
   std::string err;
   if (std::end(add_attrs) != iter) {
+/** comment by hy 2020-03-15
+ * # 
+ */
     quota.max_objects =
       static_cast<int64_t>(strict_strtoll(iter->second.c_str(), 10, &err));
     if (!err.empty()) {
@@ -3191,7 +3304,7 @@ static void filter_out_website(std::map<std::string, ceph::bufferlist>& add_attr
     }
   }
 
-  if (! lstval.empty()) {
+  if (!lstval.empty()) {
     ws_conf.listing_enabled = boost::algorithm::iequals(lstval, "true");
   }
 }
@@ -3207,6 +3320,10 @@ void RGWCreateBucket::execute()
   rgw_raw_obj obj(store->svc()->zone->get_zone_params().domain_root, bucket_name);
   obj_version objv, *pobjv = NULL;
 
+/** comment by hy 2020-03-08
+ * # 这个很奇怪,不是必定返回成功吗?
+     为了扩展
+ */
   op_ret = get_params();
   if (op_ret < 0)
     return;
@@ -3244,6 +3361,9 @@ void RGWCreateBucket::execute()
 
   /* we need to make sure we read bucket info, it's not read before for this
    * specific request */
+/** comment by hy 2020-03-08
+ * # 参数封装
+ */
   s->bucket.tenant = s->bucket_tenant;
   s->bucket.name = s->bucket_name;
   rgw::sal::RGWBucket* bucket = NULL;
@@ -3258,6 +3378,9 @@ void RGWCreateBucket::execute()
     s->bucket_info = bucket->get_info();
     s->bucket_attrs = bucket->get_attrs();
     delete bucket;
+/** comment by hy 2020-03-08
+ * # 属性将策略信息包装成 s3 对应的 结构
+ */
     int r = rgw_op_get_bucket_policy_from_attr(s->cct, store, s->bucket_info,
                                                s->bucket_attrs, &old_policy);
     if (r >= 0)  {
@@ -3275,6 +3398,9 @@ void RGWCreateBucket::execute()
 
   if (!store->svc()->zone->is_meta_master()) {
     JSONParser jp;
+/** comment by hy 2020-03-08
+ * # 向主网关转发消息
+ */
     op_ret = forward_request_to_master(s, NULL, store, in_data, &jp);
     if (op_ret < 0) {
       return;
@@ -3311,6 +3437,10 @@ void RGWCreateBucket::execute()
     rgw_bucket bucket;
     bucket.tenant = s->bucket_tenant;
     bucket.name = s->bucket_name;
+/** comment by hy 2020-03-15
+ * # 设置 bucket 数据布局
+     RGWSI_Zone::select_bucket_placement
+ */
     op_ret = store->svc()->zone->select_bucket_placement(s->user->get_info(),
 					    zonegroup_id,
 					    placement_rule,
@@ -3324,10 +3454,19 @@ void RGWCreateBucket::execute()
   /* Encode special metadata first as we're using std::map::emplace under
    * the hood. This method will add the new items only if the map doesn't
    * contain such keys yet. */
+/** comment by hy 2020-03-15
+ * # 设置ACL 作为 扩展属性
+ */
   policy.encode(aclbl);
   emplace_attr(RGW_ATTR_ACL, std::move(aclbl));
 
+/** comment by hy 2020-03-08
+ * # 跨域
+ */
   if (has_cors) {
+/** comment by hy 2020-03-15
+ * # 跨域 扩展属性
+ */
     cors_config.encode(corsbl);
     emplace_attr(RGW_ATTR_CORS, std::move(corsbl));
   }
@@ -3337,13 +3476,24 @@ void RGWCreateBucket::execute()
   if (need_metadata_upload()) {
     /* It's supposed that following functions WILL NOT change any special
      * attributes (like RGW_ATTR_ACL) if they are already present in attrs. */
+/** comment by hy 2020-03-15
+ * # 从请求中的扩展属性中获取元数据
+ */
     op_ret = rgw_get_request_metadata(s->cct, s->info, attrs, false);
     if (op_ret < 0) {
       return;
     }
+/** comment by hy 2020-03-15
+ * # 更新扩展属性
+ */
     prepare_add_del_attrs(s->bucket_attrs, rmattr_names, attrs);
+/** comment by hy 2020-03-15
+ * # 通知更新
+ */
     populate_with_generic_attrs(s, attrs);
-
+/** comment by hy 2020-03-08
+ * # 从对应的扩展属性中获取配额信息
+ */
     op_ret = filter_out_quota_info(attrs, rmattr_names, quota_info);
     if (op_ret < 0) {
       return;
@@ -3352,6 +3502,9 @@ void RGWCreateBucket::execute()
     }
 
     /* Web site of Swift API. */
+/** comment by hy 2020-03-15
+ * # web 相关参数
+ */
     filter_out_website(attrs, rmattr_names, s->bucket_info.website_conf);
     s->bucket_info.has_website = !s->bucket_info.website_conf.is_empty();
   }
@@ -3368,7 +3521,10 @@ void RGWCreateBucket::execute()
     info.flags = BUCKET_VERSIONED | BUCKET_OBJ_LOCK_ENABLED;
   }
 
-
+/** comment by hy 2020-03-08
+ * # RGWRados::create_bucket
+     写instance 信息
+ */
   op_ret = store->getRados()->create_bucket(s->user->get_info(), s->bucket, zonegroup_id,
                                 placement_rule, s->bucket_info.swift_ver_location,
                                 pquota_info, attrs,
@@ -3397,6 +3553,10 @@ void RGWCreateBucket::execute()
     s->bucket = info.bucket;
   }
 
+/** comment by hy 2020-03-08
+ * # 发送远程命名将用户与桶进行关联起来
+     RGWBucketCtl::link_bucket
+ */
   op_ret = store->ctl()->bucket->link_bucket(s->user->get_id(), s->bucket,
                                           info.creation_time, s->yield, false);
   if (op_ret && !existed && op_ret != -EEXIST) {
@@ -3420,6 +3580,9 @@ void RGWCreateBucket::execute()
       RGWBucketInfo binfo;
       map<string, bufferlist> battrs;
 
+/** comment by hy 2020-03-15
+ * # 检查成功,跟新信息
+ */
       op_ret = store->getRados()->get_bucket_info(store->svc(), s->bucket_tenant, s->bucket_name,
                                       binfo, nullptr, s->yield, &battrs);
       if (op_ret < 0) {
@@ -3435,11 +3598,20 @@ void RGWCreateBucket::execute()
 
       attrs.clear();
 
+/** comment by hy 2020-03-19
+ * # 从请求中获取扩展属性
+ */
       op_ret = rgw_get_request_metadata(s->cct, s->info, attrs, false);
       if (op_ret < 0) {
         return;
       }
+/** comment by hy 2020-03-19
+ * # 更新 bucket 属性
+ */
       prepare_add_del_attrs(s->bucket_attrs, rmattr_names, attrs);
+/** comment by hy 2020-03-19
+ * # 放入到扩展属性缓存中
+ */
       populate_with_generic_attrs(s, attrs);
       op_ret = filter_out_quota_info(attrs, rmattr_names, s->bucket_info.quota);
       if (op_ret < 0) {
@@ -3457,6 +3629,11 @@ void RGWCreateBucket::execute()
       s->bucket_info.has_website = !s->bucket_info.website_conf.is_empty();
 
       /* This will also set the quota on the bucket. */
+/** comment by hy 2020-03-15
+ * # 加载 配额信息
+     RGWBucketCtl::set_bucket_instance_attrs
+    将信息写到bucket 元数据中
+ */
       op_ret = store->ctl()->bucket->set_bucket_instance_attrs(s->bucket_info, attrs,
 							    &s->bucket_info.objv_tracker,
 							    s->yield);
@@ -3706,6 +3883,9 @@ int RGWPutObj::verify_permission()
 
 void RGWPutObj::pre_exec()
 {
+/** comment by hy 2020-03-16
+ * # 测试状态,还可以起到预热的作用
+ */
   rgw_bucket_object_pre_exec(s);
 }
 
@@ -3733,6 +3913,9 @@ int RGWPutObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 
 int RGWPutObj::get_data(const off_t fst, const off_t lst, bufferlist& bl)
 {
+/** comment by hy 2020-03-14
+ * # 
+ */
   RGWPutObj_CB cb(this);
   RGWGetObj_Filter* filter = &cb;
   boost::optional<RGWGetObj_Decompress> decompress;
@@ -3756,6 +3939,9 @@ int RGWPutObj::get_data(const off_t fst, const off_t lst, bufferlist& bl)
   read_op.params.obj_size = &obj_size;
   read_op.params.attrs = &attrs;
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   ret = read_op.prepare(s->yield);
   if (ret < 0)
     return ret;
@@ -3787,6 +3973,9 @@ int RGWPutObj::get_data(const off_t fst, const off_t lst, bufferlist& bl)
     return ret;
   }
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   ret = read_op.range_to_ofs(obj_size, new_ofs, new_end);
   if (ret < 0)
     return ret;
@@ -3827,6 +4016,9 @@ static CompressorRef get_compressor_plugin(const req_state *s,
 
 void RGWPutObj::execute()
 {
+/** comment by hy 2020-02-28
+ * # 用于存储用户提供的md5、计算的md5 相关的数组
+ */
   char supplied_md5_bin[CEPH_CRYPTO_MD5_DIGESTSIZE + 1];
   char supplied_md5[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
   char calc_md5[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
@@ -3834,10 +4026,16 @@ void RGWPutObj::execute()
   MD5 hash;
   bufferlist bl, aclbl, bs;
   int len;
-  
+/** comment by hy 2020-02-28
+ * # copy source range 相关
+ */
   off_t fst;
   off_t lst;
 
+/** comment by hy 2020-03-19
+ * # http 中包含 头 HTTP_X_ OBJECT_MANIFEST 或者 multipart-manifest
+      即表示 manifast 需求
+ */
   bool need_calc_md5 = (dlo_manifest == NULL) && (slo_info == NULL);
   perfcounter->inc(l_rgw_put);
   // report latency on return
@@ -3846,6 +4044,9 @@ void RGWPutObj::execute()
     });
 
   op_ret = -EINVAL;
+/** comment by hy 2020-03-16
+ * # 判断用户请求object name ucket name等是否正确
+ */
   if (s->object.empty()) {
     return;
   }
@@ -3855,7 +4056,13 @@ void RGWPutObj::execute()
     return;
   }
 
-
+/** comment by hy 2020-03-16
+ * # 解析并判断http请求的相关参数
+     包括copy obj的情况、包含tagging的情况 包含version的情况
+     以及基本objname和bucketname解析
+ 
+     获取版本信息,时间搓,id形式
+ */
   op_ret = get_system_versioning_params(s, &olh_epoch, &version_id);
   if (op_ret < 0) {
     ldpp_dout(this, 20) << "get_system_versioning_params() returned ret="
@@ -3863,10 +4070,17 @@ void RGWPutObj::execute()
     return;
   }
 
+/** comment by hy 2020-03-16
+ * # 判断并处理请求是否提供了md5来校验请求完整
+     如果http 请求中包含 HTTP_CONTENT_MD5 表示要支持MD5的值
+ */
   if (supplied_md5_b64) {
     need_calc_md5 = true;
 
     ldpp_dout(this, 15) << "supplied_md5_b64=" << supplied_md5_b64 << dendl;
+/** comment by hy 2020-03-16
+ * # md5 数字变成字符
+ */
     op_ret = ceph_unarmor(supplied_md5_bin, &supplied_md5_bin[CEPH_CRYPTO_MD5_DIGESTSIZE + 1],
                        supplied_md5_b64, supplied_md5_b64 + strlen(supplied_md5_b64));
     ldpp_dout(this, 15) << "ceph_armor ret=" << op_ret << dendl;
@@ -3879,8 +4093,17 @@ void RGWPutObj::execute()
     ldpp_dout(this, 15) << "supplied_md5=" << supplied_md5 << dendl;
   }
 
+/** comment by hy 2020-02-28
+ * # 判断http传输是否使用了chunk传输的方式，如果没有，
+     可以直接根据content length来判断quota，
+     否则需要等到所有chunk接收完成
+     https://www.cnblogs.com/ribavnu/p/5084458.html
+ */
   if (!chunked_upload) { /* with chunked upload we don't know how big is the upload.
                             we also check sizes at the end anyway */
+/** comment by hy 2020-02-28
+ * # 判断是否满足user和bucket的quota约束
+ */
     op_ret = store->getRados()->check_quota(s->bucket_owner.get_id(), s->bucket,
 				user_quota, bucket_quota, s->content_length);
     if (op_ret < 0) {
@@ -3889,17 +4112,38 @@ void RGWPutObj::execute()
     }
   }
 
+/** comment by hy 2020-02-28
+ * # 当请求中包含 HTTP_ETAG 表示要支持 etag
+     当启用Multipart上传时，
+     用户每次上传新part需要带上之前上传response中返回的etag
+     判断用户是否提供了etag
+     关于etag介绍：
+     https://baike.baidu.com/item/ETag/4419019?fr=aladdin
+ */
   if (supplied_etag) {
+/** comment by hy 2020-03-19
+ * # 将etag值放入md5值中
+ */
     strncpy(supplied_md5, supplied_etag, sizeof(supplied_md5) - 1);
     supplied_md5[sizeof(supplied_md5) - 1] = '\0';
   }
 
+/** comment by hy 2020-02-28
+ * # 创建对象时调用子类
+       RGWPutObjProcessor_Atomic
+ 
+     创建分段时子类
+       RGWPutObjProcessor_Multipart
+ */
   const bool multipart = !multipart_upload_id.empty();
   auto& obj_ctx = *static_cast<RGWObjectCtx*>(s->obj_ctx);
   rgw_obj obj{s->bucket, s->object};
 
   /* Handle object versioning of Swift API. */
   if (! multipart) {
+/** comment by hy 2020-03-16
+ * # 不是多段操作在swift里面有需要进行的多版本操作
+ */
     op_ret = store->getRados()->swift_versioning_copy(obj_ctx,
                                           s->bucket_owner.get_id(),
                                           s->bucket_info,
@@ -3912,18 +4156,29 @@ void RGWPutObj::execute()
   }
 
   // create the object processor
+/** comment by hy 2020-03-16
+ * # 设置上传窗口,用于限流
+     返回流量限制 BlockingAioThrottle 实例
+ */
   auto aio = rgw::make_throttle(s->cct->_conf->rgw_put_obj_min_window_size,
                                 s->yield);
   using namespace rgw::putobj;
   constexpr auto max_processor_size = std::max({sizeof(MultipartObjectProcessor),
                                                sizeof(AtomicObjectProcessor),
                                                sizeof(AppendObjectProcessor)});
+/** comment by hy 2020-03-16
+ * # ceph::static_ptr = ceph::static_ptr<对象类型, 对象大小>
+     ObjectProcessor 是以上 processor 的基类
+ */
   ceph::static_ptr<ObjectProcessor, max_processor_size> processor;
 
   rgw_placement_rule *pdest_placement;
 
   multipart_upload_info upload_info;
   if (multipart) {
+/** comment by hy 2020-03-16
+ * # 多段处理
+ */
     RGWMPObj mp(s->object.name, multipart_upload_id);
 
     op_ret = get_multipart_info(store, s, mp.get_meta(), nullptr, nullptr, &upload_info);
@@ -3943,6 +4198,10 @@ void RGWPutObj::execute()
         multipart_upload_id, multipart_part_num, multipart_part_str,
         this, s->yield);
   } else if(append) {
+/** comment by hy 2020-03-16
+ * # 这个默认是false
+     compression and encryption only apply to full object uploads
+ */
     if (s->bucket_info.versioned()) {
       op_ret = -ERR_INVALID_BUCKET_STATE;
       return;
@@ -3953,6 +4212,9 @@ void RGWPutObj::execute()
             s->req_id, position, &cur_accounted_size, this, s->yield);
   } else {
     if (s->bucket_info.versioning_enabled()) {
+/** comment by hy 2020-03-16
+ * # 多版本
+ */
       if (!version_id.empty()) {
         obj.key.set_instance(version_id);
       } else {
@@ -3960,13 +4222,27 @@ void RGWPutObj::execute()
         version_id = obj.key.instance;
       }
     }
+/** comment by hy 2020-03-16
+ * # 正常操作
+ */
     pdest_placement = &s->dest_placement;
+/** comment by hy 2020-03-16
+ * # 换一个处理者,对应对象的处理者
+ */
     processor.emplace<AtomicObjectProcessor>(
         &*aio, store, s->bucket_info, pdest_placement,
         s->bucket_owner.get_id(), obj_ctx, obj, olh_epoch,
         s->req_id, this, s->yield);
   }
 
+/** comment by hy 2020-02-28
+ * # 上面都处理完成后
+      开始处理上传对象
+      因为在 rgw::putobj 命名空间下
+     AtomicObjectProcessor::prepare
+       写入前的准备工作：生成对象名称前缀、设置placement rules
+       在内存中创建对应的对象、设置切分head和tail对象的尺寸等
+ */
   op_ret = processor->prepare(s->yield);
   if (op_ret < 0) {
     ldpp_dout(this, 20) << "processor->prepare() returned ret=" << op_ret
@@ -3974,6 +4250,9 @@ void RGWPutObj::execute()
     return;
   }
 
+/** comment by hy 2020-03-16
+ * # 复制对象 拷贝?
+ */
   if ((! copy_source.empty()) && !copy_source_range) {
     rgw_obj_key obj_key(copy_source_object_name, copy_source_version_id);
     rgw_obj obj(copy_source_bucket_info.bucket, obj_key.name);
@@ -3994,11 +4273,21 @@ void RGWPutObj::execute()
     lst = copy_source_range_lst;
   }
 
+/** comment by hy 2020-03-21
+ * # 获得source对象的起止偏移
+ */
   fst = copy_source_range_fst;
 
   // no filters by default
+/** comment by hy 2020-03-19
+ * # 只能指针转化未父类进行操作
+ */
   DataProcessor *filter = processor.get();
 
+/** comment by hy 2020-02-28
+ * # 根据zone配置选择object的压缩类型，可为none或具体的压缩插件名字
+     http://docs.ceph.com/docs/kraken/radosgw/compression/
+ */
   const auto& compression_type = store->svc()->zone->get_zone_params().get_compression_type(*pdest_placement);
   CompressorRef plugin;
   boost::optional<RGWPutObj_Compress> compressor;
@@ -4006,6 +4295,10 @@ void RGWPutObj::execute()
   std::unique_ptr<DataProcessor> encrypt;
 
   if (!append) { // compression and encryption only apply to full object uploads
+/** comment by hy 2020-03-16
+ * # 加密处理,对于对象不进行处理
+     其实就是指 加密不需要特别处理
+ */
     op_ret = get_encrypt_filter(&encrypt, filter);
     if (op_ret < 0) {
       return;
@@ -4013,29 +4306,53 @@ void RGWPutObj::execute()
     if (encrypt != nullptr) {
       filter = &*encrypt;
     } else if (compression_type != "none") {
+/** comment by hy 2020-02-28
+ * # 不需要加密时，并且compression_type被设置了，
+     filter被用于压缩数据
+ */
       plugin = get_compressor_plugin(s, compression_type);
       if (!plugin) {
         ldpp_dout(this, 1) << "Cannot load plugin for compression type "
             << compression_type << dendl;
       } else {
+/** comment by hy 2020-02-28
+ * # 如果一切都没问题，构造compressor
+     RGWPutObj_Compress 又开始压缩处理
+ */
         compressor.emplace(s->cct, plugin, filter);
         filter = &*compressor;
       }
     }
   }
   tracepoint(rgw_op, before_data_transfer, s->req_id.c_str());
+/** comment by hy 2020-02-28
+ * # 前期参数解析、工具准备、head obj初始化、写入ctx初始化工作完成
+     从req中读取数据，经处理后存入rados
+ */
   do {
     bufferlist data;
     if (fst > lst)
       break;
     if (copy_source.empty()) {
+/** comment by hy 2020-02-28
+ * # 如果不是copy，是正常的put
+     读取请求体 rgw_max_chunk_size 字节的数据到data
+     rgw_max_chunk_size 是一次发送给rados的消息
+     这个值根据带宽进行设置
+ */
       len = get_data(data);
     } else {
+/** comment by hy 2020-02-28
+ * # 拷贝操作，从另一个对象读取
+ */
       uint64_t cur_lst = min(fst + s->cct->_conf->rgw_max_chunk_size - 1, lst);
       op_ret = get_data(fst, cur_lst, data);
       if (op_ret < 0)
         return;
       len = data.length();
+/** comment by hy 2020-03-16
+ * # 连接处理的长度
+ */
       s->content_length += len;
       fst += len;
     }
@@ -4047,13 +4364,35 @@ void RGWPutObj::execute()
       break;
     }
 
+/** comment by hy 2020-02-28
+ * # 计算data的md5
+     在http 有声明的情况下执行
+ */
     if (need_calc_md5) {
       hash.Update((const unsigned char *)data.c_str(), data.length());
     }
 
     /* update torrrent */
+/** comment by hy 2020-03-16
+ * # 怎么是sha1
+ */
     torrent.update(data);
 
+/** comment by hy 2020-03-16
+ * # 这里开始进行操作
+     如果压缩
+       压缩完成后,通过
+       Pipe::process
+       回调调用 原来 AtomicObjectProcessor::process =
+         HeadObjectProcessor::process
+       改回调用于写数据了
+         AtomicObjectProcessor::process_first_chunk
+       然后迭代到下一个操作
+         ManifestObjectProcessor::next
+       然后
+         AtomicObjectProcessor::process
+       继续
+ */
     op_ret = filter->process(std::move(data), ofs);
     if (op_ret < 0) {
       ldpp_dout(this, 20) << "processor->process() returned ret="
@@ -4061,16 +4400,28 @@ void RGWPutObj::execute()
       return;
     }
 
+/** comment by hy 2020-02-28
+ * # ofs表示当前已经从请求体中读取的数据长度
+     len==0 表示对象数据读取完成
+ */
     ofs += len;
   } while (len > 0);
   tracepoint(rgw_op, after_data_transfer, s->req_id.c_str(), ofs);
 
   // flush any data in filters
+/** comment by hy 2020-03-19
+ * # 最后一个特殊处理,传入一个空数据
+     表示处理头对象
+ */
   op_ret = filter->process({}, ofs);
   if (op_ret < 0) {
     return;
   }
 
+/** comment by hy 2020-02-28
+ * # 如果不是chunk upload，并且接收到的数据和content length不同，
+     表明传输出现错误
+ */
   if (!chunked_upload && ofs != s->content_length) {
     op_ret = -ERR_REQUEST_TIMEOUT;
     return;
@@ -4079,11 +4430,18 @@ void RGWPutObj::execute()
 
   perfcounter->inc(l_rgw_put_b, s->obj_size);
 
+/** comment by hy 2020-02-28
+ * # 验证完成
+     只要表示头上的参数都正确
+ */
   op_ret = do_aws4_auth_completion();
   if (op_ret < 0) {
     return;
   }
 
+/** comment by hy 2020-02-28
+ * # 判断是否超出quota限制
+ */
   op_ret = store->getRados()->check_quota(s->bucket_owner.get_id(), s->bucket,
                               user_quota, bucket_quota, s->obj_size);
   if (op_ret < 0) {
@@ -4091,8 +4449,14 @@ void RGWPutObj::execute()
     return;
   }
 
+/** comment by hy 2020-03-16
+ * # md5 值计算完成
+ */
   hash.Final(m);
 
+/** comment by hy 2020-02-28
+ * # 将压缩信息加入attrs
+ */
   if (compressor && compressor->is_compressed()) {
     bufferlist tmp;
     RGWCompressionInfo cs_info;
@@ -4109,13 +4473,24 @@ void RGWPutObj::execute()
 
   buf_to_hex(m, CEPH_CRYPTO_MD5_DIGESTSIZE, calc_md5);
 
+/** comment by hy 2020-03-16
+ * # 这里etag 等于 MD5
+     桶好像不是桶是 名称
+ */
   etag = calc_md5;
 
+/** comment by hy 2020-02-28
+ * # 判断数据的md5是否符合期望
+     这个预期值到底什么意思?
+ */
   if (supplied_md5_b64 && strcmp(calc_md5, supplied_md5)) {
     op_ret = -ERR_BAD_DIGEST;
     return;
   }
 
+/** comment by hy 2020-02-28
+ * # 把acl信息存入xattr
+ */
   policy.encode(aclbl);
   emplace_attr(RGW_ATTR_ACL, std::move(aclbl));
 
@@ -4133,6 +4508,9 @@ void RGWPutObj::execute()
     emplace_attr(RGW_ATTR_SLO_MANIFEST, std::move(manifest_bl));
   }
 
+/** comment by hy 2020-02-28
+ * # etag相关
+ */
   if (supplied_etag && etag.compare(supplied_etag) != 0) {
     op_ret = -ERR_UNPROCESSABLE_ENTITY;
     return;
@@ -4140,6 +4518,9 @@ void RGWPutObj::execute()
   bl.append(etag.c_str(), etag.size());
   emplace_attr(RGW_ATTR_ETAG, std::move(bl));
 
+/** comment by hy 2020-02-28
+ * # 将其他 (其他从http请求中获得的、对象需要的attr)，存入xattr
+ */
   populate_with_generic_attrs(s, attrs);
   op_ret = rgw_get_request_metadata(s->cct, s->info, attrs);
   if (op_ret < 0) {
@@ -4157,6 +4538,9 @@ void RGWPutObj::execute()
     slo_userindicator_bl.append("True", 4);
     emplace_attr(RGW_ATTR_SLO_UINDICATOR, std::move(slo_userindicator_bl));
   }
+/** comment by hy 2020-03-19
+ * # 对象锁相关操作
+ */
   if (obj_legal_hold) {
     bufferlist obj_legal_hold_bl;
     obj_legal_hold->encode(obj_legal_hold_bl);
@@ -4169,6 +4553,10 @@ void RGWPutObj::execute()
   }
 
   tracepoint(rgw_op, processor_complete_enter, s->req_id.c_str());
+/** comment by hy 2020-02-28
+ * # 完成之前未完成的head和tail的写入，为head设置xattr
+     AtomicObjectProcessor::complete
+ */
   op_ret = processor->complete(s->obj_size, etag, &mtime, real_time(), attrs,
                                (delete_at ? *delete_at : real_time()), if_match, if_nomatch,
                                (user_data.empty() ? nullptr : &user_data), nullptr, nullptr,
@@ -4178,6 +4566,9 @@ void RGWPutObj::execute()
   /* produce torrent */
   if (s->cct->_conf->rgw_torrent_flag && (ofs == torrent.get_data_len()))
   {
+/** comment by hy 2020-03-19
+ * # 这是什么?
+ */
     torrent.init(s, store);
     torrent.set_create_date(mtime);
     op_ret =  torrent.complete();
@@ -6197,6 +6588,9 @@ void RGWCompleteMultipart::execute()
         op_ret = -ERR_INVALID_PART;
         return;
       } else {
+/** comment by hy 2020-03-22
+ * # 
+ */
         manifest.append(obj_part.manifest, store->svc()->zone);
       }
 
@@ -7634,6 +8028,9 @@ int RGWHandler::do_read_permissions(RGWOp *op, bool only_bucket)
     /* already read bucket info */
     return 0;
   }
+/** comment by hy 2020-03-08
+ * # 读取对象的 ACL 策略
+ */
   int ret = rgw_build_object_policies(store, s, op->prefetch_data());
 
   if (ret < 0) {

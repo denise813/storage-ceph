@@ -118,6 +118,9 @@ public:
     if (r < 0) {
       return r;
     }
+/** comment by hy 2020-03-11
+ * # 添加 watch
+ */
     svc->add_watcher(index);
     return 0;
   }
@@ -161,6 +164,12 @@ RGWSI_RADOS::Obj RGWSI_Notify::pick_control_obj(const string& key)
 
 int RGWSI_Notify::init_watch()
 {
+/** comment by hy 2020-03-11
+ * # 为什么要多个?
+ */
+/** comment by hy 2020-03-11
+ * # 代码不优美
+ */
   num_watchers = cct->_conf->rgw_num_control_oids;
 
   bool compat_oid = (num_watchers == 0);
@@ -186,6 +195,11 @@ int RGWSI_Notify::init_watch()
     notify_objs[i] = rados_svc->handle().obj({control_pool, notify_oid});
     auto& notify_obj = notify_objs[i];
 
+/** comment by hy 2020-03-11
+ * # RGWSI_RADOS::Obj::open
+     这里的意思是打开一个类似于文件锁的东西
+     而这个文件名称就叫 notify_1...n
+ */
     int r = notify_obj.open();
     if (r < 0) {
       ldout(cct, 0) << "ERROR: notify_obj.open() returned r=" << r << dendl;
@@ -203,6 +217,9 @@ int RGWSI_Notify::init_watch()
     RGWWatcher *watcher = new RGWWatcher(cct, this, i, notify_obj);
     watchers[i] = watcher;
 
+/** comment by hy 2020-03-11
+ * # 获取watch 信息
+ */
     r = watcher->register_watch_async();
     if (r < 0) {
       ldout(cct, 0) << "WARNING: register_watch_aio() returned " << r << dendl;
@@ -211,6 +228,9 @@ int RGWSI_Notify::init_watch()
     }
   }
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   for (int i = 0; i < num_watchers; ++i) {
     int r = watchers[i]->register_watch_finish();
     if (r < 0) {
@@ -239,6 +259,10 @@ void RGWSI_Notify::finalize_watch()
 
 int RGWSI_Notify::do_start()
 {
+/** comment by hy 2020-03-11
+ * # 启动 域相关的服务
+     RGWSI_Zone::do_start
+ */
   int r = zone_svc->start();
   if (r < 0) {
     return r;
@@ -246,10 +270,19 @@ int RGWSI_Notify::do_start()
 
   assert(zone_svc->is_started()); /* otherwise there's an ordering problem */
 
+/** comment by hy 2020-03-11
+ * # 启动
+     zone 里面启动 会不会启动多了?
+     RGWSI_RADOS::do_start
+ */
   r = rados_svc->start();
   if (r < 0) {
     return r;
   }
+/** comment by hy 2020-03-11
+ * # 启动 
+     RGWSI_Finisher::do_start
+ */
   r = finisher_svc->start();
   if (r < 0) {
     return r;
@@ -257,6 +290,9 @@ int RGWSI_Notify::do_start()
 
   control_pool = zone_svc->get_zone_params().control_pool;
 
+/** comment by hy 2020-03-11
+ * # 
+ */
   int ret = init_watch();
   if (ret < 0) {
     lderr(cct) << "ERROR: failed to initialize watch: " << cpp_strerror(-ret) << dendl;

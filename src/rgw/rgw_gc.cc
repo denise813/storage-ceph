@@ -30,10 +30,16 @@ void RGWGC::initialize(CephContext *_cct, RGWRados *_store) {
   cct = _cct;
   store = _store;
 
+/** comment by hy 2020-03-06
+ * # 最大的 index
+ */
   max_objs = min(static_cast<int>(cct->_conf->rgw_gc_max_objs), rgw_shards_max());
 
   obj_names = new string[max_objs];
 
+/** comment by hy 2020-03-06
+ * # 将垃圾迭代 index 对象 放入 object_names
+ */
   for (int i = 0; i < max_objs; i++) {
     obj_names[i] = gc_oid_prefix;
     char buf[32];
@@ -48,7 +54,14 @@ void RGWGC::initialize(CephContext *_cct, RGWRados *_store) {
     librados::ObjectWriteOperation op;
     op.create(false);
     const uint64_t queue_size = cct->_conf->rgw_gc_max_queue_size, num_deferred_entries = cct->_conf->rgw_gc_max_deferred;
+/** comment by hy 2020-03-06
+ * # 初始化每个次代远端对应信息
+     包装 初始化队列和版本 操作
+ */
     gc_log_init2(op, queue_size, num_deferred_entries);
+/** comment by hy 2020-03-06
+ * # 发送给远端 gc pool
+ */
     store->gc_operate(obj_names[i], &op);
   }
 }
@@ -502,6 +515,9 @@ int RGWGC::process(int index, int max_secs, bool expired_only,
 
   end += max_secs;
   utime_t time(max_secs, 0);
+/** comment by hy 2020-04-13
+ * # 对分片进行上锁操作
+ */
   l.set_duration(time);
 
   int ret = l.lock_exclusive(&store->gc_pool_ctx, obj_names[index]);
@@ -523,6 +539,9 @@ int RGWGC::process(int index, int max_secs, bool expired_only,
 
     int ret = 0;
 
+/** comment by hy 2020-04-13
+ * # 分片未使用缓存
+ */
     if (! transitioned_objects_cache[index]) {
       ret = cls_rgw_gc_list(store->gc_pool_ctx, obj_names[index], marker, max, expired_only, entries, &truncated, next_marker);
       ldpp_dout(this, 20) <<
@@ -548,7 +567,9 @@ int RGWGC::process(int index, int max_secs, bool expired_only,
         goto done;
       }
     }
-
+/** comment by hy 2020-04-13
+ * # 分片使用缓存
+ */
     if (transitioned_objects_cache[index]) {
       ret = cls_rgw_gc_queue_list_entries(store->gc_pool_ctx, obj_names[index], marker, max, expired_only, entries, &truncated, next_marker);
       ldpp_dout(this, 20) <<
@@ -617,7 +638,9 @@ int RGWGC::process(int index, int max_secs, bool expired_only,
 	    ":" << obj.key.name << dendl;
 	  ObjectWriteOperation op;
 	  cls_refcount_put(op, info.tag, true);
-
+/** comment by hy 2020-04-13
+ * # 
+ */
 	  ret = io_manager.schedule_io(ctx, oid, &op, index, info.tag);
 	  if (ret < 0) {
 	    ldpp_dout(this, 0) <<
@@ -636,6 +659,9 @@ int RGWGC::process(int index, int max_secs, bool expired_only,
       } // else -- chains not empty
     } // entries loop
     if (transitioned_objects_cache[index] && entries.size() > 0) {
+/** comment by hy 2020-04-13
+ * # 
+ */
       ret = io_manager.drain_ios();
       if (ret < 0) {
         goto done;
@@ -671,6 +697,9 @@ int RGWGC::process(bool expired_only)
 
   for (int i = 0; i < max_objs; i++) {
     int index = (i + start) % max_objs;
+/** comment by hy 2020-04-13
+ * # 按照分配进行处理
+ */
     int ret = process(index, max_secs, expired_only, io_manager);
     if (ret < 0)
       return ret;
@@ -718,6 +747,9 @@ void *RGWGC::GCWorker::entry() {
   do {
     utime_t start = ceph_clock_now();
     ldpp_dout(dpp, 2) << "garbage collection: start" << dendl;
+/** comment by hy 2020-04-13
+ * # gc 流程
+ */
     int r = gc->process(true);
     if (r < 0) {
       ldpp_dout(dpp, 0) << "ERROR: garbage collection process() returned error r=" << r << dendl;

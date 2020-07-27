@@ -174,6 +174,9 @@ global_init(const std::map<std::string,std::string> *defaults,
 {
   // Ensure we're not calling the global init functions multiple times.
   static bool first_run = true;
+/** comment by hy 2020-02-12
+ * # 默认参数 run_pre_init = true
+ */
   if (run_pre_init) {
     // We will run pre_init from here (default).
     ceph_assert(!g_ceph_context && first_run);
@@ -263,6 +266,9 @@ global_init(const std::map<std::string,std::string> *defaults,
 	gid_string = g_conf()->setgroup;
       }
     }
+/** comment by hy 2020-03-22
+ * # 
+ */
     if ((uid || gid) &&
 	g_conf()->setuser_match_path.length()) {
       // induce early expansion of setuser_match_path config option

@@ -186,6 +186,9 @@ public:
 }; // RGWBucketReshard
 
 
+/** comment by hy 2020-03-10
+ * # 分片管理
+ */
 class RGWReshard {
 public:
     using Clock = ceph::coarse_mono_clock;

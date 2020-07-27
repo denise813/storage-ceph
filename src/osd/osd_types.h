@@ -2579,6 +2579,9 @@ WRITE_CLASS_ENCODER_FEATURES(pool_stat_t)
 struct pg_hit_set_info_t {
   utime_t begin, end;   ///< time interval
   eversion_t version;   ///< version this HitSet object was written
+/** comment by hy 2020-04-08
+ * # 使用格林威治时间
+ */
   bool using_gmt;	///< use gmt for creating the hit_set archive object name
 
   friend bool operator==(const pg_hit_set_info_t& l,
@@ -4464,7 +4467,7 @@ struct pg_missing_item {
   void encode(ceph::buffer::list& bl, uint64_t features) const {
     using ceph::encode;
     if (HAVE_FEATURE(features, SERVER_OCTOPUS)) {
-      // encoding a zeroed eversion_t to differentiate between OSD_RECOVERY_DELETES、
+      // encoding a zeroed eversion_t to differentiate between OSD_RECOVERY_DELETES,
       // SERVER_OCTOPUS and legacy unversioned encoding - a need value of 0'0 is not
       // possible. This can be replaced with the legacy encoding
       encode(eversion_t(), bl);

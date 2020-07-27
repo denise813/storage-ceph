@@ -32,17 +32,38 @@ class RadosClient;
 
 struct librados::IoCtxImpl {
   std::atomic<uint64_t> ref_cnt = { 0 };
+/** comment by hy 2020-01-21
+ * # 集群客户端
+ */
   RadosClient *client = nullptr;
+/** comment by hy 2020-01-21
+ * # pool 的标识
+ */
   int64_t poolid = 0;
+/** comment by hy 2020-01-21
+ * # pool 快照版本
+ */
   snapid_t snap_seq;
+/** comment by hy 2020-01-21
+ * # pool 快照上下文句柄
+ */
   ::SnapContext snapc;
   uint64_t assert_ver = 0;
   version_t last_objver = 0;
+/** comment by hy 2020-01-21
+ * # 监控超时
+ */
   uint32_t notify_timeout = 30;
+/** comment by hy 2020-01-21
+ * # 在初始化时只设定的pool id, hash = -1
+ */
   object_locator_t oloc;
 
   ceph::mutex aio_write_list_lock =
     ceph::make_mutex("librados::IoCtxImpl::aio_write_list_lock");
+/** comment by hy 2020-01-21
+ * # 客户端写 io 序号
+ */
   ceph_tid_t aio_write_seq = 0;
   ceph::condition_variable aio_write_cond;
   xlist<AioCompletionImpl*> aio_write_list;

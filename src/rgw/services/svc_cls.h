@@ -146,9 +146,17 @@ public:
   void init(RGWSI_Zone *_zone_svc, RGWSI_RADOS *_rados_svc) {
     rados_svc = _rados_svc;
     zone_svc = _zone_svc;
-
+/** comment by hy 2020-03-05
+ * # 设置对应的cls， zone， raods 对象
+ */
     mfa.init(this, zone_svc, rados_svc);
+/** comment by hy 2020-03-05
+ * # 与 mfa 相同
+ */
     timelog.init(this, zone_svc, rados_svc);
+/** comment by hy 2020-03-05
+ * # 与 mfa 相同
+ */
     lock.init(this, zone_svc, rados_svc);
   }
 

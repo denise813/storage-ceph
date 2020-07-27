@@ -1091,6 +1091,9 @@ int RGWRados::init_rados()
     return ret;
   }
 
+/** comment by hy 2020-03-05
+ * # 注册命令
+ */
   auto crs = std::unique_ptr<RGWCoroutinesManagerRegistry>{
     new RGWCoroutinesManagerRegistry(cct)};
   ret = crs->hook_to_admin_command("cr dump");
@@ -1145,37 +1148,68 @@ int RGWRados::init_complete()
   /* 
    * create sync module instance even if we don't run sync thread, might need it for radosgw-admin
    */
+/** comment by hy 2020-03-05
+ * # RGWSyncModuleInstance
+ */
   sync_module = svc.sync_modules->get_sync_module();
 
+/** comment by hy 2020-03-05
+ * # root
+ */
   ret = open_root_pool_ctx();
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-03-05
+ * # 打开或创建 垃圾回收
+ */
   ret = open_gc_pool_ctx();
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-03-05
+ * # 生命周期
+ */
   ret = open_lc_pool_ctx();
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-03-05
+ * # 过期处理
+ */
   ret = open_objexp_pool_ctx();
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-03-05
+ * # reshard
+ */
   ret = open_reshard_pool_ctx();
   if (ret < 0)
     return ret;
 
   pools_initialized = true;
 
+/** comment by hy 2020-03-05
+ * # 垃圾处理
+ */
   gc = new RGWGC();
   gc->initialize(cct, this);
 
+/** comment by hy 2020-03-05
+ * # 过期处理
+ */
   obj_expirer = new RGWObjectExpirer(this->store);
 
   if (use_gc_thread) {
+/** comment by hy 2020-03-06
+ * # 开始准备处理
+     创建工作线程队列
+ */
     gc->start_processor();
+/** comment by hy 2020-03-06
+ * # 开启过期处理工作线程队列
+ */
     obj_expirer->start_processor();
   }
 
@@ -1193,10 +1227,16 @@ int RGWRados::init_complete()
   if (svc.zone->is_meta_master()) {
     auto md_log = svc.mdlog->get_log(current_period.get_id());
     meta_notifier = new RGWMetaNotifier(this, md_log);
+/** comment by hy 2020-03-06
+ * # 主向从通知线程
+ */
     meta_notifier->start();
   }
 
   /* init it anyway, might run sync through radosgw-admin explicitly */
+/** comment by hy 2020-03-06
+ * # 注册跟踪命令
+ */
   sync_tracer = new RGWSyncTraceManager(cct, cct->_conf->rgw_sync_trace_history_size);
   sync_tracer->init(this);
   ret = sync_tracer->hook_to_admin_command();
@@ -1204,6 +1244,9 @@ int RGWRados::init_complete()
     return ret;
   }
 
+/** comment by hy 2020-03-06
+ * # 同步才有元数据同步
+ */
   if (run_sync_thread) {
     for (const auto &pt: zonegroup.placement_targets) {
       if (zone_params.placement_pools.find(pt.second.name)
@@ -1212,6 +1255,9 @@ int RGWRados::init_complete()
                       << pt.second.name << " present in zonegroup" << dendl;
       }
     }
+/** comment by hy 2020-03-11
+ * # 启动异步线程组，等着干什么
+ */
     auto async_processor = svc.rados->get_async_processor();
     std::lock_guard l{meta_sync_thread_lock};
     meta_sync_processor_thread = new RGWMetaSyncProcessorThread(this->store, async_processor);
@@ -1220,12 +1266,22 @@ int RGWRados::init_complete()
       ldout(cct, 0) << "ERROR: failed to initialize meta sync thread" << dendl;
       return ret;
     }
+/** comment by hy 2020-03-06
+ * # RGWRemoteMetaLog::run_sync
+ */
     meta_sync_processor_thread->start();
 
     // configure the bucket trim manager
+/** comment by hy 2020-03-06
+ * # 设置 trim 参数
+ */
     rgw::BucketTrimConfig config;
     rgw::configure_bucket_trim(cct, config);
 
+/** comment by hy 2020-03-06
+ * # rgw::BucketTrimManager::init =
+     BucketTrimWatcher::start
+ */
     bucket_trim.emplace(this->store, config);
     ret = bucket_trim->init();
     if (ret < 0) {
@@ -1234,15 +1290,26 @@ int RGWRados::init_complete()
     }
     svc.datalog_rados->set_observer(&*bucket_trim);
 
+/** comment by hy 2020-03-06
+ * # 数据同步
+ */
     std::lock_guard dl{data_sync_thread_lock};
     for (auto source_zone : svc.zone->get_data_sync_source_zones()) {
       ldout(cct, 5) << "starting data sync thread for zone " << source_zone->name << dendl;
+/** comment by hy 2020-03-06
+ * # 
+ */
       auto *thread = new RGWDataSyncProcessorThread(this->store, svc.rados->get_async_processor(), source_zone);
       ret = thread->init();
       if (ret < 0) {
         ldout(cct, 0) << "ERROR: failed to initialize data sync thread" << dendl;
         return ret;
       }
+/** comment by hy 2020-03-06
+ * # 每一个zone 对应一个线程
+     RGWDataSyncProcessorThread::process
+     最终 RGWRemoteDataLog::run_sync
+ */
       thread->start();
       data_sync_processor_threads[rgw_zone_id(source_zone->id)] = thread;
     }
@@ -1254,21 +1321,39 @@ int RGWRados::init_complete()
         ldout(cct, 0) << "ERROR: failed to initialize sync log trim thread" << dendl;
         return ret;
       }
+/** comment by hy 2020-03-06
+ * # RGWSyncLogTrimThread::start
+     最终以meta, data, bucket 来处理 
+     RGWCoroutinesManager::run
+ */
       sync_log_trimmer->start();
     }
   }
+/** comment by hy 2020-03-06
+ * # RGWRadosThread::Worker::entry
+     RGWDataNotifier::process
+ */
   data_notifier = new RGWDataNotifier(this);
   data_notifier->start();
-
+/** comment by hy 2020-03-06
+ * # 将 binfo_cache 里对应的实际cache 管理则为 当前 cache 的处理者
+     其管理的内容为 bucket_info_entry
+ */
   binfo_cache = new RGWChainedCacheImpl<bucket_info_entry>;
   binfo_cache->init(svc.cache);
-
+/** comment by hy 2020-03-06
+ * # 
+ */
   lc = new RGWLC();
   lc->initialize(cct, this->store);
-
+/** comment by hy 2020-03-06
+ * # 
+ */
   if (use_lc_thread)
     lc->start_processor();
-
+/** comment by hy 2020-03-06
+ * # RGWQuotaHandlerImpl
+ */
   quota_handler = RGWQuotaHandler::generate_handler(this->store, quota_threads);
 
   bucket_index_max_shards = (cct->_conf->rgw_override_bucket_index_max_shards ? cct->_conf->rgw_override_bucket_index_max_shards :
@@ -1282,6 +1367,10 @@ int RGWRados::init_complete()
 
   bool need_tombstone_cache = !svc.zone->get_zone_data_notify_to_map().empty(); /* have zones syncing from us */
 
+/** comment by hy 2020-03-06
+ * # 调试用的cache
+     这是第三方库
+ */
   if (need_tombstone_cache) {
     obj_tombstone_cache = new tombstone_cache_t(cct->_conf->rgw_obj_tombstone_cache_size);
   }
@@ -1291,17 +1380,36 @@ int RGWRados::init_complete()
   reshard = new RGWReshard(this->store);
 
   /* only the master zone in the zonegroup reshards buckets */
+/** comment by hy 2020-03-06
+ * # 
+ */
   run_reshard_thread = run_reshard_thread && (zonegroup.master_zone == zone.id);
   if (run_reshard_thread)  {
     reshard->start_processor();
   }
 
+/** comment by hy 2020-03-06
+ * # RGWIndexCompletionThread::start
+     RGWIndexCompletionThread::process
+ */
   index_completion_manager = new RGWIndexCompletionManager(this);
   ret = index_completion_manager->start();
 
   return ret;
 }
 
+/*****************************************************************************
+ * 函 数 名  : RGWRados.init_svc
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月11日
+ * 函数功能  : 初始化rgw服务
+ * 输入参数  : bool raw  true rgw 客户端加载标识
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int RGWRados::init_svc(bool raw)
 {
   if (raw) {
@@ -1326,26 +1434,45 @@ int RGWRados::initialize()
 
   inject_notify_timeout_probability =
     cct->_conf.get_val<double>("rgw_inject_notify_timeout_probability");
+/** comment by hy 2020-03-05
+ * # 更新时,设置重试次数,默认3?
+ */
   max_notify_retries = cct->_conf.get_val<uint64_t>("rgw_max_notify_retries");
 
+/** comment by hy 2020-03-05
+ * # 初始化各个子服务服务对应的处理序列
+ */
   ret = init_svc(false);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to init services (ret=" << cpp_strerror(-ret) << ")" << dendl;
     return ret;
   }
 
+/** comment by hy 2020-03-05
+ * # 注册 user, bucket, bucketinstance 等处理,opt等函数
+ */
   ret = init_ctl();
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to init ctls (ret=" << cpp_strerror(-ret) << ")" << dendl;
     return ret;
   }
 
+/** comment by hy 2020-03-05
+ * # RGWSI_ZoneUtils::gen_host_id
+     instance_id + zone_name + zonegroup_name
+ */
   host_id = svc.zone_utils->gen_host_id();
 
+/** comment by hy 2020-03-05
+ * # 初始化rados 集群
+ */
   ret = init_rados();
   if (ret < 0)
     return ret;
 
+/** comment by hy 2020-03-06
+ * # 打开对应的 pool, 启动
+ */
   return init_complete();
 }
 
@@ -2173,6 +2300,9 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
   rgw_placement_rule selected_placement_rule;
   RGWZonePlacementInfo rule_info;
 
+/** comment by hy 2020-03-08
+ * # 又是 select bucket 位置
+ */
   for (int i = 0; i < MAX_CREATE_RETRIES; i++) {
     int ret = 0;
     ret = svc.zone->select_bucket_placement(owner, zonegroup_id, placement_rule,
@@ -2180,7 +2310,14 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
     if (ret < 0)
       return ret;
 
+/** comment by hy 2020-03-18
+ * # 没有主信息
+ */
     if (!pmaster_bucket) {
+/** comment by hy 2020-03-08
+ * # 主 zone 下的 bucket mark 用于后续一个bucket id
+     bucket id 标记
+ */
       create_bucket_id(&bucket.marker);
       bucket.bucket_id = bucket.marker;
     } else {
@@ -2195,6 +2332,9 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
     if (pobjv) {
       objv_tracker.write_version = *pobjv;
     } else {
+/** comment by hy 2020-03-08
+ * # 设置请求的版本
+ */
       objv_tracker.generate_new_write_ver(cct);
     }
 
@@ -2221,11 +2361,19 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
       info.quota = *pquota_info;
     }
 
+/** comment by hy 2020-03-08
+ * # 初始化 index 信息
+     RGWSI_BucketIndex_RADOS::init_index
+     生成本分片信息
+ */
     int r = svc.bi->init_index(info);
     if (r < 0) {
       return r;
     }
 
+/** comment by hy 2020-03-08
+ * # 写 到bucket 元数据中,发送消息
+ */
     ret = put_linked_bucket_info(info, exclusive, ceph::real_time(), pep_objv, &attrs, true);
     if (ret == -ECANCELED) {
       ret = -EEXIST;
@@ -2233,6 +2381,9 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
     if (ret == -EEXIST) {
        /* we need to reread the info and return it, caller will have a use for it */
       RGWBucketInfo orig_info;
+/** comment by hy 2020-03-08
+ * # 读取 bucket 信息,更新缓存
+ */
       r = get_bucket_info(&svc, bucket.tenant, bucket.name, orig_info, NULL, null_yield, NULL);
       if (r < 0) {
         if (r == -ENOENT) {
@@ -2273,8 +2424,14 @@ bool RGWRados::get_obj_data_pool(const rgw_placement_rule& placement_rule, const
 
 bool RGWRados::obj_to_raw(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_raw_obj *raw_obj)
 {
+/** comment by hy 2020-03-22
+ * # 加上bucket 等信息, 从生成对象
+ */
   get_obj_bucket_and_oid_loc(obj, raw_obj->oid, raw_obj->loc);
 
+/** comment by hy 2020-03-22
+ * # 从数据pool获取 obj
+ */
   return get_obj_data_pool(placement_rule, obj, &raw_obj->pool);
 }
 
@@ -5210,11 +5367,17 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
   s->obj = obj;
 
   rgw_raw_obj raw_obj;
+/** comment by hy 2020-03-21
+ * # 获取obj的attrset信息和data信息
+ */
   obj_to_raw(bucket_info.placement_rule, obj, &raw_obj);
 
   int r = -ENOENT;
 
   if (!assume_noent) {
+/** comment by hy 2020-03-21
+ * # 
+ */
     r = RGWRados::raw_obj_stat(raw_obj, &s->size, &s->mtime, &s->epoch, &s->attrset, (s->prefetch_data ? &s->data : NULL), NULL, y);
   }
 
@@ -5240,6 +5403,9 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
   s->has_attrs = true;
   s->accounted_size = s->size;
 
+/** comment by hy 2020-03-21
+ * # etag 信息
+ */
   auto iter = s->attrset.find(RGW_ATTR_ETAG);
   if (iter != s->attrset.end()) {
     /* get rid of extra null character at the end of the etag, as we used to store it like that */
@@ -5251,6 +5417,9 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
     }
   }
 
+/** comment by hy 2020-03-21
+ * # 压缩处理
+ */
   iter = s->attrset.find(RGW_ATTR_COMPRESSION);
   const bool compressed = (iter != s->attrset.end());
   if (compressed) {
@@ -5279,6 +5448,9 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
     s->tail_tag = s->attrset[RGW_ATTR_TAIL_TAG];
   }
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   bufferlist manifest_bl = s->attrset[RGW_ATTR_MANIFEST];
   if (manifest_bl.length()) {
     auto miter = manifest_bl.cbegin();
@@ -5312,6 +5484,9 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
       s->fake_tag = true;
     }
   }
+/** comment by hy 2020-03-21
+ * # pg 版本
+ */
   map<string, bufferlist>::iterator aiter = s->attrset.find(RGW_ATTR_PG_VER);
   if (aiter != s->attrset.end()) {
     bufferlist& pg_ver_bl = aiter->second;
@@ -5324,6 +5499,9 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
       }
     }
   }
+/** comment by hy 2020-03-21
+ * # 源端的zone
+ */
   aiter = s->attrset.find(RGW_ATTR_SOURCE_ZONE);
   if (aiter != s->attrset.end()) {
     bufferlist& zone_short_id_bl = aiter->second;
@@ -5344,16 +5522,25 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
   /* an object might not be olh yet, but could have olh id tag, so we should set it anyway if
    * it exist, and not only if is_olh() returns true
    */
+/** comment by hy 2020-03-21
+ * # 获取 tag id
+ */
   iter = s->attrset.find(RGW_ATTR_OLH_ID_TAG);
   if (iter != s->attrset.end()) {
     s->olh_tag = iter->second;
   }
 
+/** comment by hy 2020-03-21
+ * # 单一大对象
+ */
   if (is_olh(s->attrset)) {
     s->is_olh = true;
 
     ldout(cct, 20) << __func__ << ": setting s->olh_tag to " << string(s->olh_tag.c_str(), s->olh_tag.length()) << dendl;
 
+/** comment by hy 2020-03-19
+ * # 
+ */
     if (need_follow_olh) {
       return get_olh_target_state(*rctx, bucket_info, obj, s, state, y);
     } else if (obj.key.have_null_instance() && !s->manifest) {
@@ -5372,6 +5559,9 @@ int RGWRados::get_obj_state(RGWObjectCtx *rctx, const RGWBucketInfo& bucket_info
   int ret;
 
   do {
+/** comment by hy 2020-03-21
+ * # 保存了object的很多信息，主要是manifest清单信息
+ */
     ret = get_obj_state_impl(rctx, bucket_info, obj, state, follow_olh, y, assume_noent);
   } while (ret == -EAGAIN);
 
@@ -5506,6 +5696,9 @@ int RGWRados::append_atomic_test(const RGWObjState* state,
     return 0;
   }
 
+/** comment by hy 2020-03-21
+ * # tag 操作
+ */
   if (state->obj_tag.length() > 0 && !state->fake_tag) {// check for backward compatibility
     op.cmpxattr(RGW_ATTR_ID_TAG, LIBRADOS_CMPXATTR_OP_EQ, state->obj_tag);
   } else {
@@ -5781,6 +5974,9 @@ int RGWRados::Object::Read::prepare(optional_yield y)
   map<string, bufferlist>::iterator iter;
 
   RGWObjState *astate;
+/** comment by hy 2020-03-21
+ * # 填充astate
+ */
   int r = source->get_state(&astate, true, y);
   if (r < 0)
     return r;
@@ -5797,13 +5993,22 @@ int RGWRados::Object::Read::prepare(optional_yield y)
   state.cur_pool = state.head_obj.pool;
   state.cur_ioctx = &state.io_ctxs[state.cur_pool];
 
+/** comment by hy 2020-03-21
+ * # 获取头对象,匹配其扩展属性
+ */
   r = store->get_obj_head_ioctx(bucket_info, state.obj, state.cur_ioctx);
   if (r < 0) {
     return r;
   }
+/** comment by hy 2020-03-21
+ * # 有其他目标对象
+ */
   if (params.target_obj) {
     *params.target_obj = state.obj;
   }
+/** comment by hy 2020-03-21
+ * # 没有扩展属性
+ */
   if (params.attrs) {
     *params.attrs = astate->attrset;
     if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 20>()) {
@@ -5813,6 +6018,9 @@ int RGWRados::Object::Read::prepare(optional_yield y)
     }
   }
 
+/** comment by hy 2020-03-21
+ * # 条件判断
+ */
   /* Convert all times go GMT to make them compatible */
   if (conds.mod_ptr || conds.unmod_ptr) {
     obj_time_weight src_weight;
@@ -6213,6 +6421,9 @@ struct get_obj_data {
       auto bl = std::move(completed.front().data);
       completed.pop_front_and_dispose(std::default_delete<rgw::AioResultEntry>{});
 
+/** comment by hy 2020-03-21
+ * # 
+ */
       offset += bl.length();
       int r = client_cb->handle_data(bl, 0, bl.length());
       if (r < 0) {
@@ -6260,6 +6471,9 @@ int RGWRados::get_obj_iterate_cb(const rgw_raw_obj& read_obj, off_t obj_ofs,
   string oid, key;
 
   if (is_head_obj) {
+/** comment by hy 2020-03-21
+ * # 如果是第一个object的头信息，获取最小长度调用回调
+ */
     /* only when reading from the head object do we need to do the atomic test */
     int r = append_atomic_test(astate, op);
     if (r < 0)
@@ -6267,6 +6481,9 @@ int RGWRados::get_obj_iterate_cb(const rgw_raw_obj& read_obj, off_t obj_ofs,
 
     if (astate &&
         obj_ofs < astate->data.length()) {
+/** comment by hy 2020-03-21
+ * # 
+ */
       unsigned chunk_len = std::min((uint64_t)astate->data.length() - obj_ofs, (uint64_t)len);
 
       r = d->client_cb->handle_data(astate->data, obj_ofs, chunk_len);
@@ -6282,7 +6499,16 @@ int RGWRados::get_obj_iterate_cb(const rgw_raw_obj& read_obj, off_t obj_ofs,
     }
   }
 
+/** comment by hy 2020-03-21
+ * # 读取对象
+     RGWSI_RADOS::obj
+     包装 pool 与 obj
+ */
   auto obj = d->store->svc.rados->obj(read_obj);
+/** comment by hy 2020-03-21
+ * # GWSI_RADOS::Obj::open
+     打开 pool 设置 key
+ */
   int r = obj.open();
   if (r < 0) {
     ldout(cct, 4) << "failed to open rados context for " << read_obj << dendl;
@@ -6295,8 +6521,14 @@ int RGWRados::get_obj_iterate_cb(const rgw_raw_obj& read_obj, off_t obj_ofs,
   const uint64_t cost = len;
   const uint64_t id = obj_ofs; // use logical object offset for sorting replies
 
+/** comment by hy 2020-03-21
+ * # 异步获取对象
+ */
   auto completed = d->aio->get(obj, rgw::Aio::librados_op(std::move(op), d->yield), cost, id);
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   return d->flush(std::move(completed));
 }
 
@@ -6312,6 +6544,9 @@ int RGWRados::Object::Read::iterate(int64_t ofs, int64_t end, RGWGetDataCB *cb,
   auto aio = rgw::make_throttle(window_size, y);
   get_obj_data data(store, cb, &*aio, ofs, y);
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   int r = store->iterate_obj(obj_ctx, source->get_bucket_info(), state.obj,
                              ofs, end, chunk_size, _get_obj_iterate_cb, &data, y);
   if (r < 0) {
@@ -6337,6 +6572,9 @@ int RGWRados::iterate_obj(RGWObjectCtx& obj_ctx,
 
   obj_to_raw(bucket_info.placement_rule, obj, &head_obj);
 
+/** comment by hy 2020-03-19
+ * # 先获取head
+ */
   int r = get_obj_state(&obj_ctx, bucket_info, obj, &astate, false, y);
   if (r < 0) {
     return r;
@@ -6381,6 +6619,16 @@ int RGWRados::iterate_obj(RGWObjectCtx& obj_ctx,
       read_obj = head_obj;
       uint64_t read_len = std::min(len, max_chunk_size);
 
+/** comment by hy 2020-03-21
+ * # RGWRados::get_obj_iterate_cb
+       调用 CB handle_data 来处理
+     否则直接进行操作数据
+
+     对于读普通对象操作
+       如果是 头对象
+         handle_data    = op:get_data_cb = RGWGetObj::get_data_cb 来获取数据
+       否则直接获取对象
+ */
       r = cb(read_obj, ofs, ofs, read_len, reading_from_head, astate, arg);
       if (r < 0) {
 	return r;
@@ -7616,6 +7864,9 @@ int RGWRados::put_linked_bucket_info(RGWBucketInfo& info, bool exclusive, real_t
 {
   bool create_head = !info.has_instance_obj || create_entry_point;
 
+/** comment by hy 2020-03-15
+ * # 存储
+ */
   int ret = put_bucket_instance_info(info, exclusive, mtime, pattrs);
   if (ret < 0) {
     return ret;
@@ -7638,6 +7889,9 @@ int RGWRados::put_linked_bucket_info(RGWBucketInfo& info, bool exclusive, real_t
       *pep_objv = ot.write_version;
     }
   }
+/** comment by hy 2020-03-08
+ * # RGWBucketCtl
+ */
   ret = ctl.bucket->store_bucket_entrypoint_info(info.bucket, entry_point, null_yield, RGWBucketCtl::Bucket::PutParams()
 						                          .set_exclusive(exclusive)
 									  .set_objv_tracker(&ot)
@@ -8946,6 +9200,9 @@ int RGWRados::check_quota(const rgw_user& bucket_owner, rgw_bucket& bucket,
   if(check_size_only)
     return quota_handler->check_quota(bucket_owner, bucket, user_quota, bucket_quota, 0, obj_size);
 
+/** comment by hy 2020-03-16
+ * # RGWQuotaHandlerImpl::check_quota
+ */
   return quota_handler->check_quota(bucket_owner, bucket, user_quota, bucket_quota, 1, obj_size);
 }
 

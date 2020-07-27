@@ -19,6 +19,9 @@ string RGWSI_ZoneUtils::gen_host_id() {
   const string& zone_name = zone_svc->get_zone().name;
   const string& zonegroup_name = zone_svc->get_zonegroup().get_name();
   char charbuf[16 + zone_name.size() + zonegroup_name.size() + 2 + 1];
+/** comment by hy 2020-03-05
+ * # 这里的instance_id 是rados 层的 id
+ */
   snprintf(charbuf, sizeof(charbuf), "%llx-%s-%s", (unsigned long long)rados_svc->instance_id(), zone_name.c_str(), zonegroup_name.c_str());
   return string(charbuf);
 }

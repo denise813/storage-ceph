@@ -46,6 +46,9 @@ int RGWSI_SysObj::Obj::ROp::read(int64_t ofs, int64_t end, bufferlist *bl,
   RGWSI_SysObj_Core *svc = source.core_svc;
   rgw_raw_obj& obj = source.get_obj();
 
+/** comment by hy 2020-03-11
+ * # 读取对象以及属性
+ */
   return svc->read(source.get_ctx(), *state,
                    objv_tracker,
                    obj, bl, ofs, end,

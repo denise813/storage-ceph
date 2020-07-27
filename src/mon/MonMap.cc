@@ -382,8 +382,14 @@ void MonMap::_add_ambiguous_addr(const string& name,
                                  int weight,
                                  bool for_mkfs)
 {
+/** comment by hy 2020-01-17
+ * #地址类型是 不识别的,这里其实是处理老版本的在新版本中适配
+ */
   if (addr.get_type() != entity_addr_t::TYPE_ANY) {
     // a v1: or v2: prefix was specified
+/** comment by hy 2020-01-17
+ * # 根据老版本设定指定的端口号
+ */
     if (addr.get_port() == 0) {
       // use default port
       if (addr.get_type() == entity_addr_t::TYPE_LEGACY) {
@@ -394,6 +400,10 @@ void MonMap::_add_ambiguous_addr(const string& name,
 	// wth
 	return;
       }
+/** comment by hy 2020-01-17
+ * # 如果没有该地址,加入地址中,重试两次,中间没有间隔
+         有什么用呢？
+ */
       if (!contains(addr)) {
 	add(name, entity_addrvec_t(addr), priority, weight);
       }
@@ -406,6 +416,9 @@ void MonMap::_add_ambiguous_addr(const string& name,
     // no v1: or v2: prefix specified
     if (addr.get_port() == CEPH_MON_PORT_LEGACY) {
       // legacy port implies legacy addr
+/** comment by hy 2020-01-17
+ * # 根据端口好反向设置一次类型
+ */
       addr.set_type(entity_addr_t::TYPE_LEGACY);
       if (!contains(addr)) {
 	if (!for_mkfs) {
@@ -466,6 +479,9 @@ int MonMap::init_with_ips(const std::string& ips,
 			  const std::string &prefix)
 {
   vector<entity_addrvec_t> addrs;
+/** comment by hy 2020-01-17
+ * # 从ip地址中解析出网络地址
+ */
   if (!parse_ip_port_vec(
 	ips.c_str(), addrs,
 	entity_addr_t::TYPE_ANY)) {
@@ -478,8 +494,14 @@ int MonMap::init_with_ips(const std::string& ips,
     n[0] = 'a' + i;
     n[1] = 0;
     string name;
+/** comment by hy 2020-01-17
+ * # prefix = 'noname-'
+ */
     name = prefix;
     name += n;
+/** comment by hy 2020-01-17
+ * # 这段代码是真的看不懂
+ */
     if (addrs[i].v.size() == 1) {
       _add_ambiguous_addr(name, addrs[i].front(), 0, 0, for_mkfs);
     } else {
@@ -723,6 +745,9 @@ seastar::future<> MonMap::build_monmap(const crimson::common::ConfigProxy& conf,
 				       bool for_mkfs)
 {
   // -m foo?
+/** comment by hy 2020-01-17
+ * # 这里看不懂,这个意思是使用命令行参数指定 -m的意思
+ */
   if (const auto mon_host = conf.get_val<std::string>("mon_host");
       !mon_host.empty()) {
     if (auto ret = init_with_ips(mon_host, for_mkfs, "noname-"); ret == 0) {
@@ -778,6 +803,9 @@ future<> MonMap::build_initial(const crimson::common::ConfigProxy& conf, bool fo
 int MonMap::init_with_monmap(const std::string& monmap, std::ostream& errout)
 {
   int r;
+/** comment by hy 2020-01-17
+ * # 如果配置信息配置了monmap文件字段
+ */
   try {
     r = read(monmap.c_str());
   } catch (ceph::buffer::error&) {
@@ -827,17 +855,34 @@ int MonMap::build_initial(CephContext *cct, bool for_mkfs, ostream& errout)
 {
   const auto& conf = cct->_conf;
   // file?
+/** comment by hy 2020-01-17
+ * # 如果指定monmap存放在文件中 就从文件中获取monmap
+       正常情况不指定特定的文件
+         分号语法优先级与正常的阅读顺序是一样的
+         但是这样做的优点是什么？
+         为了编译器优化少一次跳转？
+ */
   if (const auto monmap = conf.get_val<std::string>("monmap");
       !monmap.empty()) {
     return init_with_monmap(monmap, errout);
   }
 
   // fsid from conf?
+/** comment by hy 2020-01-17
+ * # 获取fsid,将集群id保存到fsid中
+         fsid生产的方法是什么,怎么保证每个集群不相等
+ */
   if (const auto new_fsid = conf.get_val<uuid_d>("fsid");
       !new_fsid.is_zero()) {
     fsid = new_fsid;
   }
   // -m foo?
+/** comment by hy 2020-01-17
+ * # 如果没有指定mon_host将产生一个默认的mon_host
+         能用ip用ip,不能用ip的用主机名
+         mon_host 与mon字段里面的host相同
+       这段代码看不懂
+ */
   if (const auto mon_host = conf.get_val<std::string>("mon_host");
       !mon_host.empty()) {
     auto ret = init_with_ips(mon_host, for_mkfs, "noname-");
@@ -850,12 +895,19 @@ int MonMap::build_initial(CephContext *cct, bool for_mkfs, ostream& errout)
       return ret;
     }
   }
+/** comment by hy 2020-01-17
+ * # 还没有mon info 信息,就从配置文件中获取
+         正常从这里开始
+ */
   if (size() == 0) {
     // What monitors are in the config file?
     if (auto ret = init_with_config_file(conf, errout); ret < 0) {
       return ret;
     }
   }
+/** comment by hy 2020-01-17
+ * # 如果还没成果看看是不是有DNS服务 通过dns来更新信息
+ */
   if (size() == 0) {
     // no info found from conf options lets try use DNS SRV records
     string srv_name = conf.get_val<std::string>("mon_dns_srv_name");
@@ -863,12 +915,18 @@ int MonMap::build_initial(CephContext *cct, bool for_mkfs, ostream& errout)
       return -ENOENT;
     }
   }
+/** comment by hy 2020-01-17
+ * # 还是没有mon信息,返回错误
+ */
   if (size() == 0) {
     errout << "no monitors specified to connect to." << std::endl;
     return -ENOENT;
   }
   created = ceph_clock_now();
   last_changed = created;
+/** comment by hy 2020-01-17
+ * # 按照名字的顺序排布rank顺序
+ */
   calc_legacy_ranks();
   return 0;
 }

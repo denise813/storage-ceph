@@ -233,6 +233,10 @@ public:
 class RGWObjectCtx {
   rgw::sal::RGWRadosStore *store;
   ceph::shared_mutex lock = ceph::make_shared_mutex("RGWObjectCtx");
+/** comment by hy 2020-03-07
+ * # 请求状态
+     struct req_state
+ */
   void *s{nullptr};
 
   std::map<rgw_obj, RGWObjState> objs_state;
@@ -491,11 +495,14 @@ protected:
 
   librados::IoCtx gc_pool_ctx;        // .rgw.gc
   librados::IoCtx lc_pool_ctx;        // .rgw.lc
-  librados::IoCtx objexp_pool_ctx;
-  librados::IoCtx reshard_pool_ctx;
+  librados::IoCtx objexp_pool_ctx;    // .rgw.log
+  librados::IoCtx reshard_pool_ctx;   // .rgw.reshard
 
   bool pools_initialized;
 
+/** comment by hy 2020-03-16
+ * # RGWQuotaHandlerImpl
+ */
   RGWQuotaHandler *quota_handler;
 
   RGWCoroutinesManagerRegistry *cr_registry;
@@ -568,7 +575,13 @@ public:
     store = _store;
   }
 
+/** comment by hy 2020-03-05
+ * # server verctor ctrl
+ */
   RGWServices svc;
+/** comment by hy 2020-03-08
+ * # 资源控制
+ */
   RGWCtl ctl;
 
   RGWCtl *pctl{nullptr};
@@ -859,7 +872,7 @@ public:
 
         DeleteResult() : delete_marker(false) {}
       } result;
-      
+
       explicit Delete(RGWRados::Object *_target) : target(_target) {}
 
       int delete_obj(optional_yield y);
@@ -1036,6 +1049,9 @@ public:
 	  return list_objects_unordered(max, result, common_prefixes,
 					is_truncated, y);
 	} else {
+/** comment by hy 2020-03-21
+ * # 
+ */
 	  return list_objects_ordered(max, result, common_prefixes,
 				      is_truncated, y);
 	}

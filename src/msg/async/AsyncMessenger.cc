@@ -74,6 +74,9 @@ int Processor::bind(const entity_addrvec_t &bind_addrs,
   listen_sockets.resize(bind_addrs.v.size());
   *bound_addrs = bind_addrs;
 
+/** comment by hy 2020-04-06
+ * # 绑定的地址,多地址绑定
+ */
   for (unsigned k = 0; k < bind_addrs.v.size(); ++k) {
     auto& listen_addr = bound_addrs->v[k];
 
@@ -107,6 +110,9 @@ int Processor::bind(const entity_addrvec_t &bind_addrs,
 	    continue;
 
 	  listen_addr.set_port(port);
+/** comment by hy 2020-04-06
+ * # 根据 是否为异步来执行
+ */
 	  worker->center.submit_to(
 	    worker->center.get_id(),
 	    [this, k, &listen_addr, &opts, &r]() {
@@ -291,17 +297,46 @@ AsyncMessenger::AsyncMessenger(CephContext *cct, entity_name_t name,
 
   auto single = &cct->lookup_or_create_singleton_object<StackSingleton>(
     "AsyncMessenger::NetworkStack::" + transport_type, true, cct);
+/** comment by hy 2020-04-06
+ * # 
+     1:调用 StackSingleton::ready
+       选择对应的协议
+       NetworkStack::create
+       posix 类型 PosixNetworkStack
+       rdma 类型 RDMAStack
+       dpdk 类型 DPDKStack
+     2:绑定地址
+
+     3: dis
+ */
   single->ready(transport_type);
   stack = single->stack.get();
+/** comment by hy 2020-04-06
+ * # NetworkStack::start
+     创建工作线程 添加到 协议栈 workers 中
+ */
   stack->start();
+/** comment by hy 2020-04-06
+ * # 从里面选出最小的负载 work
+ */
   local_worker = stack->get_worker();
+/** comment by hy 2020-04-06
+ * # 从轻负载中 准备链接
+ */
   local_connection = ceph::make_ref<AsyncConnection>(cct, this, &dispatch_queue,
 					 local_worker, true, true);
+/** comment by hy 2020-04-06
+ * # 初始化连接收处理
+     AsyncMessenger::ms_handle_fast_connect
+ */
   init_local_connection();
   reap_handler = new C_handle_reap(this);
   unsigned processor_num = 1;
   if (stack->support_local_listen_table())
     processor_num = stack->get_num_worker();
+/** comment by hy 2020-04-06
+ * # 处理个数
+ */
   for (unsigned i = 0; i < processor_num; ++i)
     processors.push_back(new Processor(this, stack->get_worker(i), cct));
 }
@@ -322,7 +357,13 @@ void AsyncMessenger::ready()
 {
   ldout(cct,10) << __func__ << " " << get_myaddrs() << dendl;
 
+/** comment by hy 2020-04-06
+ * # 选择协议
+ */
   stack->ready();
+/** comment by hy 2020-04-06
+ * # 在初始化, 第一次时 不进行 bindv
+ */
   if (pending_bind) {
     int err = bindv(pending_bind_addrs);
     if (err) {
@@ -331,9 +372,16 @@ void AsyncMessenger::ready()
     }
   }
 
+/** comment by hy 2020-04-06
+ * # 初始化, 第一次时 这里为空
+ */
   std::lock_guard l{lock};
   for (auto &&p : processors)
     p->start();
+/** comment by hy 2020-04-06
+ * # 启动本地分发线程, 消息分发 各一个
+     这里注册了分发流程
+ */
   dispatch_queue.start();
 }
 
@@ -401,6 +449,9 @@ int AsyncMessenger::bindv(const entity_addrvec_t &bind_addrs)
   entity_addrvec_t bound_addrs;
   unsigned i = 0;
   for (auto &&p : processors) {
+/** comment by hy 2020-04-06
+ * # Processor::bind
+ */
     int r = p->bind(bind_addrs, avoid_ports, &bound_addrs);
     if (r) {
       // Note: this is related to local tcp listen table problem.
@@ -417,6 +468,9 @@ int AsyncMessenger::bindv(const entity_addrvec_t &bind_addrs)
     }
     ++i;
   }
+/** comment by hy 2020-04-06
+ * # 更新地址
+ */
   _finish_bind(bind_addrs, bound_addrs);
   return 0;
 }
@@ -481,6 +535,9 @@ int AsyncMessenger::client_bind(const entity_addr_t &bind_addr)
 void AsyncMessenger::_finish_bind(const entity_addrvec_t& bind_addrs,
 				  const entity_addrvec_t& listen_addrs)
 {
+/** comment by hy 2020-04-06
+ * # 记录地址
+ */
   set_myaddrs(bind_addrs);
   for (auto& a : bind_addrs.v) {
     if (!a.is_blank_ip()) {
@@ -497,10 +554,16 @@ void AsyncMessenger::_finish_bind(const entity_addrvec_t& bind_addrs,
   }
   set_myaddrs(newaddrs);
 
+/** comment by hy 2020-04-06
+ * # 地址
+ */
   init_local_connection();
 
   ldout(cct,1) << __func__ << " bind my_addrs is " << get_myaddrs() << dendl;
   did_bind = true;
+/** comment by hy 2020-04-06
+ * # 下一步 AsyncMessenger::start
+ */
 }
 
 int AsyncMessenger::start()
@@ -521,6 +584,9 @@ int AsyncMessenger::start()
       a.nonce = nonce;
     }
     set_myaddrs(newaddrs);
+/** comment by hy 2020-04-06
+ * # 连接分发注册
+ */
     _init_local_connection();
   }
 

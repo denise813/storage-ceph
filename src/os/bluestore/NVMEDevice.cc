@@ -339,6 +339,9 @@ int SharedDriverQueueData::alloc_buf_from_pool(Task *t, bool write)
   if (count <= inline_segment_num) {
     segs = t->io_request.inline_segs;
   } else {
+/** comment by hy 2020-02-05
+ * # 分片指针数组
+ */
     t->io_request.extra_segs = new void*[count];
     segs = t->io_request.extra_segs;
   }
@@ -348,6 +351,9 @@ int SharedDriverQueueData::alloc_buf_from_pool(Task *t, bool write)
   }
   t->io_request.nseg = count;
   t->ctx->total_nseg += count;
+/** comment by hy 2020-02-05
+ * # 开始写?
+ */
   if (write) {
     auto blp = t->bl.begin();
     uint32_t len = 0;
@@ -377,6 +383,9 @@ void SharedDriverQueueData::_aio_handle(Task *t, IOContext *ioc)
  again:
     dout(40) << __func__ << " polling" << dendl;
     if (current_queue_depth) {
+/** comment by hy 2020-02-05
+ * # 
+ */
       r = spdk_nvme_qpair_process_completions(qpair, max_io_completion);
       if (r < 0) {
         ceph_abort();
@@ -398,12 +407,18 @@ void SharedDriverQueueData::_aio_handle(Task *t, IOContext *ioc)
         case IOCommand::WRITE_COMMAND:
         {
           dout(20) << __func__ << " write command issued " << lba_off << "~" << lba_count << dendl;
+/** comment by hy 2020-02-05
+ * # 从data pool 中移交到task中
+ */
           r = alloc_buf_from_pool(t, true);
           if (r < 0) {
             logger->inc(l_bluestore_nvmedevice_buffer_alloc_failed);
             goto again;
           }
 
+/** comment by hy 2020-02-05
+ * # 提交写请求
+ */
           r = spdk_nvme_ns_cmd_writev(
               ns, qpair, lba_off, lba_count, io_complete, t, 0,
               data_buf_reset_sgl, data_buf_next_sge);
@@ -815,7 +830,13 @@ void NVMEDevice::aio_submit(IOContext *ioc)
   dout(20) << __func__ << " ioc " << ioc << " pending "
            << ioc->num_pending.load() << " running "
            << ioc->num_running.load() << dendl;
+/** comment by hy 2020-02-05
+ * # 有需要提交的数据
+ */
   int pending = ioc->num_pending.load();
+/** comment by hy 2020-02-05
+ * # 同步就只存一个
+ */
   Task *t = static_cast<Task*>(ioc->nvme_task_first);
   if (pending && t) {
     ioc->num_running += pending;
@@ -823,8 +844,14 @@ void NVMEDevice::aio_submit(IOContext *ioc)
     ceph_assert(ioc->num_pending.load() == 0);  // we should be only thread doing this
     // Only need to push the first entry
     ioc->nvme_task_first = ioc->nvme_task_last = nullptr;
+/** comment by hy 2020-02-05
+ * # 又来包装一下
+ */
     if (!queue_t)
 	queue_t = new SharedDriverQueueData(this, driver);
+/** comment by hy 2020-02-05
+ * # 开始调用spdk进行执行数据操作
+ */
     queue_t->_aio_handle(t, ioc);
   }
 }
@@ -856,13 +883,25 @@ static void write_split(
 
   while (remain_len > 0) {
     write_size = std::min(remain_len, split_size);
+/** comment by hy 2020-02-05
+ * # 
+ */
     t = new Task(dev, IOCommand::WRITE_COMMAND, off + begin, write_size);
     // TODO: if upper layer alloc memory with known physical address,
     // we can reduce this copy
+/** comment by hy 2020-02-05
+ * # 分片大小
+ */
     bl.splice(0, write_size, &t->bl);
     remain_len -= write_size;
     t->ctx = ioc;
+/** comment by hy 2020-02-05
+ * # 获取现在执行的任务
+ */
     ioc_append_task(ioc, t);
+/** comment by hy 2020-02-05
+ * # 更新 last
+ */
     begin += write_size;
   }
 }
@@ -917,6 +956,9 @@ int NVMEDevice::aio_write(
            << " buffered " << buffered << dendl;
   ceph_assert(is_valid_io(off, len));
 
+/** comment by hy 2020-02-05
+ * # 挂在 ioc的任务队列中
+ */
   write_split(this, off, bl, ioc);
   dout(5) << __func__ << " " << off << "~" << len << dendl;
 

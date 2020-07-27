@@ -28,6 +28,9 @@ struct LightweightObjectExtent {
   uint64_t offset;        // in-object
   uint64_t length;        // in-object
   uint64_t truncate_size; // in-object
+/** comment by hy 2020-02-20
+ * # 
+ */
   LightweightBufferExtents buffer_extents;
 };
 

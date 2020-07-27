@@ -577,6 +577,9 @@ bool DaemonServer::handle_report(const ref_t<MMgrReport>& m)
       dout(5) << "rejecting report from " << key << ", since we do not have its metadata now."
               << dendl;
       // issue metadata request in background
+/** comment by hy 2020-01-19
+ * # 向mon发送下面的命令,和对应参数,返回对应结果
+ */
       fetch_missing_metadata(key, m->get_source_addr());
 
       locker.lock();

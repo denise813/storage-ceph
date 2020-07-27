@@ -62,12 +62,29 @@ class MWatchNotify;
 // -----------------------------------------
 
 struct ObjectOperation {
+/** comment by hy 2020-02-18
+ * # 多个操作
+ */
   std::vector<OSDOp> ops;
+/** comment by hy 2020-02-18
+ * # 参数标志
+ */
   int flags;
+/** comment by hy 2020-02-18
+ * # 优先级
+ */
   int priority;
-
+/** comment by hy 2020-02-18
+ * # 每个操作对应的输出缓存区队列
+ */
   std::vector<ceph::buffer::list*> out_bl;
+/** comment by hy 2020-02-18
+ * # 每个操作对应的回调函数队列
+ */
   std::vector<Context*> out_handler;
+/** comment by hy 2020-02-18
+ * # 每个操作对应结果队列
+ */
   std::vector<int*> out_rval;
 
   ObjectOperation() : flags(0), priority(0) {}
@@ -95,6 +112,9 @@ struct ObjectOperation {
   void add_handler(Context *extra);
 
   OSDOp& add_op(int op) {
+/** comment by hy 2020-01-13
+ * # 在末尾添加新操作,一个操作对应一个输出
+ */
     int s = ops.size();
     ops.resize(s+1);
     ops[s].op.op = op;
@@ -107,6 +127,9 @@ struct ObjectOperation {
     return ops[s];
   }
   void add_data(int op, uint64_t off, uint64_t len, ceph::buffer::list& bl) {
+/** comment by hy 2020-01-28
+ * # 将数据信息添加为一个操作
+ */
     OSDOp& osd_op = add_op(op);
     osd_op.op.extent.offset = off;
     osd_op.op.extent.length = len;
@@ -317,10 +340,32 @@ struct ObjectOperation {
     out_rval[p] = prval;
   }
 
+/*****************************************************************************
+ * 函 数 名  : ObjectOperation::read
+ * 负 责 人  : hy
+ * 创建日期  : 2020年1月13日
+ * 函数功能  : 包装读取操作请求
+ * 输入参数  : uint64_t off             偏移
+               uint64_t len             读取长度
+               ceph::buffer::list *pbl  读取输出参数
+               int *prval               NULL
+               Context* ctx             NULL
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
   void read(uint64_t off, uint64_t len, ceph::buffer::list *pbl, int *prval,
 	    Context* ctx) {
     ceph::buffer::list bl;
+/** comment by hy 2020-01-13
+ * # 添加完成后,默写操作并没有设置好对应的为为回调是准备的输出参数out
+ */
     add_data(CEPH_OSD_OP_READ, off, len, bl);
+/** comment by hy 2020-01-13
+ * # 这里设置最后一个操作
+ */
     unsigned p = ops.size() - 1;
     out_bl[p] = pbl;
     out_rval[p] = prval;
@@ -1267,6 +1312,9 @@ private:
   uint64_t max_linger_id{0};
   std::atomic<unsigned> num_in_flight{0};
   std::atomic<int> global_op_flags{0}; // flags which are applied to each IO op
+/** comment by hy 2020-01-19
+ * # 默认为false,初始化后设置为真
+ */
   bool keep_balanced_budget = false;
   bool honor_pool_full = true;
   bool pool_full_try = false;
@@ -1372,10 +1420,22 @@ public:
     int flags = 0;
 
     epoch_t epoch = 0;  ///< latest epoch we calculated the mapping
-
+/** comment by hy 2020-02-18
+ * # 读取的对象
+ */
     object_t base_oid;
+/** comment by hy 2020-02-18
+ * # 对象pool的信息
+ */
     object_locator_t base_oloc;
+/** comment by hy 2020-02-18
+ * # 最终读取的目标,
+     这里是应为使用cache tier,会导致产生的目标和pool不一致
+ */
     object_t target_oid;
+/** comment by hy 2020-02-18
+ * # 最终目标对象的pool信息
+ */
     object_locator_t target_oloc;
 
     ///< true if we are directed at base_pgid, not base_oid
@@ -1447,23 +1507,52 @@ public:
   };
 
   struct Op : public RefCountedObject {
+/** comment by hy 2020-02-18
+ * # OSD对应的 session
+ */
     OSDSession *session;
+/** comment by hy 2020-02-18
+ * # 引用次数
+ */
     int incarnation;
-
+/** comment by hy 2020-02-18
+ * # 地址信息
+ */
     op_target_t target;
 
     ConnectionRef con;  // for rx buffer only
     uint64_t features;  // explicitly specified op features
-
+/** comment by hy 2020-02-18
+ * # 对应多个操作的封装
+ */
     std::vector<OSDOp> ops;
-
+/** comment by hy 2020-02-18
+ * # 快照id
+ */
     snapid_t snapid;
+/** comment by hy 2020-02-18
+ * # pool层的快照信息
+ */
     SnapContext snapc;
     ceph::real_time mtime;
-
+/** comment by hy 2020-02-18
+ * # 输出的bufferlist
+ */
     ceph::buffer::list *outbl;
+/** comment by hy 2020-02-18
+ * # 由于可能由子系列操作组成
+ */
+/** comment by hy 2020-02-18
+ * # 每个操作对应的输出的bufferlist
+ */
     std::vector<ceph::buffer::list*> out_bl;
+/** comment by hy 2020-02-18
+ * # 每个操作输出对应的回调函数
+ */
     std::vector<Context*> out_handler;
+/** comment by hy 2020-02-18
+ * # 每个操作输出的结果
+ */
     std::vector<int*> out_rval;
 
     int priority;
@@ -2097,10 +2186,19 @@ private:
   void _throttle_op(Op *op, shunique_lock& sul, int op_size = 0);
   int _take_op_budget(Op *op, shunique_lock& sul) {
     ceph_assert(sul && sul.mutex() == &rwlock);
+/** comment by hy 2020-01-13
+ * # 计算该操作,对应的数据量
+ */
     int op_budget = calc_op_budget(op->ops);
     if (keep_balanced_budget) {
+/** comment by hy 2020-01-13
+ * # 需要限流,设置限流标识,等待标识生效
+ */
       _throttle_op(op, sul, op_budget);
     } else { // update take_linger_budget to match this!
+/** comment by hy 2020-01-13
+ * # 统计计数
+ */
       op_throttle_bytes.take(op_budget);
       op_throttle_ops.take(1);
     }
@@ -2356,6 +2454,28 @@ public:
     op_submit(o, &tid);
     return tid;
   }
+/*****************************************************************************
+ * 函 数 名  : Objecter.prepare_read_op
+ * 负 责 人  : hy
+ * 创建日期  : 2020年1月14日
+ * 函数功能  : 读操作前准备
+ * 输入参数  : const object_t& oid                     对象名称
+               const object_locator_t& oloc            计算后的对象隶属
+               ObjectOperation& op                     操作
+               snapid_t snapid                         NULL
+               ceph::buffer::list *pbl                 输出回调参数
+               int flags                               标志
+               Context *onack                          不知道
+               version_t *objver = NULL                不知道
+               int *data_offset = NULL                 不知道
+               uint64_t features = 0                   不知道
+               ZTracer::Trace *parent_trace = nullptr  不知道
+ * 输出参数  : 无
+ * 返 回 值  : Op
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
   Op *prepare_read_op(
     const object_t& oid, const object_locator_t& oloc,
     ObjectOperation& op,

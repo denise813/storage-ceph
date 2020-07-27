@@ -43,6 +43,9 @@ private:
   mutable ceph::mutex lock = ceph::make_mutex("PyModuleRegistry::lock");
   LogChannelRef clog;
 
+/** comment by hy 2020-04-23
+ * # 所有的插件，比如目前默认有两个插件rest和fsstatus，参考目录src/pybind/mgr
+ */
   std::map<std::string, PyModuleRef> modules;
   std::multimap<std::string, entity_addrvec_t> clients;
 

@@ -659,11 +659,32 @@ namespace librbd {
   {
     TracepointProvider::initialize<tracepoint_traits>(get_cct(io_ctx));
     tracepoint(librbd, create2_enter, io_ctx.get_pool_name().c_str(), io_ctx.get_id(), name, size, features, *order);
+/** comment by hy 2020-02-18
+ * # 使用默认条带
+ */
     int r = librbd::create(io_ctx, name, size, false, features, order, 0, 0);
     tracepoint(librbd, create2_exit, r, *order);
     return r;
   }
 
+/*****************************************************************************
+ * 函 数 名  : librbd.RBD.create3
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 创建RBD
+ * 输入参数  : IoCtx& io_ctx           
+               const char *name        
+               uint64_t size          卷大小
+               uint64_t features      卷特性
+               int *order             卷中对象大小
+               uint64_t stripe_unit   卷中对象的条带大小
+               uint64_t stripe_count  卷中对象的条带数量
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
   int RBD::create3(IoCtx& io_ctx, const char *name, uint64_t size,
 		   uint64_t features, int *order, uint64_t stripe_unit,
 		   uint64_t stripe_count)
@@ -3729,6 +3750,9 @@ extern "C" int rbd_create3(rados_ioctx_t p, const char *name,
   librados::IoCtx::from_rados_ioctx_t(p, io_ctx);
   TracepointProvider::initialize<tracepoint_traits>(get_cct(io_ctx));
   tracepoint(librbd, create3_enter, io_ctx.get_pool_name().c_str(), io_ctx.get_id(), name, size, features, *order, stripe_unit, stripe_count);
+/** comment by hy 2020-02-18
+ * # internal.cc :create
+ */
   int r = librbd::create(io_ctx, name, size, false, features, order,
 			stripe_unit, stripe_count);
   tracepoint(librbd, create3_exit, r, *order);
@@ -3743,6 +3767,9 @@ extern "C" int rbd_create4(rados_ioctx_t p, const char *name,
   TracepointProvider::initialize<tracepoint_traits>(get_cct(io_ctx));
   tracepoint(librbd, create4_enter, io_ctx.get_pool_name().c_str(), io_ctx.get_id(), name, size, opts);
   librbd::ImageOptions opts_(opts);
+/** comment by hy 2020-02-18
+ * # internal.cc :create
+ */
   int r = librbd::create(io_ctx, name, "", size, opts_, "", "", false);
   tracepoint(librbd, create4_exit, r);
   return r;
@@ -4523,10 +4550,23 @@ extern "C" int rbd_open(rados_ioctx_t p, const char *name, rbd_image_t *image,
   librados::IoCtx io_ctx;
   librados::IoCtx::from_rados_ioctx_t(p, io_ctx);
   TracepointProvider::initialize<tracepoint_traits>(get_cct(io_ctx));
+/** comment by hy 2020-02-19
+ * # 本函数的new 别的地方 delete
+     这个别的地方是打开后等待事件触发关闭事件
+     会有一点难受,常用的做法应该是智能指针
+     内部使用应该智能指针特性,加引用计数
+ */
   librbd::ImageCtx *ictx = new librbd::ImageCtx(name, "", snap_name, io_ctx,
 						false);
   tracepoint(librbd, open_image_enter, ictx, ictx->name.c_str(), ictx->id.c_str(), ictx->snap_name.c_str(), ictx->read_only);
 
+/** comment by hy 2020-02-19
+ * # failed maybe memleak?
+     open 里面是异步执行完成后返回对应的错误码
+
+     这里也不管 ictx 失败
+     不是商业代码的规范做法
+ */
   int r = ictx->state->open(0);
   if (r >= 0) {
     *image = (rbd_image_t)ictx;
@@ -4546,6 +4586,9 @@ extern "C" int rbd_open_by_id(rados_ioctx_t p, const char *id,
   tracepoint(librbd, open_image_enter, ictx, ictx->name.c_str(),
              ictx->id.c_str(), ictx->snap_name.c_str(), ictx->read_only);
 
+/** comment by hy 2020-02-19
+ * # maybe memleak?
+ */
   int r = ictx->state->open(0);
   if (r >= 0) {
     *image = (rbd_image_t)ictx;
@@ -5734,6 +5777,9 @@ extern "C" ssize_t rbd_read2(rbd_image_t image, uint64_t ofs, size_t len,
   librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
   tracepoint(librbd, read2_enter, ictx, ictx->name.c_str(),
 	      ictx->snap_name.c_str(), ictx->read_only, ofs, len, op_flags);
+/** comment by hy 2020-02-21
+ * # io::ImageRequestWQ::read
+ */
   int r = ictx->io_work_queue->read(ofs, len, librbd::io::ReadResult{buf, len},
                                     op_flags);
   tracepoint(librbd, read_exit, r);
@@ -5747,6 +5793,9 @@ extern "C" int64_t rbd_read_iterate(rbd_image_t image, uint64_t ofs, size_t len,
 {
   librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
   tracepoint(librbd, read_iterate_enter, ictx, ictx->name.c_str(), ictx->snap_name.c_str(), ictx->read_only, ofs, len);
+/** comment by hy 2020-02-22
+ * # 这是条带读?
+ */
   int64_t r = librbd::read_iterate(ictx, ofs, len, cb, arg);
   tracepoint(librbd, read_iterate_exit, r);
   return r;
@@ -5810,6 +5859,10 @@ extern "C" ssize_t rbd_write(rbd_image_t image, uint64_t ofs, size_t len,
 
   bufferlist bl;
   bl.push_back(create_write_raw(ictx, buf, len, nullptr));
+/** comment by hy 2020-02-18
+ * # ImageRequestWQ::write
+     io_work_queue这是一个单例
+ */
   int r = ictx->io_work_queue->write(ofs, len, std::move(bl), 0);
   tracepoint(librbd, write_exit, r);
   return r;
@@ -5824,6 +5877,9 @@ extern "C" ssize_t rbd_write2(rbd_image_t image, uint64_t ofs, size_t len,
 
   bufferlist bl;
   bl.push_back(create_write_raw(ictx, buf, len, nullptr));
+/** comment by hy 2020-02-18
+ * # 开始写数据
+ */
   int r = ictx->io_work_queue->write(ofs, len, std::move(bl), op_flags);
   tracepoint(librbd, write_exit, r);
   return r;
@@ -5933,6 +5989,12 @@ extern "C" int rbd_aio_write2(rbd_image_t image, uint64_t off, size_t len,
   auto aio_completion = get_aio_completion(comp);
   bufferlist bl;
   bl.push_back(create_write_raw(ictx, buf, len, aio_completion));
+/** comment by hy 2020-02-21
+ * # io::ImageRequestWQ::aio_write
+     与同步写的区别就是底层完成异步写,
+     同步写的回调函数是唤醒同步写的条件变量
+     异步写就等待用户自己设定的异步完成事件
+ */
   ictx->io_work_queue->aio_write(aio_completion, off, len, std::move(bl),
                                  op_flags);
   tracepoint(librbd, aio_write_exit, 0);

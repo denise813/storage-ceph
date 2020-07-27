@@ -18,10 +18,22 @@ public:
   struct ClassData;
 
   struct ClassMethod {
+/** comment by hy 2020-02-18
+ * # 方法名称
+ */
     const std::string name;
     using func_t = std::variant<cls_method_cxx_call_t, cls_method_call_t>;
+/** comment by hy 2020-02-18
+ * # c/c++类型的函数指针
+ */
     func_t func;
+/** comment by hy 2020-02-18
+ * # 方法相关标志
+ */
     int flags = 0;
+/** comment by hy 2020-02-18
+ * # 所属模块信息
+ */
     ClassData *cls = nullptr;
 
     int exec(cls_method_context_t ctx,
@@ -47,24 +59,57 @@ public:
   };
 
   struct ClassData {
+/** comment by hy 2020-02-18
+ * # 扩展模块状态
+ */
     enum Status { 
+/** comment by hy 2020-02-18
+ * # 初始未知状态
+ */
       CLASS_UNKNOWN,
+/** comment by hy 2020-02-18
+ * # 缺少状态(动态链接库找不到)
+ */
       CLASS_MISSING,         // missing
+/** comment by hy 2020-02-18
+ * # 缺少依赖的模块
+ */
       CLASS_MISSING_DEPS,    // missing dependencies
+/** comment by hy 2020-02-18
+ * # 正在初始化
+ */
       CLASS_INITIALIZING,    // calling init() right now
+/** comment by hy 2020-02-18
+ * # 已经初始化,并加载
+ */
       CLASS_OPEN,            // initialized, usable
     } status = CLASS_UNKNOWN;
-
+/** comment by hy 2020-02-18
+ * # 模块名称
+ */
     std::string name;
+/** comment by hy 2020-02-18
+ * # 管理模块的加载指针
+ */
     ClassHandler *handler = nullptr;
     void *handle = nullptr;
 
     bool whitelisted = false;
-
+/** comment by hy 2020-02-18
+ * # 模块下所有注册的方法
+ */
     std::map<std::string, ClassMethod> methods_map;
+/** comment by hy 2020-02-18
+ * # 模块下所有注册过滤方法
+ */
     std::map<std::string, ClassFilter> filters_map;
-
+/** comment by hy 2020-02-18
+ * # 本模块依赖的模块
+ */
     std::set<ClassData *> dependencies;         /* our dependencies */
+/** comment by hy 2020-02-18
+ * # 缺少的依赖的模块
+ */
     std::set<ClassData *> missing_dependencies; /* only missing dependencies */
 
     ClassMethod *_get_method(const std::string& mname);
@@ -98,6 +143,9 @@ public:
   };
 
 private:
+/** comment by hy 2020-02-18
+ * # 所有注册的模块,模块名->模块元数据信息
+ */
   std::map<std::string, ClassData> classes;
 
   ClassData *_get_class(const std::string& cname, bool check_allowed);

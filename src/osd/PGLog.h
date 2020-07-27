@@ -529,6 +529,9 @@ public:
       e.mod_desc.trim_bl();
 
       // add to log
+/** comment by hy 2020-07-13
+ * # pg log 放入内存缓存池子 如 slab
+ */
       log.push_back(e);
 
       // riter previously pointed to the previous entry
@@ -672,6 +675,9 @@ protected:
     trimmed.clear();
     trimmed_dups.clear();
     writeout_from = eversion_t::max();
+/** comment by hy 2020-07-13
+ * # 与debug 信息
+ */
     check();
     missing.flush();
     dirty_to_dups = eversion_t();

@@ -358,6 +358,9 @@ rocksdb::Status BlueRocksEnv::NewRandomAccessFile(
   return rocksdb::Status::OK();
 }
 
+/** comment by hy 2020-06-09
+ * # 启动时调用创建接口
+ */
 rocksdb::Status BlueRocksEnv::NewWritableFile(
   const std::string& fname,
   std::unique_ptr<rocksdb::WritableFile>* result,
@@ -366,6 +369,9 @@ rocksdb::Status BlueRocksEnv::NewWritableFile(
   std::string dir, file;
   split(fname, &dir, &file);
   BlueFS::FileWriter *h;
+/** comment by hy 2020-06-25
+ * # 这里可能触发 log写
+ */
   int r = fs->open_for_write(dir, file, &h, false);
   if (r < 0)
     return err_to_status(r);

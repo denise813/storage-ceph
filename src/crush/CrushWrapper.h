@@ -107,13 +107,22 @@ public:
 
   /* building */
   void create() {
+/** comment by hy 2020-04-29
+ * # 已经初始化了 crush
+ */
     if (crush)
       crush_destroy(crush);
+/** comment by hy 2020-04-29
+ * # 创建 crush map 空间
+ */
     crush = crush_create();
     choose_args_clear();
     ceph_assert(crush);
     have_rmaps = false;
-
+/** comment by hy 2020-04-29
+ * # 设置默认值,该默认值与 set_tunables_optimal
+     相同
+ */
     set_tunables_default();
   }
 
@@ -1325,6 +1334,9 @@ public:
 
   void finalize() {
     ceph_assert(crush);
+/** comment by hy 2020-04-29
+ * # 计算crush map需要的 内存[or 磁盘]空间
+ */
     crush_finalize(crush);
     if (!name_map.empty() &&
 	name_map.rbegin()->first >= crush->max_devices) {
@@ -1573,6 +1585,9 @@ public:
 	       const WeightVector& weight,
 	       uint64_t choose_args_index) const {
     int rawout[maxout];
+/** comment by hy 2020-03-13
+ * # 生成可能返回结果的最大空间
+ */
     char work[crush_work_size(crush, maxout)];
     crush_init_workspace(crush, work);
     crush_choose_arg_map arg_map = choose_args_get_with_fallback(
@@ -1582,7 +1597,13 @@ public:
 			       work, arg_map.args);
     if (numrep < 0)
       numrep = 0;
+/** comment by hy 2020-03-13
+ * # 有满足条件的个数
+ */
     out.resize(numrep);
+/** comment by hy 2020-03-13
+ * # 将id 数据放入容器中
+ */
     for (int i=0; i<numrep; i++)
       out[i] = rawout[i];
   }

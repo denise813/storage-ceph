@@ -251,9 +251,15 @@ public:
     pg->lock();
     watch->cb = nullptr;
     if (!watch->is_discarded() && !canceled)
+/** comment by hy 2020-03-21
+ * # 
+ */
       watch->pg->handle_watch_timeout(watch);
     delete this; // ~Watch requires pg lock!
     pg->unlock();
+/** comment by hy 2020-03-21
+ * # 
+ */
     osd->watch_lock.lock();
   }
 };

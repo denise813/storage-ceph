@@ -215,10 +215,27 @@ private:
 
   // -- op workqueue --
   struct Op {
+/** comment by hy 2020-02-23
+ * # 日志应用的开始时间
+ */
     utime_t start;
+/** comment by hy 2020-02-23
+ * # 日志的seq
+ */
     uint64_t op;
+/** comment by hy 2020-02-23
+ * # 事务列表
+ */
     vector<Transaction> tls;
+/** comment by hy 2020-02-23
+ * # 事务应用完成之后的回调函数和同步回调
+ */
     Context *onreadable, *onreadable_sync;
+/** comment by hy 2020-02-23
+ * # 操作数目和自己数目,这里的操作指的是对象的基本操作
+     create,write,delete
+     可以多个子op,对应多个事务
+ */
     uint64_t ops, bytes;
     TrackedOpRef osd_op;
     ZTracer::Trace trace;
@@ -229,7 +246,13 @@ private:
     // to protect q, for benefit of flush (peek/dequeue also protected by lock)
     ceph::mutex qlock =
       ceph::make_mutex("FileStore::OpSequencer::qlock", false);
+/** comment by hy 2020-02-23
+ * # 操作序列
+ */
     list<Op*> q;
+/** comment by hy 2020-02-23
+ * # 日志序列
+ */
     list<uint64_t> jq;
     list<pair<uint64_t, Context*> > flush_commit_waiters;
     ceph::condition_variable cond;
@@ -807,8 +830,17 @@ private:
                           const std::set <std::string> &changed) override;
   int set_throttle_params();
   float m_filestore_commit_timeout;
+/** comment by hy 2020-02-27
+ * # 默认的并发提交
+ */
   bool m_filestore_journal_parallel;
+/** comment by hy 2020-02-27
+ * # 先执行事务,再提交日志,已经废弃
+ */
   bool m_filestore_journal_trailing;
+/** comment by hy 2020-02-27
+ * # 根据文件系统的选择其模式,在 ext4 系列
+ */
   bool m_filestore_journal_writeahead;
   int m_filestore_fiemap_threshold;
   double m_filestore_max_sync_interval;

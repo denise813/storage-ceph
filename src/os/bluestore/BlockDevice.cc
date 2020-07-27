@@ -86,12 +86,18 @@ void IOContext::release_running_aios()
 BlockDevice *BlockDevice::create(CephContext* cct, const string& path,
 				 aio_callback_t cb, void *cbpriv, aio_callback_t d_cb, void *d_cbpriv)
 {
+/** comment by hy 2020-04-22
+ * # 通过设备的path，判断出设备的类型
+ */
   string type = "kernel";
   char buf[PATH_MAX + 1];
   int r = ::readlink(path.c_str(), buf, sizeof(buf) - 1);
   if (r >= 0) {
     buf[r] = '\0';
     char *bname = ::basename(buf);
+/** comment by hy 2020-05-28
+ * # spdk 类型判断
+ */
     if (strncmp(bname, SPDK_PREFIX, sizeof(SPDK_PREFIX)-1) == 0)
       type = "ust-nvme";
   }
@@ -100,6 +106,9 @@ BlockDevice *BlockDevice::create(CephContext* cct, const string& path,
   if (type == "kernel") {
     int is_pmem = 0;
     size_t map_len = 0;
+/** comment by hy 2020-06-22
+ * # 持久内存支持库
+ */
     void *addr = pmem_map_file(path.c_str(), 0, PMEM_FILE_EXCL, O_RDONLY, &map_len, &is_pmem);
     if (addr != NULL) {
       if (is_pmem)

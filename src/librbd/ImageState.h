@@ -21,6 +21,10 @@ class ImageUpdateWatchers;
 class UpdateWatchCtx;
 
 template <typename ImageCtxT = ImageCtx>
+/** comment by hy 2020-02-19
+ * # ImageState 在我的理解中是涉及到RDB元数据的变化操作
+     某些占用通知,刷新等行为
+ */
 class ImageState {
 public:
   ImageState(ImageCtxT *image_ctx);
@@ -106,6 +110,9 @@ private:
   mutable ceph::mutex m_lock;
   ActionsContexts m_actions_contexts;
 
+/** comment by hy 2020-02-19
+ * # 当收到新的数据请求需要刷新时将增加刷新的版本号
+ */
   uint64_t m_last_refresh;
   uint64_t m_refresh_seq;
 

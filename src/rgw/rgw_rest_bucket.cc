@@ -391,6 +391,9 @@ RGWOp *RGWHandler_Bucket::op_get()
 
 RGWOp *RGWHandler_Bucket::op_put()
 {
+/** comment by hy 2020-02-08
+ * # 分配操作执行者
+ */
   if (s->info.args.sub_resource_exists("quota"))
     return new RGWOp_Set_Bucket_Quota;
 

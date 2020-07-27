@@ -5,10 +5,14 @@ if [ ! -d .git ]; then
     exit 1
 fi
 
+# 设置版本号
 version=$1
+# # 修改压缩包版本
 [ -z "$version" ] && version=$(git describe --long --match 'v*' | sed 's/^v//')
+# 修改 rpm 版本
 if expr index $version '-' > /dev/null; then
     rpm_version=$(echo $version | cut -d - -f 1-1)
+# 修改成指定的release 版本
     rpm_release=$(echo $version | cut -d - -f 2- | sed 's/-/./')
 else
     rpm_version=$version
@@ -18,6 +22,7 @@ fi
 outfile="ceph-$version"
 echo "version $version"
 
+# 子模块更新
 # update submodules
 echo "updating submodules..."
 force=$(if git submodule usage 2>&1 | grep --quiet 'update.*--force'; then echo --force ; fi)
@@ -126,9 +131,10 @@ bin/git-archive-all.sh --prefix ceph-$version/ \
 
 # populate files with version strings
 echo "including src/.git_version, ceph.spec"
-
+# 当前 git commit id
 (git rev-parse HEAD ; echo $version) 2> /dev/null > src/.git_version
 
+# 修改对应的版本信息
 for spec in ceph.spec.in alpine/APKBUILD.in; do
     cat $spec |
         sed "s/@PROJECT_VERSION@/$rpm_version/g" |
@@ -139,18 +145,24 @@ ln -s . $outfile
 tar cvf $outfile.version.tar $outfile/src/.git_version $outfile/ceph.spec $outfile/alpine/APKBUILD
 # NOTE: If you change this version number make sure the package is available
 # at the three URLs referenced below (may involve uploading to download.ceph.com)
+# 下载 boost 库
 boost_version=1.72.0
 download_boost $boost_version 59c9b274bc451cf91a9ba1dd2c7fdcaf5d60b1b3aa83f2c9fa143417cc660722 \
                https://dl.bintray.com/boostorg/release/$boost_version/source \
                https://downloads.sourceforge.net/project/boost/boost/$boost_version \
                https://download.ceph.com/qa
 
+# 编译dashboard
 build_dashboard_frontend
+# 编译 k8s 容器
 generate_rook_ceph_client
 tar --concatenate -f $outfile.all.tar $outfile.version.tar
+# 编译boost
 tar --concatenate -f $outfile.all.tar $outfile.boost.tar
 tar --concatenate -f $outfile.all.tar $outfile.tar
+# 编译 dashboard forntend
 tar --concatenate -f $outfile.all.tar dashboard_frontend.tar
+# 编译 k8s 部署
 tar --concatenate -f $outfile.all.tar rook_ceph_client.tar
 mv $outfile.all.tar $outfile.tar
 rm $outfile

@@ -20,6 +20,7 @@
 # please read http://rpm.org/user_doc/conditional_builds.html for explanation of
 # bcond syntax!
 #################################################################################
+# bcond_with 设定添加变量 与 bcond_without 相匹配
 %bcond_with make_check
 %bcond_with cmake_verbose_logging
 %bcond_without ceph_test_package
@@ -1119,6 +1120,7 @@ This package provides Ceph’s default alerts for Prometheus.
 # common
 #################################################################################
 %prep
+# 解压包
 %autosetup -p1 -n @TARBALL_BASENAME@
 
 %build
@@ -1140,6 +1142,7 @@ done
 %if 0%{?suse_version}
 # the following setting fixed an OOM condition we once encountered in the OBS
 RPM_OPT_FLAGS="$RPM_OPT_FLAGS --param ggc-min-expand=20 --param ggc-min-heapsize=32768"
+RPM_OPT_FLAGS="-W -Wall -Wfatal-errors -O0 -g3 -gdwarf-4"
 %endif
 
 export CPPFLAGS="$java_inc"
@@ -1179,6 +1182,7 @@ CMAKE=cmake3
 CMAKE=cmake
 %endif
 ${CMAKE} .. \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DCMAKE_INSTALL_LIBDIR=%{_libdir} \
     -DCMAKE_INSTALL_LIBEXECDIR=%{_libexecdir} \

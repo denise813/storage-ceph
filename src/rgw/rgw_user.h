@@ -569,6 +569,9 @@ class RGWAccessKeyPool
 {
   RGWUser *user{nullptr};
 
+/** comment by hy 2020-03-16
+ * # key, value, compare
+ */
   std::map<std::string, int, ltstr_nocase> key_type_map;
   rgw_user user_id;
   rgw::sal::RGWRadosStore *store{nullptr};

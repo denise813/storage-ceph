@@ -160,6 +160,9 @@ std::string AdminSocket::bind_and_listen(const std::string &sock_path, int *fd)
 {
   ldout(m_cct, 5) << "bind_and_listen " << sock_path << dendl;
 
+/** comment by hy 2020-01-17
+ * # 容器够装设置的 path
+ */
   struct sockaddr_un address;
   if (sock_path.size() > sizeof(address.sun_path) - 1) {
     ostringstream oss;
@@ -169,6 +172,10 @@ std::string AdminSocket::bind_and_listen(const std::string &sock_path, int *fd)
 	<< (sizeof(address.sun_path) - 1);
     return oss.str();
   }
+/** comment by hy 2020-01-17
+ * # 创建套接字避免泄漏到非特权程序
+         systemd 的原因
+ */
   int sock_fd = socket_cloexec(PF_UNIX, SOCK_STREAM, 0);
   if (sock_fd < 0) {
     int err = errno;
@@ -178,10 +185,16 @@ std::string AdminSocket::bind_and_listen(const std::string &sock_path, int *fd)
     return oss.str();
   }
   // FIPS zeroization audit 20191115: this memset is fine.
+/** comment by hy 2020-01-17
+ * # 设置套接字地址
+ */
   memset(&address, 0, sizeof(struct sockaddr_un));
   address.sun_family = AF_UNIX;
   snprintf(address.sun_path, sizeof(address.sun_path),
 	   "%s", sock_path.c_str());
+/** comment by hy 2020-01-17
+ * # 套接字绑定
+ */
   if (::bind(sock_fd, (struct sockaddr*)&address,
 	   sizeof(struct sockaddr_un)) != 0) {
     int err = errno;
@@ -212,6 +225,9 @@ std::string AdminSocket::bind_and_listen(const std::string &sock_path, int *fd)
       return oss.str();
     }
   }
+/** comment by hy 2020-01-17
+ * # 监听本地管理套接字
+ */
   if (listen(sock_fd, 5) != 0) {
     int err = errno;
     ostringstream oss;
@@ -229,6 +245,10 @@ void AdminSocket::entry() noexcept
 {
   ldout(m_cct, 5) << "entry start" << dendl;
   while (true) {
+/** comment by hy 2020-01-18
+ * # POLLOUT |POLLRDBAND 等价于 写
+     POLLIN | POLLPRI    等价于 读
+ */
     struct pollfd fds[2];
     // FIPS zeroization audit 20191115: this memset is fine.
     memset(fds, 0, sizeof(fds));
@@ -249,11 +269,16 @@ void AdminSocket::entry() noexcept
       return;
     }
     ldout(m_cct,20) << __func__ << " awake" << dendl;
-
+/** comment by hy 2020-01-19
+ * # 接受本地命令 sock
+ */
     if (fds[0].revents & POLLIN) {
       // Send out some data
       do_accept();
     }
+/** comment by hy 2020-01-19
+ * # 接受信号 shutdown 管道中读端的信息
+ */
     if (fds[1].revents & POLLIN) {
       // read off one byte
       char buf;
@@ -556,9 +581,15 @@ int AdminSocket::register_command(std::string_view cmddesc,
   int ret;
   std::unique_lock l(lock);
   string prefix = cmddesc_get_prefix(cmddesc);
+/** comment by hy 2020-01-19
+ * # 查找注册的命令执行者
+ */
   auto i = hooks.find(prefix);
   if (i != hooks.cend() &&
       i->second.desc == cmddesc) {
+/** comment by hy 2020-01-19
+ * # 如果已经注册
+ */
     ldout(m_cct, 5) << "register_command " << prefix
 		    << " cmddesc " << cmddesc << " hook " << hook
 		    << " EEXIST" << dendl;
@@ -566,6 +597,9 @@ int AdminSocket::register_command(std::string_view cmddesc,
   } else {
     ldout(m_cct, 5) << "register_command " << prefix << " hook " << hook
 		    << dendl;
+/** comment by hy 2020-01-19
+ * # 在当前位置之前插入元素,避免复杂的构造函数
+ */
     hooks.emplace_hint(i,
 		       std::piecewise_construct,
 		       std::forward_as_tuple(prefix),
@@ -609,6 +643,9 @@ public:
 	f->dump_string("release", ceph_release_to_str());
 	f->dump_string("release_type", ceph_release_type());
       } else if (command == "git_version") {
+/** comment by hy 2020-01-18
+ * # 这里我想将编译时间,提交时间加进去
+ */
 	f->dump_string("git_version", git_version_to_str());
       }
       ostringstream ss;
@@ -669,6 +706,9 @@ bool AdminSocket::init(const std::string& path)
   ldout(m_cct, 5) << "init " << path << dendl;
 
   /* Set up things for the new thread */
+/** comment by hy 2020-01-17
+ * # 创建管道
+ */
   std::string err;
   int pipe_rd = -1, pipe_wr = -1;
   err = create_wakeup_pipe(&pipe_rd, &pipe_wr);
@@ -676,6 +716,9 @@ bool AdminSocket::init(const std::string& path)
     lderr(m_cct) << "AdminSocketConfigObs::init: error: " << err << dendl;
     return false;
   }
+/** comment by hy 2020-01-17
+ * # 设置本地sock 作为管理套接字
+ */
   int sock_fd;
   err = bind_and_listen(path, &sock_fd);
   if (!err.empty()) {
@@ -686,16 +729,25 @@ bool AdminSocket::init(const std::string& path)
   }
 
   /* Create new thread */
+/** comment by hy 2020-01-17
+ * # 保存套接字
+ */
   m_sock_fd = sock_fd;
   m_wakeup_rd_fd = pipe_rd;
   m_wakeup_wr_fd = pipe_wr;
   m_path = path;
 
+/** comment by hy 2020-01-18
+ * # 版本信息命令处理
+ */
   version_hook = std::make_unique<VersionHook>();
   register_command("0", version_hook.get(), "");
   register_command("version", version_hook.get(), "get ceph version");
   register_command("git_version", version_hook.get(),
 		   "get git sha1");
+/** comment by hy 2020-01-18
+ * # 帮助命令行,打印命令行的后面帮助
+ */
   help_hook = std::make_unique<HelpHook>(this);
   register_command("help", help_hook.get(),
 		   "list available commands");
@@ -703,7 +755,15 @@ bool AdminSocket::init(const std::string& path)
   register_command("get_command_descriptions",
 		   getdescs_hook.get(), "list available commands");
 
+/** comment by hy 2020-01-18
+ * # 启动命令线程
+ */
   th = make_named_thread("admin_socket", &AdminSocket::entry, this);
+/** comment by hy 2020-01-19
+ * # 将本地套接字放入退出等待关闭网络是清理,
+     避免网络模块重启服务时,读取到里面的脏信息
+     为什么不在启动的时候直接清理里面的信息呢？还要实现得这么复杂
+ */
   add_cleanup_file(m_path.c_str());
   return true;
 }
@@ -718,14 +778,22 @@ void AdminSocket::shutdown()
 
   ldout(m_cct, 5) << "shutdown" << dendl;
   m_shutdown = true;
-
+/** comment by hy 2020-01-19
+ * # 向管道的写端写入信号0,等待读端进行关闭
+ */
   auto err = destroy_wakeup_pipe();
   if (!err.empty()) {
     lderr(m_cct) << "AdminSocket::shutdown: error: " << err << dendl;
   }
 
+/** comment by hy 2020-01-19
+ * # 关闭本地套接字,避免不断的有请求
+ */
   retry_sys_call(::close, m_sock_fd);
 
+/** comment by hy 2020-01-19
+ * # 清理掉注册的命令
+ */
   unregister_commands(version_hook.get());
   version_hook.reset();
 
@@ -735,6 +803,9 @@ void AdminSocket::shutdown()
   unregister_commands(getdescs_hook.get());
   getdescs_hook.reset();
 
+/** comment by hy 2020-01-19
+ * # 清理本地套接字文件
+ */
   remove_cleanup_file(m_path);
   m_path.clear();
 }

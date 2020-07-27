@@ -56,6 +56,7 @@ if(WITH_CCACHE)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(WITH_CCACHE)
 
+# 关闭帮助手册 ON->OFF
 option(WITH_MANPAGE "Build man pages." ON)
 if(WITH_MANPAGE)
   find_program(SPHINX_BUILD
@@ -98,6 +99,7 @@ else(ENABLE_SHARED)
 endif(ENABLE_SHARED)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${ENABLE_SHARED})
 
+# 将标准库编入程序
 option(WITH_STATIC_LIBSTDCXX "Link against libstdc++ statically" OFF)
 if(WITH_STATIC_LIBSTDCXX)
   if(NOT CMAKE_COMPILER_IS_GNUCXX)
@@ -115,6 +117,7 @@ if(NOT HAVE_CXX11_ATOMIC)
     "${CMAKE_CXX_STANDARD_LIBRARIES} ${LIBATOMIC_LINK_FLAGS}")
 endif()
 
+# 编译RDBMA ON->OFF
 option(WITH_RDMA "Enable RDMA in async messenger" ON)
 if(WITH_RDMA)
   find_package(verbs REQUIRED)
@@ -145,24 +148,29 @@ else()
   set(HAVE_BLKID OFF)
 endif(LINUX)
 
+# LDAP数据库
 option(WITH_OPENLDAP "OPENLDAP is here" ON)
 if(WITH_OPENLDAP)
   find_package(OpenLdap REQUIRED)
   set(HAVE_OPENLDAP ${OPENLDAP_FOUND})
 endif()
 
+# 忽略服务安全
 option(WITH_GSSAPI "GSSAPI/KRB5 is here" OFF)
 if(WITH_GSSAPI)
   find_package(GSSApi REQUIRED)
   set(HAVE_GSSAPI ${GSSApi_FOUND})
 endif()
 
+# 系统本地导出
 option(WITH_FUSE "Fuse is here" ON)
 if(WITH_FUSE)
   find_package(FUSE)
   set(HAVE_LIBFUSE ${FUSE_FOUND})
 endif()
 
+# 后端文件系统默认XFS ON->OFF
+# 不使用文件系统
 option(WITH_XFS "XFS is here" ON)
 if(WITH_XFS)
   find_package(xfs)
@@ -187,23 +195,26 @@ if(WITH_BLUESTORE)
 endif()
 
 include(CMakeDependentOption)
+# 新的异步io模型 io_uring
 CMAKE_DEPENDENT_OPTION(WITH_LIBURING "Build with liburing library support" OFF
   "WITH_BLUESTORE;HAVE_LIBAIO" OFF)
 set(HAVE_LIBURING ${WITH_LIBURING})
-
+# 新的持久化内存
 CMAKE_DEPENDENT_OPTION(WITH_BLUESTORE_PMEM "Enable PMDK libraries" OFF
   "WITH_BLUESTORE" OFF)
-
+# RBD 缓存持久化
 CMAKE_DEPENDENT_OPTION(WITH_RBD_RWL "Enable librbd persistent write back cache" OFF
   "WITH_RBD" OFF)
-
+# 使用系统的持久化内存模块
 CMAKE_DEPENDENT_OPTION(WITH_SYSTEM_PMDK "Require and build with system PMDK" OFF
   "WITH_RBD_RWL OR WITH_BLUESTORE_PMEM" OFF)
 
+# bluestore 使用持久化内存
 if(WITH_BLUESTORE_PMEM)
   set(HAVE_BLUESTORE_PMEM ON)
 endif()
 
+# SPDK 功能
 CMAKE_DEPENDENT_OPTION(WITH_SPDK "Enable SPDK" OFF
   "CMAKE_SYSTEM_PROCESSOR MATCHES i386|i686|amd64|x86_64|AMD64|aarch64" OFF)
 if(WITH_SPDK)
@@ -223,6 +234,7 @@ if(WITH_BLUESTORE)
   endif()
 endif()
 
+# bulefs 库文件
 option(WITH_BLUEFS "libbluefs library" OFF)
 
 option(WITH_QATZIP "Enable QATZIP" OFF)
@@ -232,11 +244,13 @@ if(WITH_QATZIP)
 endif(WITH_QATZIP)
 
 # needs mds and? XXX
+# 暂时关闭文件服务
 option(WITH_LIBCEPHFS "libcephfs client library" ON)
 
 # key-value store
 option(WITH_KVS "Key value store is here" ON)
 
+# 关闭RDB内核模块 ON->OFF
 option(WITH_KRBD "Enable Linux krbd support of 'rbd' utility" ON)
 
 if(WITH_KRBD AND NOT WITH_RBD)
@@ -250,6 +264,7 @@ if(LINUX)
   endif()
 endif()
 
+# 关闭 LEVELDB
 option(WITH_LEVELDB "LevelDB is here" ON)
 if(WITH_LEVELDB)
   if(LEVELDB_PREFIX)
@@ -262,6 +277,7 @@ endif(WITH_LEVELDB)
 
 find_package(snappy REQUIRED)
 
+# 压缩工具的选择
 option(WITH_BROTLI "Brotli compression support" OFF)
 if(WITH_BROTLI)
   set(HAVE_BROTLI TRUE)
@@ -273,9 +289,11 @@ if(WITH_LZ4)
   set(HAVE_LZ4 ${LZ4_FOUND})
 endif(WITH_LZ4)
 
+# ceph 的调试互斥锁
 option(WITH_CEPH_DEBUG_MUTEX "Use debug ceph::mutex with lockdep" OFF)
 
 #if allocator is set on command line make sure it matches below strings
+# 内存管理模块
 set(ALLOCATOR "" CACHE STRING
   "specify memory allocator to use. currently tcmalloc, tcmalloc_minimal, \
 jemalloc, and libc is supported. if not specified, will try to find tcmalloc, \
@@ -320,13 +338,15 @@ if (HAVE_LIBTCMALLOC AND TCMALLOC_VERSION_STRING VERSION_LESS 2.6.2)
 endif()
 
 find_package(CURL REQUIRED)
+# http客户端
 set(CMAKE_REQUIRED_INCLUDES ${CURL_INCLUDE_DIRS})
 set(CMAKE_REQUIRED_LIBRARIES ${CURL_LIBRARIES})
 CHECK_SYMBOL_EXISTS(curl_multi_wait curl/curl.h HAVE_CURL_MULTI_WAIT)
 
 find_package(OpenSSL REQUIRED)
+# 消息加密管理
 set(CRYPTO_LIBS OpenSSL::Crypto)
-
+# 网络模块模型 DPDK
 option(WITH_DPDK "Enable DPDK messaging" OFF)
 if(WITH_DPDK)
   find_package(dpdk)
@@ -336,13 +356,14 @@ if(WITH_DPDK)
   endif()
   set(HAVE_DPDK TRUE)
 endif()
-
+# 信息跟踪
 option(WITH_BLKIN "Use blkin to emit LTTng tracepoints for Zipkin" OFF)
 if(WITH_BLKIN)
   set(BLKIN_LIBRARIES blkin ${LTTNGUST_LIBRARIES} lttng-ust-fork)
   include_directories(SYSTEM src/blkin/blkin-lib)
 endif(WITH_BLKIN)
 
+# boost 协程
 option(WITH_BOOST_CONTEXT "Enable boost::asio stackful coroutines" ON)
 if(WITH_BOOST_CONTEXT)
   set(HAVE_BOOST_CONTEXT ON)
@@ -350,10 +371,14 @@ endif()
 
 #option for RGW
 option(WITH_RADOSGW "Rados Gateway is enabled" ON)
+# FCGI 前端
 option(WITH_RADOSGW_FCGI_FRONTEND "Rados Gateway's FCGI frontend is enabled" OFF)
+# boost 的beast 前端
 option(WITH_RADOSGW_BEAST_FRONTEND "Rados Gateway's Beast frontend is enabled" ON)
 option(WITH_RADOSGW_BEAST_OPENSSL "Rados Gateway's Beast frontend uses OpenSSL" ON)
+# 事件推送使用的消息队列 AMQP ON->OFF
 option(WITH_RADOSGW_AMQP_ENDPOINT "Rados Gateway's pubsub support for AMQP push endpoint" ON)
+# 事件推送使用的消息队列 AMQP ON->OFF
 option(WITH_RADOSGW_KAFKA_ENDPOINT "Rados Gateway's pubsub support for Kafka push endpoint" ON)
 
 if(WITH_RADOSGW)
@@ -417,6 +442,7 @@ if(WITH_RADOSGW)
 endif (WITH_RADOSGW)
 
 #option for CephFS
+# 关闭 FS ON->OFF
 option(WITH_CEPHFS "CephFS is enabled" ON)
 
 # Please specify 3.[0-7] if you want to build with a certain version of python3.
@@ -442,11 +468,13 @@ if(WITH_MGR)
   # Boost dependency check deferred to Boost section
 endif(WITH_MGR)
 
+# DNS 版本满足的线程安全测试
 option(WITH_THREAD_SAFE_RES_QUERY "res_query is thread safe" OFF)
 if(WITH_THREAD_SAFE_RES_QUERY)
   set(HAVE_THREAD_SAFE_RES_QUERY 1 CACHE INTERNAL "Thread safe res_query supported.")
 endif()
 
+# 信号课重入测试
 option(WITH_REENTRANT_STRSIGNAL "strsignal is reentrant" OFF)
 if(WITH_REENTRANT_STRSIGNAL)
   set(HAVE_REENTRANT_STRSIGNAL 1 CACHE INTERNAL "Reentrant strsignal is supported.")
@@ -463,6 +491,7 @@ CMAKE_DEPENDENT_OPTION(
   OFF "USE_LTTNG" OFF)
 
 #option for LTTng
+# 事件跟踪
 option(WITH_LTTNG "LTTng tracing is enabled" ON)
 if(${WITH_LTTNG})
   find_package(LTTngUST REQUIRED)
@@ -476,6 +505,7 @@ endif(${WITH_LTTNG})
 option(WITH_OSD_INSTRUMENT_FUNCTIONS OFF)
 
 #option for Babeltrace
+# 与 LTTng 一起使用
 option(WITH_BABELTRACE "Babeltrace libraries are enabled" ON)
 if(WITH_BABELTRACE)
   set(HAVE_BABELTRACE ON)
@@ -489,6 +519,7 @@ option(DEBUG_GATHER "C_Gather debugging is enabled" ON)
 option(ENABLE_COVERAGE "Coverage is enabled" OFF)
 option(PG_DEBUG_REFS "PG Ref debugging is enabled" OFF)
 
+# 测试程序编译 ON->OFF
 option(WITH_TESTS "enable the build of ceph-test package scripts/binaries" ON)
 set(UNIT_TESTS_BUILT ${WITH_TESTS})
 set(CEPH_TEST_TIMEOUT 3600 CACHE STRING 
@@ -513,16 +544,19 @@ if(LINUX)
 endif(LINUX)
 
 # ASAN and friends
+# ASAN 内存检查工具
 option(WITH_ASAN "build with ASAN" OFF)
 if(WITH_ASAN)
   list(APPEND sanitizers "address")
 endif()
 
+# 内存泄漏工具
 option(WITH_ASAN_LEAK "explicitly enable ASAN leak detection" OFF)
 if(WITH_ASAN_LEAK)
   list(APPEND sanitizers "leak")
 endif()
 
+# 一种线程管理
 option(WITH_TSAN "build with TSAN" OFF)
 if(WITH_TSAN)
   list(APPEND sanitizers "thread")
@@ -547,6 +581,7 @@ if (WITH_SYSTEM_ROCKSDB)
   find_package(RocksDB 5.14 REQUIRED)
 endif()
 
+# 暂时不开启
 option(WITH_SEASTAR "Build seastar components")
 set(HAVE_SEASTAR ${WITH_SEASTAR})
 
@@ -570,6 +605,7 @@ if(WITH_SEASTAR)
   list(APPEND BOOST_COMPONENTS filesystem timer)
 endif()
 
+# 使用 boost 的多线程
 set(Boost_USE_MULTITHREADED ON)
 # require minimally the bundled version
 if(WITH_SYSTEM_BOOST)
@@ -628,15 +664,16 @@ endif(WITH_SELINUX)
 add_custom_target(tests
   COMMENT "Building tests")
 enable_testing()
+# 测试框架
 set(CMAKE_CTEST_COMMAND ctest)
 add_custom_target(check
   COMMAND ${CMAKE_CTEST_COMMAND}
   DEPENDS tests)
 
 add_subdirectory(src)
-
+# 去除QA记录
 add_subdirectory(qa)
-
+# 去除文档
 add_subdirectory(doc)
 if(WITH_MANPAGE)
   add_subdirectory(man)
@@ -651,11 +688,13 @@ if(LINUX)
   add_subdirectory(etc/sysctl)
 endif()
 
+# grafana
 option(WITH_GRAFANA "install grafana dashboards" OFF)
 if(WITH_GRAFANA)
   add_subdirectory(monitoring/grafana/dashboards)
 endif()
 
+# 看代码的工具
 include(CTags)
 option(CTAG_EXCLUDES "Exclude files/directories when running ctag.")
 add_tags(ctags
@@ -665,6 +704,8 @@ add_tags(ctags
   EXCLUDES "*.js" "*.css")
 add_custom_target(tags DEPENDS ctags)
 
+# 码缺陷静态检查工具
 find_package(CppCheck)
+# 去除多余头文件
 find_package(IWYU)
 set(VERSION 15.2.4)

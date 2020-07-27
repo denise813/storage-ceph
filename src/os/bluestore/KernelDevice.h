@@ -29,9 +29,18 @@
 
 
 class KernelDevice : public BlockDevice {
+/** comment by hy 2020-04-22
+ * # 裸设备以direct、buffered两种方式打开的fd
+ */
   std::vector<int> fd_directs, fd_buffereds;
   bool enable_wrt = true;
+/** comment by hy 2020-04-22
+ * # 设备路径
+ */
   std::string path;
+/** comment by hy 2020-04-22
+ * # 是否启用Libaio
+ */
   bool aio, dio;
 
   int vdo_fd = -1;      ///< fd for vdo sysfs directory
@@ -55,10 +64,19 @@ class KernelDevice : public BlockDevice {
   ceph::mutex discard_lock = ceph::make_mutex("KernelDevice::discard_lock");
   ceph::condition_variable discard_cond;
   bool discard_running = false;
+/** comment by hy 2020-04-22
+ * # 存放需要做Discard的Extent
+ */
   interval_set<uint64_t> discard_queued;
+/** comment by hy 2020-04-24
+ * # discard_finishing 和 discard_queued 交换值，存放完成Discard的Extent
+ */
   interval_set<uint64_t> discard_finishing;
 
   struct AioCompletionThread : public Thread {
+/** comment by hy 2020-04-22
+ * # Libaio线程 收割完成的事件
+ */
     KernelDevice *bdev;
     explicit AioCompletionThread(KernelDevice *b) : bdev(b) {}
     void *entry() override {
@@ -68,6 +86,9 @@ class KernelDevice : public BlockDevice {
   } aio_thread;
 
   struct DiscardThread : public Thread {
+/** comment by hy 2020-04-22
+ * # SSD的Trim
+ */
     KernelDevice *bdev;
     explicit DiscardThread(KernelDevice *b) : bdev(b) {}
     void *entry() override {
@@ -125,10 +146,15 @@ public:
   int get_devices(std::set<std::string> *ls) const override;
 
   bool get_thin_utilization(uint64_t *total, uint64_t *avail) const override;
-
+/** comment by hy 2020-04-22
+ * # 同步读接口
+ */
   int read(uint64_t off, uint64_t len, bufferlist *pbl,
 	   IOContext *ioc,
 	   bool buffered) override;
+/** comment by hy 2020-04-22
+ * # 异步读接口
+ */
   int aio_read(uint64_t off, uint64_t len, bufferlist *pbl,
 	       IOContext *ioc) override;
   int read_random(uint64_t off, uint64_t len, char *buf, bool buffered) override;
@@ -139,6 +165,9 @@ public:
 		bool buffered,
 		int write_hint = WRITE_LIFE_NOT_SET) override;
   int flush() override;
+/** comment by hy 2020-04-22
+ * # SSD指定offset、len的数据做Trim
+ */
   int discard(uint64_t offset, uint64_t len) override;
 
   // for managing buffered readers/writers

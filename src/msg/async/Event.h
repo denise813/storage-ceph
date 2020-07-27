@@ -248,6 +248,9 @@ class EventCenter {
     ceph_assert(i < MAX_EVENTCENTER && global_centers);
     EventCenter *c = global_centers->centers[i];
     ceph_assert(c);
+/** comment by hy 2020-04-06
+ * # bind = listen
+ */
     if (always_async) {
       C_submit_event<func> *event = new C_submit_event<func>(std::move(f), true);
       c->dispatch_event_external(event);

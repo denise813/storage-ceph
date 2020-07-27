@@ -133,6 +133,9 @@ int Thread::try_create(size_t stacksize)
     int to_block[] = { SIGPIPE , 0 };
     block_signals(to_block, &old_sigset);
   }
+/** comment by hy 2020-01-08
+ * # 根据配置选项选择线程启动方式
+ */
   r = pthread_create(&thread_id, thread_attr, _entry_func, (void*)this);
   restore_sigset(&old_sigset);
 

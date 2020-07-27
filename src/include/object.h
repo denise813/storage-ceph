@@ -33,6 +33,11 @@
 using namespace std;
 
 struct object_t {
+/** comment by hy 2020-01-13
+ * # 对象名称
+     Object是默认为4MB大小的数据块
+     一个对象就对应本地文件系统中的一个文件
+ */
   std::string name;
 
   object_t() {}
@@ -161,7 +166,13 @@ inline std::ostream& operator<<(std::ostream& out, const snapid_t& s) {
 
 
 struct sobject_t {
+/** comment by hy 2020-01-13
+ * # 原始对象
+ */
   object_t oid;
+/** comment by hy 2020-01-13
+ * # 快照对象的对应的快照序号
+ */
   snapid_t snap;
 
   sobject_t() : snap(0) {}

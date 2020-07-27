@@ -2700,7 +2700,7 @@ CtPtr ProtocolV2::reuse_connection(const AsyncConnectionRef& existing,
           // XXX: do we really need the locking for `outgoing_bl`? There is
           // a comment just above its definition saying "lockfree, only used
           // in own thread". I'm following lockfull schema just in the case.
-          // From performance point of view it should be fine – this happens
+          // From performance point of view it should be fine - this happens
           // far away from hot paths.
           existing->outgoing_bl.clear();
           existing->open_write = false;

@@ -291,6 +291,9 @@ static void get_object_key(CephContext* cct, const ghobject_t& oid,
   _key_encode_u64(oid.generation, key);
 
   // sanity check
+/** comment by hy 2020-02-05
+ * # 弄完检查一下
+ */
   if (true) {
     ghobject_t t;
     int r = get_key_object(*key, &t);

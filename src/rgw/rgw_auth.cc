@@ -238,12 +238,18 @@ rgw::auth::Strategy::authenticate(const DoutPrefixProvider* dpp, const req_state
 
     result_t engine_result = result_t::deny();
     try {
+/** comment by hy 2020-03-07
+ * # 认证
+ */
       engine_result = engine.authenticate(dpp, s);
     } catch (const int err) {
       engine_result = result_t::deny(err);
     }
 
     bool try_next = true;
+/** comment by hy 2020-03-07
+ * # 认证结果
+ */
     switch (engine_result.get_status()) {
       case result_t::Status::REJECTED: {
         ldpp_dout(dpp, 20) << engine.get_name() << " rejected with reason="
@@ -289,6 +295,9 @@ rgw::auth::Strategy::apply(const DoutPrefixProvider *dpp, const rgw::auth::Strat
                            req_state* const s) noexcept
 {
   try {
+/** comment by hy 2020-03-07
+ * # 这里需要看看
+ */
     auto result = auth_strategy.authenticate(dpp, s);
     if (result.get_status() != decltype(result)::Status::GRANTED) {
       /* Access denied is acknowledged by returning a std::unique_ptr with
@@ -315,6 +324,9 @@ rgw::auth::Strategy::apply(const DoutPrefixProvider *dpp, const rgw::auth::Strat
         completer->modify_request_state(dpp, s);
       }
 
+/** comment by hy 2020-03-07
+ * # 设置认证
+ */
       s->auth.identity = std::move(applier);
       s->auth.completer = std::move(completer);
 

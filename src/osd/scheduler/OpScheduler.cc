@@ -23,6 +23,9 @@ namespace ceph::osd::scheduler {
 
 OpSchedulerRef make_scheduler(CephContext *cct)
 {
+/** comment by hy 2020-04-07
+ * # 默认值为 wpq
+ */
   const std::string *type = &cct->_conf->osd_op_queue;
   if (*type == "debug_random") {
     static const std::string index_lookup[] = { "mclock_scheduler",

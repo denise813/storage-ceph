@@ -385,6 +385,9 @@ void PeeringState::update_heartbeat_peers()
 
 void PeeringState::write_if_dirty(ObjectStore::Transaction& t)
 {
+/** comment by hy 2020-07-13
+ * # 函数实际调用 PG::prepare_write
+ */
   pl->prepare_write(
     info,
     last_written_info,
@@ -3828,6 +3831,9 @@ void PeeringState::append_log(
   }
   psdout(10) << "append_log " << pg_log.get_log() << " " << logv << dendl;
 
+/** comment by hy 2020-07-13
+ * # peer ?
+ */
   PGLog::LogEntryHandlerRef handler{pl->get_log_handler(t)};
   if (!transaction_applied) {
      /* We must be a backfill or async recovery peer, so it's ok if we apply
@@ -3845,6 +3851,9 @@ void PeeringState::append_log(
   for (vector<pg_log_entry_t>::const_iterator p = logv.begin();
        p != logv.end();
        ++p) {
+/** comment by hy 2020-07-13
+ * # 添加 log 操作
+ */
     add_log_entry(*p, transaction_applied);
 
     /* We don't want to leave the rollforward artifacts around
@@ -3873,6 +3882,9 @@ void PeeringState::append_log(
 
   // update the local pg, pg log
   dirty_info = true;
+/** comment by hy 2020-07-13
+ * # 处理pg 信息
+ */
   write_if_dirty(t);
 
   if (!is_primary())
@@ -4070,20 +4082,39 @@ void PeeringState::complete_write(eversion_t v, eversion_t lc)
 
 void PeeringState::calc_trim_to()
 {
+/** comment by hy 2020-02-22
+ * # 计算target值
+     target值为最少保留的条目数
+     如果处于降级或恢复等状态,
+     target值为最大条目数
+     通过配置文件指定
+ */
   size_t target = pl->get_target_pg_log_entries();
 
+/** comment by hy 2020-02-22
+ * # min_last_complete_ondisk 为本 pg 在本osd上的完成最后一条日志的版本
+     如果不为空,也不等于pg_trim_to,当前pg log 的size 大于target
+     就需要计算trim掉日志的条数
+ */
   eversion_t limit = std::min(
     min_last_complete_ondisk,
     pg_log.get_can_rollback_to());
   if (limit != eversion_t() &&
       limit != pg_trim_to &&
       pg_log.get_log().approx_size() > target) {
+/** comment by hy 2020-02-22
+ * # 获取为日志总数减去target,如果小于日志一次提交trim的最小值
+     就返回
+ */
     size_t num_to_trim = std::min(pg_log.get_log().approx_size() - target,
                              cct->_conf->osd_pg_log_trim_max);
     if (num_to_trim < cct->_conf->osd_pg_log_trim_min &&
         cct->_conf->osd_pg_log_trim_max >= cct->_conf->osd_pg_log_trim_min) {
       return;
     }
+/** comment by hy 2020-02-22
+ * # 从头开始计算最新的 pg_trim_to 版本
+ */
     list<pg_log_entry_t>::const_iterator it = pg_log.get_log().log.begin();
     eversion_t new_trim_to;
     for (size_t i = 0; i < num_to_trim; ++i) {
@@ -4104,9 +4135,21 @@ void PeeringState::calc_trim_to()
 
 void PeeringState::calc_trim_to_aggressive()
 {
+/** comment by hy 2020-02-22
+ * # 计算target值
+     target值为最少保留的条目数
+     如果处于降级或恢复等状态,
+     target值为最大条目数
+     通过配置文件指定
+ */
   size_t target = pl->get_target_pg_log_entries();
 
   // limit pg log trimming up to the can_rollback_to value
+/** comment by hy 2020-02-22
+* # min_last_complete_ondisk 为本 pg 在本osd上的完成最后一条日志的版本
+    如果不为空,也不等于pg_trim_to,当前pg log 的size 大于target
+    就需要计算trim掉日志的条数
+*/
   eversion_t limit = std::min({
     pg_log.get_head(),
     pg_log.get_can_rollback_to(),
@@ -4118,6 +4161,10 @@ void PeeringState::calc_trim_to_aggressive()
       pg_log.get_log().approx_size() > target) {
     psdout(10) << __func__ << " approx pg log length =  "
              << pg_log.get_log().approx_size() << dendl;
+/** comment by hy 2020-02-22
+ * # 获取为日志总数减去target,如果小于日志一次提交trim的最小值
+     就返回
+ */
     uint64_t num_to_trim = std::min<uint64_t>(pg_log.get_log().approx_size() - target,
                                               cct->_conf->osd_pg_log_trim_max);
     psdout(10) << __func__ << " num_to_trim =  " << num_to_trim << dendl;
@@ -4129,6 +4176,9 @@ void PeeringState::calc_trim_to_aggressive()
     auto rit = pg_log.get_log().log.rbegin();
     eversion_t by_n_to_keep; // start from tail
     eversion_t by_n_to_trim = eversion_t::max(); // start from head
+/** comment by hy 2020-02-22
+ * # 从头开始计算最新的 pg_trim_to 版本
+ */
     for (size_t i = 0; it != pg_log.get_log().log.end(); ++it, ++rit) {
       i++;
       if (i > target && by_n_to_keep == eversion_t()) {

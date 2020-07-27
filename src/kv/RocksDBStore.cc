@@ -500,6 +500,9 @@ int RocksDBStore::do_open(ostream &out,
   }
   rocksdb::Status status;
   if (create_if_missing) {
+/** comment by hy 2020-05-29
+ * # 原生接口
+ */
     status = rocksdb::DB::Open(opt, path, &db);
     if (!status.ok()) {
       derr << status.ToString() << dendl;
@@ -812,6 +815,9 @@ int RocksDBStore::submit_common(rocksdb::WriteOptions& woptions, KeyValueDB::Tra
     rocksdb::get_perf_context()->Reset();
   }
 
+/** comment by hy 2020-05-29
+ * # 事务,将初始化流程的数据都下盘
+ */
   RocksDBTransactionImpl * _t =
     static_cast<RocksDBTransactionImpl *>(t.get());
   woptions.disableWAL = disableWAL;
@@ -1168,6 +1174,9 @@ int RocksDBStore::get(
   int r = 0;
   string value;
   rocksdb::Status s;
+/** comment by hy 2020-07-12
+ * # 确定使用后缀作为cf 查找 cf,否则默认的 cf空间
+ */
   auto cf = get_cf_handle(prefix);
   if (cf) {
     s = db->Get(rocksdb::ReadOptions(),

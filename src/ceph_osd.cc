@@ -153,6 +153,9 @@ int main(int argc, const char **argv)
   std::string osdspec_affinity;
 
   std::string val;
+/** comment by hy 2020-02-29
+ * # 解析参数
+ */
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
     if (ceph_argparse_double_dash(args, i)) {
       break;
@@ -196,6 +199,9 @@ int main(int argc, const char **argv)
     exit(1);
   }
 
+/** comment by hy 2020-02-29
+ * # 启动perf
+ */
   if (global_init_prefork(g_ceph_context) >= 0) {
     std::string err;
     int r = forker.prefork(err);
@@ -275,6 +281,9 @@ int main(int argc, const char **argv)
 
   // the store
   std::string store_type;
+/** comment by hy 2020-02-29
+ * # 获取后端存储的引擎
+ */
   {
     char fn[PATH_MAX];
     snprintf(fn, sizeof(fn), "%s/type", data_path.c_str());
@@ -313,6 +322,9 @@ int main(int argc, const char **argv)
     }
   }
 
+/** comment by hy 2020-02-29
+ * # 获取日志路径
+ */
   std::string journal_path = g_conf().get_val<std::string>("osd_journal");
   uint32_t flags = g_conf().get_val<uint64_t>("osd_os_flags");
   ObjectStore *store = ObjectStore::create(g_ceph_context,
@@ -333,6 +345,9 @@ int main(int argc, const char **argv)
     EntityName ename{g_conf()->name};
     EntityAuth eauth;
 
+/** comment by hy 2020-02-29
+ * # 获取认证秘钥
+ */
     std::string keyring_path = g_conf().get_val<std::string>("keyring");
     int ret = keyring.load(g_ceph_context, keyring_path);
     if (ret == 0 &&
@@ -353,6 +368,9 @@ int main(int argc, const char **argv)
     }
   }
 
+/** comment by hy 2020-02-29
+ * # 执行首次的格式化
+ */
   if (mkfs) {
     common_init_finish(g_ceph_context);
 
@@ -376,6 +394,9 @@ int main(int argc, const char **argv)
   if (mkfs || mkkey) {
     forker.exit(0);
   }
+/** comment by hy 2020-02-29
+ * # 日志处理
+ */
   if (mkjournal) {
     common_init_finish(g_ceph_context);
     int err = store->mkjournal();
@@ -389,6 +410,9 @@ int main(int argc, const char **argv)
 	 << " for object store " << data_path << dendl;
     forker.exit(0);
   }
+/** comment by hy 2020-02-29
+ * # 日志项检查,bulestore 没日志
+ */
   if (check_wants_journal) {
     if (store->wants_journal()) {
       cout << "wants journal: yes" << std::endl;
@@ -398,6 +422,9 @@ int main(int argc, const char **argv)
       forker.exit(1);
     }
   }
+/** comment by hy 2020-03-22
+ * # 检查日志
+ */
   if (check_allows_journal) {
     if (store->allows_journal()) {
       cout << "allows journal: yes" << std::endl;
@@ -416,6 +443,9 @@ int main(int argc, const char **argv)
       forker.exit(1);
     }
   }
+/** comment by hy 2020-02-29
+ * # 启动刷信息
+ */
   if (flushjournal) {
     common_init_finish(g_ceph_context);
     int err = store->mount();
@@ -433,6 +463,9 @@ flushjournal_out:
     delete store;
     forker.exit(err < 0 ? 1 : 0);
   }
+/** comment by hy 2020-02-29
+ * # 显示日志基本信息
+ */
   if (dump_journal) {
     common_init_finish(g_ceph_context);
     int err = store->dump_journal(cout);
@@ -448,6 +481,9 @@ flushjournal_out:
     forker.exit(0);
   }
 
+/** comment by hy 2020-02-29
+ * # 更新版本号
+ */
   if (convertfilestore) {
     int err = store->mount();
     if (err < 0) {
@@ -466,9 +502,16 @@ flushjournal_out:
   }
   
   string magic;
+/** comment by hy 2020-03-22
+ * # cluster_fsid 为 ceph cluster id
+     osd_fsid 为 文件系统 id
+ */
   uuid_d cluster_fsid, osd_fsid;
   ceph_release_t require_osd_release = ceph_release_t::unknown;
   int w;
+/** comment by hy 2020-02-29
+ * # 验证元数据
+ */
   int r = OSD::peek_meta(store, &magic, &cluster_fsid, &osd_fsid, &w,
 			 &require_osd_release);
   if (r < 0) {
@@ -491,6 +534,9 @@ flushjournal_out:
     forker.exit(1);
   }
 
+/** comment by hy 2020-03-22
+ * # 检查集群号
+ */
   if (get_cluster_fsid) {
     cout << cluster_fsid << std::endl;
     forker.exit(0);
@@ -511,6 +557,10 @@ flushjournal_out:
 
   // consider objectstore numa node
   int os_numa_node = -1;
+/** comment by hy 2020-02-29
+ * # 获取 cpu numa,对于 bluestore 有效
+     BlueStore::get_numa_node
+ */
   r = store->get_numa_node(&os_numa_node, nullptr, nullptr);
   if (r >= 0 && os_numa_node >= 0) {
     dout(1) << " objectstore numa_node " << os_numa_node << dendl;
@@ -521,6 +571,9 @@ flushjournal_out:
   }
 
   // messengers
+/** comment by hy 2020-03-22
+ * # 可以分开设置网络类型
+ */
   std::string msg_type = g_conf().get_val<std::string>("ms_type");
   std::string public_msg_type =
     g_conf().get_val<std::string>("ms_public_type");
@@ -530,6 +583,9 @@ flushjournal_out:
   public_msg_type = public_msg_type.empty() ? msg_type : public_msg_type;
   cluster_msg_type = cluster_msg_type.empty() ? msg_type : cluster_msg_type;
   uint64_t nonce = Messenger::get_pid_nonce();
+/** comment by hy 2020-04-06
+ * # 创建 AsyncMessenger
+ */
   Messenger *ms_public = Messenger::create(g_ceph_context, public_msg_type,
 					   entity_name_t::OSD(whoami), "client",
 					   nonce,
@@ -540,15 +596,27 @@ flushjournal_out:
 					    nonce,
 					    Messenger::HAS_HEAVY_TRAFFIC |
 					    Messenger::HAS_MANY_CONNECTIONS);
+/** comment by hy 2020-04-24
+ * # 发送ping心跳的messenger
+ */
   Messenger *ms_hb_back_client = Messenger::create(g_ceph_context, cluster_msg_type,
 					     entity_name_t::OSD(whoami), "hb_back_client",
 					     nonce, Messenger::HEARTBEAT);
+/** comment by hy 2020-04-24
+ * # 发送ping心跳的messenger
+ */
   Messenger *ms_hb_front_client = Messenger::create(g_ceph_context, public_msg_type,
 					     entity_name_t::OSD(whoami), "hb_front_client",
 					     nonce, Messenger::HEARTBEAT);
+/** comment by hy 2020-04-24
+ * # 接收来自back地址的ping心跳
+ */
   Messenger *ms_hb_back_server = Messenger::create(g_ceph_context, cluster_msg_type,
 						   entity_name_t::OSD(whoami), "hb_back_server",
 						   nonce, Messenger::HEARTBEAT);
+/** comment by hy 2020-04-24
+ * # 接收来自front地址的ping心跳
+ */
   Messenger *ms_hb_front_server = Messenger::create(g_ceph_context, public_msg_type,
 						    entity_name_t::OSD(whoami), "hb_front_server",
 						    nonce, Messenger::HEARTBEAT);
@@ -583,7 +651,13 @@ flushjournal_out:
     CEPH_FEATURE_PGID64 |
     CEPH_FEATURE_OSDENC;
 
+/** comment by hy 2020-03-22
+ * # 不同链接的设置策略
+ */
   ms_public->set_default_policy(Messenger::Policy::stateless_registered_server(0));
+/** comment by hy 2020-03-22
+ * # 客户端限流
+ */
   ms_public->set_policy_throttlers(entity_name_t::TYPE_CLIENT,
 				   client_byte_throttler.get(),
 				   client_msg_throttler.get());
@@ -596,21 +670,38 @@ flushjournal_out:
   ms_cluster->set_policy(entity_name_t::TYPE_MON, Messenger::Policy::lossy_client(0));
   ms_cluster->set_policy(entity_name_t::TYPE_OSD,
 			 Messenger::Policy::lossless_peer(osd_required));
+/** comment by hy 2020-03-22
+ * # 客户端角色消息设置
+    作为不同角色,每个不同的连接都有不同策略,
+ */
+/** comment by hy 2020-04-06
+ * # 无状态
+ */
   ms_cluster->set_policy(entity_name_t::TYPE_CLIENT,
 			 Messenger::Policy::stateless_server(0));
-
+/** comment by hy 2020-04-06
+ * #  ping 消息可丢弃
+ */
   ms_hb_front_client->set_policy(entity_name_t::TYPE_OSD,
 			  Messenger::Policy::lossy_client(0));
   ms_hb_back_client->set_policy(entity_name_t::TYPE_OSD,
 			  Messenger::Policy::lossy_client(0));
+/** comment by hy 2020-04-06
+ * # 接收无状态
+ */
   ms_hb_back_server->set_policy(entity_name_t::TYPE_OSD,
 				Messenger::Policy::stateless_server(0));
   ms_hb_front_server->set_policy(entity_name_t::TYPE_OSD,
 				 Messenger::Policy::stateless_server(0));
-
+/** comment by hy 2020-04-06
+ * # 消息可丢弃
+ */
   ms_objecter->set_default_policy(Messenger::Policy::lossy_client(CEPH_FEATURE_OSDREPLYMUX));
 
   entity_addrvec_t public_addrs, cluster_addrs;
+/** comment by hy 2020-03-22
+ * # 绑定地址
+ */
   r = pick_addresses(g_ceph_context, CEPH_PICK_ADDRESS_PUBLIC, &public_addrs,
 		     iface_preferred_numa_node);
   if (r < 0) {
@@ -623,13 +714,19 @@ flushjournal_out:
     derr << "Failed to pick cluster address." << dendl;
     forker.exit(1);
   }
-
+/** comment by hy 2020-03-22
+ * # 绑定地址
+     AsyncMessenger::bindv
+ */
   if (ms_public->bindv(public_addrs) < 0)
     forker.exit(1);
 
   if (ms_cluster->bindv(cluster_addrs) < 0)
     forker.exit(1);
 
+/** comment by hy 2020-03-22
+ * # 设置最小延迟
+ */
   bool is_delay = g_conf().get_val<bool>("osd_heartbeat_use_min_delay_socket");
   if (is_delay) {
     ms_hb_front_client->set_socket_priority(SOCKET_PRIORITY_MIN_DELAY);
@@ -644,6 +741,9 @@ flushjournal_out:
   }
   if (ms_hb_front_server->bindv(hb_front_addrs) < 0)
     forker.exit(1);
+/** comment by hy 2020-04-06
+ * # 客户端绑定
+ */
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
 
@@ -692,6 +792,9 @@ flushjournal_out:
 		   data_path,
 		   journal_path);
 
+/** comment by hy 2020-03-23
+ * # 检查状态,磁盘时候已经挂载,以及开始监控配置文件变化
+ */
   int err = osdptr->pre_init();
   if (err < 0) {
     derr << TEXT_RED << " ** ERROR: osd pre_init failed: " << cpp_strerror(-err)
@@ -699,6 +802,10 @@ flushjournal_out:
     forker.exit(1);
   }
 
+/** comment by hy 2020-03-23
+  * # 网络开始接收消息
+    AsyncMessenger::start
+ */
   ms_public->start();
   ms_hb_front_client->start();
   ms_hb_back_client->start();
@@ -708,6 +815,9 @@ flushjournal_out:
   ms_objecter->start();
 
   // start osd
+/** comment by hy 2020-03-23
+ * # 
+ */
   err = osdptr->init();
   if (err < 0) {
     derr << TEXT_RED << " ** ERROR: osd init failed: " << cpp_strerror(-err)
@@ -717,6 +827,9 @@ flushjournal_out:
 
   // -- daemonize --
 
+/** comment by hy 2020-03-23
+ * # 守护进程化
+ */
   if (g_conf()->daemonize) {
     global_init_postfork_finish(g_ceph_context);
     forker.daemonize();

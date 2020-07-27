@@ -538,7 +538,9 @@ Context* OpenRequest<I>::send_parent_cache(int *result) {
   using klass = OpenRequest<I>;
   Context *ctx = create_context_callback<
     klass, &klass::handle_parent_cache>(this);
-
+/** comment by hy 2020-02-19
+ * # 回调函数 handle_parent_cache
+ */
   parent_cache->init(ctx);
   return nullptr;
 }
@@ -607,6 +609,9 @@ Context *OpenRequest<I>::send_register_watch(int *result) {
   using klass = OpenRequest<I>;
   Context *ctx = create_context_callback<
     klass, &klass::handle_register_watch>(this);
+/** comment by hy 2020-02-19
+ * # 发送 watch 信息
+ */
   m_image_ctx->register_watch(ctx);
   return nullptr;
 }
@@ -627,6 +632,9 @@ Context *OpenRequest<I>::handle_register_watch(int *result) {
     return nullptr;
   }
 
+/** comment by hy 2020-02-19
+ * # 为 snapshot 做准备
+ */
   return send_set_snap(result);
 }
 
@@ -634,6 +642,12 @@ template <typename I>
 Context *OpenRequest<I>::send_set_snap(int *result) {
   if (m_image_ctx->snap_name.empty() &&
       m_image_ctx->open_snap_id == CEPH_NOSNAP) {
+/** comment by hy 2020-02-19
+ * # 没有snapshot 就到这吧
+     如果配置了采样, 后续也就是采样调度回去信息
+     m_image_ctx->io_object_dispatcher->register_object_dispatch
+     即 AsyncOpTracker 处理
+ */
     *result = 0;
     return finalize(*result);
   }
@@ -654,6 +668,10 @@ Context *OpenRequest<I>::send_set_snap(int *result) {
     return nullptr;
   }
 
+/** comment by hy 2020-02-19
+ * # 下面是快照处理
+      向上面刷新父的信息, 并关联上 自己要自己的 omap的信息
+ */
   using klass = OpenRequest<I>;
   SetSnapRequest<I> *req = SetSnapRequest<I>::create(
     *m_image_ctx, snap_id,
@@ -704,6 +722,9 @@ void OpenRequest<I>::send_close_image(int error_result) {
   Context *ctx = create_context_callback<klass, &klass::handle_close_image>(
     this);
   CloseRequest<I> *req = CloseRequest<I>::create(m_image_ctx, ctx);
+/** comment by hy 2020-02-19
+ * # 开始收尾了
+ */
   req->send();
 }
 
@@ -712,6 +733,9 @@ Context *OpenRequest<I>::handle_close_image(int *result) {
   CephContext *cct = m_image_ctx->cct;
   ldout(cct, 10) << __func__ << ": r=" << *result << dendl;
 
+/** comment by hy 2020-02-19
+ * # 收尾完成
+ */
   if (*result < 0) {
     lderr(cct) << "failed to close image: " << cpp_strerror(*result) << dendl;
   }

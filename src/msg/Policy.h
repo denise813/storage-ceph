@@ -18,12 +18,24 @@ using peer_type_t = int;
 template<class ThrottleType>
 struct Policy {
   /// If true, the Connection is tossed out on errors.
+/** comment by hy 2020-04-06
+ * # 发生错误就抛出
+ */
   bool lossy;
   /// If true, the underlying connection can't be re-established from this end.
+/** comment by hy 2020-04-06
+ * # 不可重连
+ */
   bool server;
   /// If true, we will standby when idle
+/** comment by hy 2020-04-06
+ * # 空间等候
+ */
   bool standby;
   /// If true, we will try to detect session resets
+/** comment by hy 2020-04-06
+ * # 检查连接重置
+ */
   bool resetcheck;
 
   /// Server: register lossy client connections.
@@ -69,18 +81,32 @@ public:
     return Policy(true, true, false, false, true, req);
   }
   static Policy stateless_server(uint64_t req) {
+/** comment by hy 2020-04-06
+ * # 有错就抛出，不可重复使用建立连接,不检查消息重置
+     这样就无状态的连接了
+ */
     return Policy(true, true, false, false, false, req);
   }
   static Policy lossless_peer(uint64_t req) {
+/** comment by hy 2020-04-06
+ * # 发现重连
+ */
     return Policy(false, false, true, false, true, req);
   }
   static Policy lossless_peer_reuse(uint64_t req) {
     return Policy(false, false, true, true, true, req);
   }
   static Policy lossy_client(uint64_t req) {
+/** comment by hy 2020-04-06
+ * # 错误就抛出,检查消息重置,
+      这样丢弃消息
+ */
     return Policy(true, false, false, false, true, req);
   }
   static Policy lossless_client(uint64_t req) {
+/** comment by hy 2020-04-06
+ * # 错误页不丢，空闲也不关
+ */
     return Policy(false, false, false, true, true, req);
   }
 };

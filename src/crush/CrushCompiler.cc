@@ -501,7 +501,10 @@ int CrushCompiler::parse_device(iter_t const& i)
   if (item_id.count(name)) {
     err << "item " << name << " defined twice" << std::endl;
     return -1;
-  }    
+  }
+/** comment by hy 2020-04-29
+ * # 数组双向查找
+ */
   item_id[name] = id;
   id_item[id] = name;
 
@@ -1085,6 +1088,10 @@ int CrushCompiler::parse_crush(iter_t const& i)
   for (iter_t p = i->children.begin(); p != i->children.end(); p++) {
     int r = 0;
     switch (p->value.id().to_long()) {
+/** comment by hy 2020-04-29
+ * # 调整参数解析 就是参数前面
+     tunable choose_local_tries 0
+ */
     case crush_grammar::_tunable:
       r = parse_tunable(p);
       break;
@@ -1120,6 +1127,9 @@ int CrushCompiler::parse_crush(iter_t const& i)
   }
 
   //err << "max_devices " << crush.get_max_devices() << std::endl;
+/** comment by hy 2020-04-29
+ * # 计算出crush map 消耗的空间,并记录在统计数据中
+ */
   crush.finalize();
 
   return 0;
@@ -1188,9 +1198,9 @@ int CrushCompiler::adjust_bucket_item_place(iter_t const &i)
           == crush_grammar::_bucket_item) {
           string iname = string_node(sub->children[1]);
           bucket_items[name].insert(iname);
-        }         
-      }       
-    }     
+        }
+      }
+    }
   }
   
   //adjust the bucket
@@ -1282,5 +1292,8 @@ int CrushCompiler::compile(istream& in, const char *infn)
   }
   //out << "parsing succeeded\n";
   //dump(info.trees.begin());
+/** comment by hy 2020-04-29
+ * # 解析crush
+ */
   return parse_crush(info.trees.begin());
 }

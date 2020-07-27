@@ -453,7 +453,15 @@ WRITE_CLASS_ENCODER(RGWLifecycleConfiguration)
 class RGWLC : public DoutPrefixProvider {
   CephContext *cct;
   rgw::sal::RGWRadosStore *store;
+/** comment by hy 2020-03-05
+ * # 最大index 数量
+     可以理解为最大迭代数,最大值不超过 HASH_PRIME(7877)
+ */
   int max_objs{0};
+/** comment by hy 2020-03-05
+ * # 组装出index 对应的对象名称
+     格式名称为 lc+.id，这个数不操作 32位
+ */
   string *obj_names{nullptr};
   std::atomic<bool> down_flag = { false };
   string cookie;

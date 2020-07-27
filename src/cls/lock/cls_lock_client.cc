@@ -53,6 +53,9 @@ namespace rados {
 	       uint8_t flags)
       {
         ObjectWriteOperation op;
+/** comment by hy 2020-02-22
+ * # 包装lock 请求 LOCK_NONE
+ */
         lock(&op, name, type, cookie, tag, description, duration, flags);
         return ioctx->operate(oid, &op);
       }

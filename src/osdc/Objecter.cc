@@ -259,7 +259,13 @@ void Objecter::init()
 {
   ceph_assert(!initialized);
 
+/** comment by hy 2020-01-19
+ * # 日志准备好,久注册perf
+ */
   if (!logger) {
+/** comment by hy 2020-01-19
+ * # 日志准备好,开始准备perf
+ */
     PerfCountersBuilder pcb(cct, "objecter", l_osdc_first, l_osdc_last);
 
     pcb.add_u64(l_osdc_op_active, "op_active", "Operations active", "actv",
@@ -383,6 +389,9 @@ void Objecter::init()
     cct->get_perfcounters_collection()->add(logger);
   }
 
+/** comment by hy 2020-01-19
+ * # 注册 osdc 命令
+ */
   m_request_state_hook = new RequestStateHook(this);
   AdminSocket* admin_socket = cct->get_admin_socket();
   int ret = admin_socket->register_command("objecter_requests",
@@ -396,8 +405,14 @@ void Objecter::init()
 	       << cpp_strerror(ret) << dendl;
   }
 
+/** comment by hy 2020-01-19
+ * # 不知道初始化的地方
+ */
   update_crush_location();
 
+/** comment by hy 2020-01-19
+ * # 监控配置文件变化
+ */
   cct->_conf.add_observer(this);
 
   initialized = true;
@@ -556,11 +571,19 @@ void Objecter::_send_linger(LingerOp *info,
     opv.back().op.watch.cookie = info->get_cookie();
     opv.back().op.watch.op = CEPH_OSD_WATCH_OP_RECONNECT;
     opv.back().op.watch.gen = ++info->register_gen;
+/** comment by hy 2020-02-19
+ * # 将 fin = _linger_reconnect
+     C_DoWatchError 放入完成监控中,用来返回结果,清理阻塞状态等
+ */
     oncommit = new C_Linger_Reconnect(this, info);
   } else {
     ldout(cct, 15) << "send_linger " << info->linger_id << " register"
 		   << dendl;
     opv = info->ops;
+/** comment by hy 2020-02-19
+ * # 第一次会创建这个callback
+     fin = _linger_commit,只是非watch 流程 会设计提交,通知等事件
+ */
     C_Linger_Commit *c = new C_Linger_Commit(this, info);
     if (!info->is_watch) {
       info->notify_id = 0;
@@ -569,6 +592,9 @@ void Objecter::_send_linger(LingerOp *info,
     oncommit = c;
   }
   watchl.unlock();
+/** comment by hy 2020-02-19
+ * # 
+ */
   Op *o = new Op(info->target.base_oid, info->target.base_oloc,
 		 opv, info->target.flags | CEPH_OSD_FLAG_READ,
 		 oncommit, info->pobjver);
@@ -584,6 +610,9 @@ void Objecter::_send_linger(LingerOp *info,
   o->should_resend = false;
   o->ctx_budgeted = true;
 
+/** comment by hy 2020-02-19
+ * # 每次提交 linger 
+ */
   if (info->register_tid) {
     // repeat send.  cancel old registration op, if any.
     OSDSession::unique_lock sl(info->session->lock);
@@ -595,6 +624,9 @@ void Objecter::_send_linger(LingerOp *info,
     sl.unlock();
   }
 
+/** comment by hy 2020-02-19
+ * # 根据限流发送消息, register_tid = target id?
+ */
   _op_submit_with_budget(o, sul, &info->register_tid, &info->ctx_budget);
 
   logger->inc(l_osdc_linger_send);
@@ -605,6 +637,9 @@ void Objecter::_linger_commit(LingerOp *info, int r, ceph::buffer::list& outbl)
   LingerOp::unique_lock wl(info->watch_lock);
   ldout(cct, 10) << "_linger_commit " << info->linger_id << dendl;
   if (info->on_reg_commit) {
+/** comment by hy 2020-04-23
+ * # 继续回调, 最终唤醒watch函数中的wait操作
+ */
     info->on_reg_commit->complete(r);
     info->on_reg_commit = NULL;
   }
@@ -828,6 +863,10 @@ ceph_tid_t Objecter::linger_watch(LingerOp *info,
 				  Context *oncommit,
 				  version_t *objver)
 {
+/** comment by hy 2020-04-23
+ * # 这个true很关键，收到notify消息的时候，会带有cookie，即linger_op的地址，
+      然后通过这个变量来判断本次消息对应的客户端linger_op是watch还是notify
+ */
   info->is_watch = true;
   info->snapc = snapc;
   info->mtime = mtime;
@@ -836,11 +875,20 @@ ceph_tid_t Objecter::linger_watch(LingerOp *info,
   info->inbl = inbl;
   info->poutbl = NULL;
   info->pobjver = objver;
+/** comment by hy 2020-04-23
+ * # 调用的时候会唤醒watch函数中的wait操作
+ */
   info->on_reg_commit = oncommit;
-
+/** comment by hy 2020-02-19
+ * # 添加 预备技术
+     budget 为 1
+ */
   info->ctx_budget = take_linger_budget(info);
 
   shunique_lock sul(rwlock, ceph::acquire_unique);
+/** comment by hy 2020-02-19
+ * # 准备发送 warch 消息,采用linger 发送
+ */
   _linger_submit(info, sul);
   logger->inc(l_osdc_linger_active);
 
@@ -885,10 +933,16 @@ void Objecter::_linger_submit(LingerOp *info, shunique_lock& sul)
   int r = _get_session(info->target.osd, &s, sul);
   ceph_assert(r == 0);
   OSDSession::unique_lock sl(s->lock);
+/** comment by hy 2020-02-19
+ * # 关联session与linger op 将操作信息存放在 LINGER 缓存中
+ */
   _session_linger_op_assign(s, info);
   sl.unlock();
   put_session(s);
 
+/** comment by hy 2020-02-19
+ * # 发送消息
+ */
   _send_linger(info, sul);
 }
 
@@ -931,12 +985,19 @@ void Objecter::handle_watch_notify(MWatchNotify *m)
     // we have CEPH_WATCH_EVENT_NOTIFY_COMPLETE; we can do this inline
     // since we know the only user (librados) is safe to call in
     // fast-dispatch context
+/** comment by hy 2020-04-23
+ * # notify自己的时候，这个是false，发现是自己发出去的notify了回应，
+     所以调用callback回去唤醒以前的wait操作
+ */
     if (info->notify_id &&
 	info->notify_id != m->notify_id) {
       ldout(cct, 10) << __func__ << " reply notify " << m->notify_id
 		     << " != " << info->notify_id << ", ignoring" << dendl;
     } else if (info->on_notify_finish) {
       info->notify_result_bl->claim(m->get_data());
+/** comment by hy 2020-04-23
+ * # 唤醒自己的wait操作
+ */
       info->on_notify_finish->complete(m->return_code);
 
       // if we race with reconnect we might get a second notify; only
@@ -944,6 +1005,13 @@ void Objecter::handle_watch_notify(MWatchNotify *m)
       info->on_notify_finish = NULL;
     }
   } else {
+/** comment by hy 2020-04-23
+ * # 其他watch客户端，也会收到这个消息，
+     cookie是自己注册时的OP注册watch时这个值为true
+ */
+/** comment by hy 2020-04-23
+ * # 这里就会执行注册时的ImageWatcher::m_watch_ctx
+ */
     finisher->queue(new C_DoWatchNotify(this, info, m));
   }
 }
@@ -1166,6 +1234,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
   bool cluster_full = _osdmap_full_flag();
   bool was_pausewr = osdmap->test_flag(CEPH_OSDMAP_PAUSEWR) || cluster_full ||
     _osdmap_has_pool_full();
+/** comment by hy 2020-03-20
+ * # 
+ */
   map<int64_t, bool> pool_full_map;
   for (map<int64_t, pg_pool_t>::const_iterator it
 	 = osdmap->get_pools().begin();
@@ -1189,6 +1260,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
     if (osdmap->get_epoch()) {
       bool skipped_map = false;
       // we want incrementals
+/** comment by hy 2020-03-20
+ * # 从osdmap 更新到消息指定的osdmap 版本
+ */
       for (epoch_t e = osdmap->get_epoch() + 1;
 	   e <= m->get_last();
 	   e++) {
@@ -1200,6 +1274,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	  OSDMap::Incremental inc(m->incremental_maps[e]);
 	  osdmap->apply_incremental(inc);
 
+/** comment by hy 2020-03-20
+ * # 黑名单插入到 blacklist_events 里面 
+ */
           emit_blacklist_events(inc);
 
 	  logger->inc(l_osdc_map_inc);
@@ -1208,7 +1285,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	  ldout(cct, 3) << "handle_osd_map decoding full epoch " << e << dendl;
           auto new_osdmap = std::make_unique<OSDMap>();
           new_osdmap->decode(m->maps[e]);
-
+/** comment by hy 2020-03-20
+ * # 
+ */
           emit_blacklist_events(*osdmap, *new_osdmap);
           osdmap = std::move(new_osdmap);
 
@@ -1230,6 +1309,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	}
 	logger->set(l_osdc_map_epoch, osdmap->get_epoch());
 
+/** comment by hy 2020-03-20
+ * # 
+ */
         prune_pg_mapping(osdmap->get_pools());
 	cluster_full = cluster_full || _osdmap_full_flag();
 	update_pool_full_map(pool_full_map);
@@ -1265,12 +1347,18 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	for (map<int,OSDSession*>::iterator p = osd_sessions.begin();
 	     p != osd_sessions.end(); ++p) {
 	  OSDSession *s = p->second;
+/** comment by hy 2020-03-20
+ * # 
+ */
 	  _scan_requests(s, false, false, NULL, need_resend,
 			 need_resend_linger, need_resend_command, sul);
 	}
 	ldout(cct, 3) << "handle_osd_map decoding full epoch "
 		      << m->get_last() << dendl;
 	osdmap->decode(m->maps[m->get_last()]);
+/** comment by hy 2020-03-20
+ * # 
+ */
         prune_pg_mapping(osdmap->get_pools());
 
 	_scan_requests(homeless_session, false, false, NULL,
@@ -1286,6 +1374,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
   }
 
   // make sure need_resend targets reflect latest map
+/** comment by hy 2020-03-20
+ * # 
+ */
   for (auto p = need_resend.begin(); p != need_resend.end(); ) {
     Op *op = p->second;
     if (op->target.epoch < osdmap->get_epoch()) {
@@ -1394,6 +1485,9 @@ void Objecter::consume_blacklist_events(std::set<entity_addr_t> *events)
 {
   unique_lock wl(rwlock);
 
+/** comment by hy 2020-03-20
+ * # 将黑名单的信息
+ */
   if (events->empty()) {
     events->swap(blacklist_events);
   } else {
@@ -2252,7 +2346,20 @@ void Objecter::resend_mon_ops()
 }
 
 // read | write ---------------------------
+/*****************************************************************************
+ * 函 数 名  : Objecter.op_submit
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 将包装op发送给rados层进行处理
+ * 输入参数  : Op *op            包装好的操作
+               ceph_tid_t *ptid  目标
+               int *ctx_budget    
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
 
+*****************************************************************************/
 void Objecter::op_submit(Op *op, ceph_tid_t *ptid, int *ctx_budget)
 {
   shunique_lock rl(rwlock, ceph::acquire_shared);
@@ -2260,6 +2367,14 @@ void Objecter::op_submit(Op *op, ceph_tid_t *ptid, int *ctx_budget)
   if (!ptid)
     ptid = &tid;
   op->trace.event("op submit");
+/** comment by hy 2020-01-28
+ * # 发送消息
+     其中包括用来处理限流,与超时处理
+     默认配置选项没有超时机制
+        默认值 ptid = NULL
+        ctx_budget = NULL
+        当设置超时处理,则超过指定时间将调用op_cancle
+ */
   _op_submit_with_budget(op, rl, ptid, ctx_budget);
 }
 
@@ -2276,6 +2391,9 @@ void Objecter::_op_submit_with_budget(Op *op, shunique_lock& sul,
   // throttle.  before we look at any state, because
   // _take_op_budget() may drop our lock while it blocks.
   if (!op->ctx_budgeted || (ctx_budget && (*ctx_budget == -1))) {
+/** comment by hy 2020-01-13
+ * # 根据是否需要限流计数实际可能发送的数据量
+ */
     int op_budget = _take_op_budget(op, sul);
     // take and pass out the budget for the first OP
     // in the context session
@@ -2284,6 +2402,9 @@ void Objecter::_op_submit_with_budget(Op *op, shunique_lock& sul,
     }
   }
 
+/** comment by hy 2020-01-12
+ * # 默认无超时设计
+ */
   if (osd_timeout > timespan(0)) {
     if (op->tid == 0)
       op->tid = ++last_tid;
@@ -2293,6 +2414,9 @@ void Objecter::_op_submit_with_budget(Op *op, shunique_lock& sul,
 				      op_cancel(tid, -ETIMEDOUT); });
   }
 
+/** comment by hy 2020-02-18
+ * # 完成关键的地址寻址和发送工作
+ */
   _op_submit(op, sul, ptid);
 }
 
@@ -2376,10 +2500,17 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   ceph_assert(op->session == NULL);
   OSDSession *s = NULL;
 
+/** comment by hy 2020-02-18
+ * # 计算对象目标osd 是否需要更新map
+ */
   bool check_for_latest_map = _calc_target(&op->target, nullptr)
     == RECALC_OP_TARGET_POOL_DNE;
 
   // Try to get a session, including a retry if we need to take write lock
+/** comment by hy 2020-01-28
+ * # 获取 ession中包含connection与OSD的连接信息
+     目标 osd 对应的连接会话
+ */
   int r = _get_session(op->target.osd, &s, sul);
   if (r == -EAGAIN ||
       (check_for_latest_map && sul.owns_lock_shared()) ||
@@ -2410,6 +2541,9 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   ceph_assert(r == 0);
   ceph_assert(s);  // may be homeless
 
+/** comment by hy 2020-01-28
+ * # 记录统计op信息
+ */
   _send_op_account(op);
 
   // send?
@@ -2421,6 +2555,10 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   }
 
   bool need_send = false;
+/** comment by hy 2020-01-28
+ * # 检查当前状态如果暂停则暂时不发送
+     等待 osdmap
+ */
   if (op->target.paused) {
     ldout(cct, 10) << " tid " << op->tid << " op " << op << " is paused"
 		   << dendl;
@@ -2441,9 +2579,16 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
 		 << op->tid << " osd." << (!s->is_homeless() ? s->osd : -1)
 		 << dendl;
 
+/** comment by hy 2020-01-28
+ * # 分配对应的会话连接
+     这里会将op的信息记录到session里面
+ */
   _session_op_assign(s, op);
 
   if (need_send) {
+/** comment by hy 2020-02-18
+ * # 创建一条包含op的消息 并 发送消息
+ */
     _send_op(op);
   }
 
@@ -2770,6 +2915,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 		<< (is_write ? " is_write" : "")
 		<< dendl;
 
+/** comment by hy 2020-01-13
+ * # 获取操作对象的pool信息
+ */
   const pg_pool_t *pi = osdmap->get_pg_pool(t->base_oloc.pool);
   if (!pi) {
     t->osd = -1;
@@ -2779,6 +2927,12 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 		<< " pg_num " << pi->get_pg_num() << dendl;
 
   bool force_resend = false;
+/** comment by hy 2020-01-13
+ * # 设置强制重发发送
+     osdmap 与 pool map 的时序是一致的,
+     什么情况会造成 poolmap 与osdmap 不相等？
+        出现新的osdmap但是操作没更新信息?
+ */
   if (osdmap->get_epoch() == pi->last_force_op_resend) {
     if (t->last_force_resend < pi->last_force_op_resend) {
       t->last_force_resend = pi->last_force_op_resend;
@@ -2789,6 +2943,13 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   }
 
   // apply tiering
+/** comment by hy 2020-02-18
+ * # 检查cache tier,如果有对应的缓存设置target_oloc.pool
+     如果是写并且有读缓存,
+         设置target_oloc.pool为 cache tier 对应的pool
+     如果是写并且有写缓存,
+         设置target_oloc.pool为 cache tier 对应的pool
+ */
   t->target_oid = t->base_oid;
   t->target_oloc = t->base_oloc;
   if ((t->flags & CEPH_OSD_FLAG_IGNORE_OVERLAY) == 0) {
@@ -2810,6 +2971,10 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     ceph_assert(t->base_oloc.pool == (int64_t)t->base_pgid.pool());
     pgid = t->base_pgid;
   } else {
+/** comment by hy 2020-02-18
+ * # 获取目标对象所在的pg
+     OSDMap::object_locator_to_pg
+ */
     int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc,
 					   pgid);
     if (ret == -ENOENT) {
@@ -2830,6 +2995,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   unsigned pg_num_pending = pi->get_pg_num_pending();
   int up_primary, acting_primary;
   vector<int> up, acting;
+/** comment by hy 2020-02-18
+ * # 经典的稳定除余
+ */
   ps_t actual_ps = ceph_stable_mod(pgid.ps(), pg_num, pg_num_mask);
   pg_t actual_pgid(actual_ps, pgid.pool());
   pg_mapping_t pg_mapping;
@@ -2840,6 +3008,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     acting = pg_mapping.acting;
     acting_primary = pg_mapping.acting_primary;
   } else {
+/** comment by hy 2020-02-18
+ * # 通过crush算分,获取该pg对应的osd列表
+ */
     osdmap->pg_to_up_acting_osds(actual_pgid, &up, &up_primary,
                                  &acting, &acting_primary);
     pg_mapping_t pg_mapping(osdmap->get_epoch(),
@@ -2850,6 +3021,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   bool recovery_deletes = osdmap->test_flag(CEPH_OSDMAP_RECOVERY_DELETES);
   unsigned prev_seed = ceph_stable_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
   pg_t prev_pgid(prev_seed, pgid.pool());
+/** comment by hy 2020-02-18
+ * # 从工作时间区间,判断故障
+ */
   if (any_change && PastIntervals::is_new_interval(
 	t->acting_primary,
 	acting_primary,
@@ -2876,6 +3050,12 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   }
 
   bool unpaused = false;
+/** comment by hy 2020-02-18
+ * # 处理暂停,
+     暂停场景是
+     对于写场合数据满了或设置了暂停标志
+     对于读场合设置了暂停标志
+ */
   bool should_be_paused = target_should_be_paused(t);
   if (t->paused && !should_be_paused) {
     unpaused = true;
@@ -2932,7 +3112,13 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
         !is_write && pi->is_replicated() && acting.size() > 1) {
       int osd;
       ceph_assert(is_read && acting[0] == acting_primary);
+/** comment by hy 2020-02-18
+ * # 平衡度和距离读都是针对于副本pool？
+ */
       if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
+/** comment by hy 2020-02-18
+ * # 设置了平衡度
+ */
 	int p = rand() % acting.size();
 	if (p)
 	  t->used_replica = true;
@@ -2942,9 +3128,15 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       } else {
 	// look for a local replica.  prefer the primary if the
 	// distance is the same.
+/** comment by hy 2020-02-18
+ * # 设置了尽可能读取本地副本
+ */
 	int best = -1;
 	int best_locality = 0;
 	for (unsigned i = 0; i < acting.size(); ++i) {
+/** comment by hy 2020-02-18
+ * # 获取距离
+ */
 	  int locality = osdmap->crush->get_common_ancestor_distance(
 		 cct, acting[i], crush_location);
 	  ldout(cct, 20) << __func__ << " localize: rank " << i
@@ -2962,6 +3154,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 	}
 	ceph_assert(best >= 0);
 	osd = acting[best];
+/** comment by hy 2020-02-18
+ * # 普通读和写操作都对主本进行操作
+ */
       }
       t->osd = osd;
     } else {
@@ -2995,6 +3190,11 @@ void Objecter::_session_op_assign(OSDSession *to, Op *op)
 
   get_session(to);
   op->session = to;
+/** comment by hy 2020-04-23
+ * # 记录op信息，当OSD处理完后，会发送消息回来，
+     回来的消息handle_osd_op_reply函数中处理，
+     这个tid就是找到对应op的关键
+ */
   to->ops[op->tid] = op;
 
   if (to->is_homeless()) {
@@ -3020,6 +3220,19 @@ void Objecter::_session_op_remove(OSDSession *from, Op *op)
   ldout(cct, 15) << __func__ << " " << from->osd << " " << op->tid << dendl;
 }
 
+/*****************************************************************************
+ * 函 数 名  : Objecter._session_linger_op_assign
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月19日
+ * 函数功能  :  
+ * 输入参数  : OSDSession *to   
+               LingerOp *op     
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void Objecter::_session_linger_op_assign(OSDSession *to, LingerOp *op)
 {
   // to lock is locked unique
@@ -3031,6 +3244,9 @@ void Objecter::_session_linger_op_assign(OSDSession *to, LingerOp *op)
 
   get_session(to);
   op->session = to;
+/** comment by hy 2020-02-19
+ * # SESSION 中存储 操作
+ */
   to->linger_ops[op->linger_id] = op;
 
   ldout(cct, 15) << __func__ << " " << to->osd << " " << op->linger_id
@@ -3167,6 +3383,9 @@ MOSDOp *Objecter::_prepare_osd_op(Op *op)
 
   // Nothing checks this any longer, but needed for compatibility with
   // pre-luminous osds
+/** comment by hy 2020-03-23
+ * # 想要下盘的标识,发生在客户端或osd端
+ */
   flags |= CEPH_OSD_FLAG_ONDISK;
 
   if (!honor_pool_full)
@@ -3218,6 +3437,9 @@ void Objecter::_send_op(Op *op)
   // op->session->lock is locked
 
   // backoff?
+/** comment by hy 2020-01-28
+ * # 过滤黑名单
+ */
   auto p = op->session->backoffs.find(op->target.actual_pgid);
   if (p != op->session->backoffs.end()) {
     hobject_t hoid = op->target.get_hobj();
@@ -3242,6 +3464,9 @@ void Objecter::_send_op(Op *op)
   }
 
   ceph_assert(op->tid > 0);
+/** comment by hy 2020-03-23
+ * # 创建一条包含op的消息 这里会设置retry 标识
+ */
   MOSDOp *m = _prepare_osd_op(op);
 
   if (op->target.actual_pgid != m->get_spg()) {
@@ -3291,13 +3516,28 @@ int Objecter::calc_op_budget(const vector<OSDOp>& ops)
   for (vector<OSDOp>::const_iterator i = ops.begin();
        i != ops.end();
        ++i) {
+/** comment by hy 2020-01-13
+ * # 如果是写操作
+ */
     if (i->op.op & CEPH_OSD_OP_MODE_WR) {
+/** comment by hy 2020-01-13
+ * # 计算一次提交对象的 buff 长度,这个不是对象长度,而是包装之后的buff长度
+ */
       op_budget += i->indata.length();
     } else if (ceph_osd_op_mode_read(i->op.op)) {
+/** comment by hy 2020-01-13
+ * # 如果是度数据操作,且不是RPC
+ */
       if (ceph_osd_op_uses_extent(i->op.op)) {
+/** comment by hy 2020-01-13
+ * # 如果是对该对象的范围进行读取,这个范围表示什么意思？
+ */
         if ((int64_t)i->op.extent.length > 0)
           op_budget += (int64_t)i->op.extent.length;
       } else if (ceph_osd_op_type_attr(i->op.op)) {
+/** comment by hy 2020-01-13
+ * # 如果有扩展属性,计算需要加上扩展属性
+ */
         op_budget += i->op.xattr.name_len + i->op.xattr.value_len;
       }
     }
@@ -3960,6 +4200,9 @@ int Objecter::create_pool(string& name, Context *onfinish,
   if (osdmap->lookup_pg_pool_name(name) >= 0)
     return -EEXIST;
 
+/** comment by hy 2020-01-22
+ * # 包装一个创建pool的请求
+ */
   PoolOp *op = new PoolOp;
   if (!op)
     return -ENOMEM;
@@ -3971,6 +4214,9 @@ int Objecter::create_pool(string& name, Context *onfinish,
   pool_ops[op->tid] = op;
   op->crush_rule = crush_rule;
 
+/** comment by hy 2020-01-22
+ * # 发送pool请求
+ */
   pool_op_submit(op);
 
   return 0;
@@ -4016,11 +4262,17 @@ void Objecter::_do_delete_pool(int64_t pool, Context *onfinish)
 void Objecter::pool_op_submit(PoolOp *op)
 {
   // rwlock is locked
+/** comment by hy 2020-01-22
+ * # 添加超时回滚事件
+ */
   if (mon_timeout > timespan(0)) {
     op->ontimeout = timer.add_event(mon_timeout,
 				    [this, op]() {
 				      pool_op_cancel(op->tid, -ETIMEDOUT); });
   }
+/** comment by hy 2020-01-22
+ * # 发送pool操作事件
+ */
   _pool_op_submit(op);
 }
 
@@ -4029,6 +4281,9 @@ void Objecter::_pool_op_submit(PoolOp *op)
   // rwlock is locked unique
 
   ldout(cct, 10) << "pool_op_submit " << op->tid << dendl;
+/** comment by hy 2020-01-22
+ * # 将再次封装为pool操作事件
+ */
   MPoolOp *m = new MPoolOp(monc->get_fsid(), op->tid, op->pool,
 			   op->name, op->pool_op,
 			   last_seen_osdmap_version);

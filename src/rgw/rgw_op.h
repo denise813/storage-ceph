@@ -380,6 +380,9 @@ public:
   ~RGWGetObj_CB() override {}
 
   int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) override {
+/** comment by hy 2020-03-21
+ * # 
+ */
     return op->get_data_cb(bl, bl_ofs, bl_len);
   }
 };
@@ -1136,11 +1139,23 @@ protected:
   bool chunked_upload;
   RGWAccessControlPolicy policy;
   std::unique_ptr <RGWObjTags> obj_tags;
+/** comment by hy 2020-03-19
+ * # 对象
+ */
   const char *dlo_manifest;
+/** comment by hy 2020-03-19
+ * # 多段
+ */
   RGWSLOInfo *slo_info;
   map<string, bufferlist> attrs;
   ceph::real_time mtime;
+/** comment by hy 2020-03-19
+ * # 使用时间搓作为版本
+ */
   uint64_t olh_epoch;
+/** comment by hy 2020-03-19
+ * # 使用字符 id号 版本
+ */
   string version_id;
   bufferlist bl_aux;
   map<string, string> crypt_http_responses;
@@ -1152,6 +1167,9 @@ protected:
 
   boost::optional<ceph::real_time> delete_at;
   //append obj
+/** comment by hy 2020-03-19
+ * # compression and encryption only apply to full object uploads
+ */
   bool append;
   uint64_t position;
   uint64_t cur_accounted_size;
@@ -1981,6 +1999,9 @@ static inline int get_system_versioning_params(req_state *s,
   }
 
   if (olh_epoch) {
+/** comment by hy 2020-03-16
+ * # 时间搓作为版本
+ */
     string epoch_str = s->info.args.get(RGW_SYS_PARAM_PREFIX "versioned-epoch");
     if (!epoch_str.empty()) {
       string err;
@@ -1994,6 +2015,9 @@ static inline int get_system_versioning_params(req_state *s,
   }
 
   if (version_id) {
+/** comment by hy 2020-03-16
+ * # id 作为版本
+ */
     *version_id = s->info.args.get(RGW_SYS_PARAM_PREFIX "version-id");
   }
 
@@ -2035,6 +2059,13 @@ static inline int rgw_get_request_metadata(CephContext* const cct,
                                            std::map<std::string, ceph::bufferlist>& attrs,
                                            const bool allow_empty_attrs = true)
 {
+/** comment by hy 2020-03-15
+ * # 加密算法
+     algorithm  使用此标头来指定加密算法。标头值必须为 AES256
+     key  提供 256 位的 base64 编码的加密密钥
+     md5  base64 编码的 128 位 MD5 摘要
+     class 存储类一起存储的存储桶
+ */
   static const std::set<std::string> blacklisted_headers = {
       "x-amz-server-side-encryption-customer-algorithm",
       "x-amz-server-side-encryption-customer-key",
@@ -2061,6 +2092,9 @@ static inline int rgw_get_request_metadata(CephContext* const cct,
        * name. Passing here doesn't guarantee that an OSD will accept that
        * as ObjectStore::get_max_attr_name_length() can set the limit even
        * lower than the "osd_max_attr_name_len" configurable.  */
+/** comment by hy 2020-03-15
+ * # 
+ */
       const auto max_attr_name_len = cct->_conf->rgw_max_attr_name_len;
       if (max_attr_name_len && attr_name.length() > max_attr_name_len) {
         return -ENAMETOOLONG;
@@ -2068,6 +2102,9 @@ static inline int rgw_get_request_metadata(CephContext* const cct,
 
       /* Similar remarks apply to the check for value size. We're veryfing
        * it early at the RGW's side as it's being claimed in /info. */
+/** comment by hy 2020-03-15
+ * # 
+ */
       const auto max_attr_size = cct->_conf->rgw_max_attr_size;
       if (max_attr_size && xattr.length() > max_attr_size) {
         return -EFBIG;
@@ -2075,6 +2112,9 @@ static inline int rgw_get_request_metadata(CephContext* const cct,
 
       /* Swift allows administrators to limit the number of metadats items
        * send _in a single request_. */
+/** comment by hy 2020-03-15
+ * # 
+ */
       const auto max_attrs_num_in_req = cct->_conf->rgw_max_attrs_num_in_req;
       if (max_attrs_num_in_req &&
           ++valid_meta_count > max_attrs_num_in_req) {

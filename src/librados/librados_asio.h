@@ -140,6 +140,23 @@ auto async_write(ExecutionContext& ctx, IoCtx& io, const std::string& oid,
 
 /// Calls IoCtx::aio_operate() and arranges for the AioCompletion to call a
 /// given handler with signature (boost::system::error_code, bufferlist).
+/*****************************************************************************
+ * 函 数 名  : librados.async_operate
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月11日
+ * 函数功能  : 协程处理
+ * 输入参数  : ExecutionContext& ctx          
+               IoCtx& io                      
+               const std::string& oid         
+               ObjectReadOperation *read_op   
+               int flags                      
+               CompletionToken&& token        
+ * 输出参数  : 无
+ * 返 回 值  : 
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 template <typename ExecutionContext, typename CompletionToken>
 auto async_operate(ExecutionContext& ctx, IoCtx& io, const std::string& oid,
                    ObjectReadOperation *read_op, int flags,

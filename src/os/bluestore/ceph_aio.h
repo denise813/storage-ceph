@@ -20,6 +20,9 @@
 
 struct aio_t {
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-04-22
+ * # libaio相关的结构体
+ */
   struct iocb iocb{};  // must be first element; see shenanigans in aio_queue_t
 #elif defined(HAVE_POSIXAIO)
   //  static long aio_listio_max = -1;
@@ -45,6 +48,9 @@ struct aio_t {
     offset = _offset;
     length = len;
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-04-22
+ * # 准备数据
+ */
     io_prep_pwritev(&iocb, fd, &iov[0], iov.size(), offset);
 #elif defined(HAVE_POSIXAIO)
     n_aiocb = iov.size();

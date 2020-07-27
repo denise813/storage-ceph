@@ -267,6 +267,9 @@ int FileStore::lfn_open(const coll_t& cid,
   if (!index) {
     index = &index2;
   }
+/** comment by hy 2020-02-06
+ * # 容器 id
+ */
   if (!((*index).index)) {
     r = get_index(cid, index);
     if (r < 0) {
@@ -303,6 +306,9 @@ int FileStore::lfn_open(const coll_t& cid,
     goto fail;
   }
 
+/** comment by hy 2020-02-06
+ * # 对应文件
+ */
   r = ::open((*path)->path(), flags|O_CLOEXEC, 0644);
   if (r < 0) {
     r = -errno;
@@ -2172,6 +2178,12 @@ void FileStore::queue_op(OpSequencer *osr, Op *o)
   // so that regardless of which order the threads pick up the
   // sequencer, the op order will be preserved.
 
+/** comment by hy 2020-02-07
+ * # 放入操作队列,为应用做准备
+     queue_op按提交时候的顺序调用
+     必然导致属于同一个OpSequencer的OP按照提交顺序
+     在OpSequencer内部排队, 保证了PG内部op的先后顺序
+ */
   osr->queue(o);
   o->trace.event("queued");
 
@@ -2183,6 +2195,9 @@ void FileStore::queue_op(OpSequencer *osr, Op *o)
 	  << " " << o->bytes << " bytes"
 	  << "   (queue has " << throttle_ops.get_current() << " ops and " << throttle_bytes.get_current() << " bytes)"
 	  << dendl;
+/** comment by hy 2020-02-07
+ * # 将操作放入队列,等待执行
+ */
   op_wq.queue(osr);
 }
 
@@ -2206,9 +2221,15 @@ void FileStore::op_queue_release_throttle(Op *o)
 void FileStore::_do_op(OpSequencer *osr, ThreadPool::TPHandle &handle)
 {
   if (!m_disable_wbthrottle) {
+/** comment by hy 2020-04-23
+ * # filestore层面writeback的限流
+ */
     wbthrottle.throttle();
   }
   // inject a stall?
+/** comment by hy 2020-02-27
+ * # 测试注入停止n秒
+ */
   if (cct->_conf->filestore_inject_stall) {
     int orig = cct->_conf->filestore_inject_stall;
     dout(5) << __FUNC__ << ": filestore_inject_stall " << orig << ", sleeping" << dendl;
@@ -2216,16 +2237,34 @@ void FileStore::_do_op(OpSequencer *osr, ThreadPool::TPHandle &handle)
     cct->_conf.set_val("filestore_inject_stall", "0");
     dout(5) << __FUNC__ << ": done stalling" << dendl;
   }
-
+/** comment by hy 2020-04-23
+ * # op_tp线程池的多个线程可以并发对同一个OpSequencer执行请求
+     锁保证同一个OpSequencer中(也即PG中）只能有一个OP在执行
+ */
   osr->apply_lock.lock();
+/** comment by hy 2020-02-07
+ * # 开始应用
+ */
+/** comment by hy 2020-02-27
+ * # 取得头上上的操作
+ */
   Op *o = osr->peek_queue();
   o->trace.event("op_apply_start");
+/** comment by hy 2020-02-27
+ * # 计数增加
+ */
   apply_manager.op_apply_start(o->op);
   dout(5) << __FUNC__ << ": " << o << " seq " << o->op << " " << *osr << " start" << dendl;
   o->trace.event("_do_transactions start");
+/** comment by hy 2020-02-07
+ * # 执行应用 执行写请求到文件系统
+ */
   int r = _do_transactions(o->tls, o->op, &handle, osr->osr_name);
   o->trace.event("op_apply_finish");
   apply_manager.op_apply_finish(o->op);
+/** comment by hy 2020-02-27
+ * # 计数减
+ */
   dout(10) << __FUNC__ << ": " << o << " seq " << o->op << " r = " << r
 	   << ", finisher " << o->onreadable << " " << o->onreadable_sync << dendl;
 }
@@ -2233,6 +2272,9 @@ void FileStore::_do_op(OpSequencer *osr, ThreadPool::TPHandle &handle)
 void FileStore::_finish_op(OpSequencer *osr)
 {
   list<Context*> to_queue;
+/** comment by hy 2020-04-23
+ * # 将op从OpSequencer出队列
+ */
   Op *o = osr->dequeue(&to_queue);
 
   o->tls.clear();
@@ -2245,6 +2287,9 @@ void FileStore::_finish_op(OpSequencer *osr)
   o->trace.event("_finish_op");
 
   // called with tp lock held
+/** comment by hy 2020-04-23
+ * # 释放filestore的throttle 见queue_transactions
+ */
   op_queue_release_throttle(o);
 
   logger->tinc(l_filestore_apply_latency, lat);
@@ -2256,6 +2301,9 @@ void FileStore::_finish_op(OpSequencer *osr)
     apply_finishers[osr->id % m_apply_finisher_num]->queue(o->onreadable);
   }
   if (!to_queue.empty()) {
+/** comment by hy 2020-04-23
+ * # 放入op_finisher队列，等待执行apply回调，标志数据可读
+ */
     apply_finishers[osr->id % m_apply_finisher_num]->queue(to_queue);
   }
   delete o;
@@ -2282,6 +2330,9 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   Context *onreadable;
   Context *ondisk;
   Context *onreadable_sync;
+/** comment by hy 2020-02-23
+ * # 把事务中所有回调函数包装到容器中
+ */
   ObjectStore::Transaction::collect_contexts(
     tls, &onreadable, &ondisk, &onreadable_sync);
 
@@ -2298,7 +2349,9 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   }
 
   utime_t start = ceph_clock_now();
-
+/** comment by hy 2020-04-23
+ * # OpSequencer非常关键，同一个PG会使用同样的OpSequencer，保证PG操作串行化
+ */
   OpSequencer *osr = static_cast<OpSequencer*>(ch.get());
   dout(5) << __FUNC__ << ": osr " << osr << " " << *osr << dendl;
 
@@ -2309,21 +2362,41 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   }
 
   if (journal && journal->is_writeable() && !m_filestore_journal_trailing) {
+/** comment by hy 2020-02-07
+ * # 封装相关操作
+ */
     Op *o = build_op(tls, onreadable, onreadable_sync, osd_op);
 
     //prepare and encode transactions data out of lock
     bufferlist tbl;
+/** comment by hy 2020-02-06
+ * # 所有日志数据封装到bufferlist中
+     FileJournal::prepare_entry 
+ */
     int orig_len = journal->prepare_entry(o->tls, &tbl);
 
     if (handle)
       handle->suspend_tp_timeout();
 
+/** comment by hy 2020-02-26
+ * # 限流监控
+     filestore层对整个op的限流，释放的时候是在FileStore::_finish_op
+ */
     op_queue_reserve_throttle(o);
+/** comment by hy 2020-02-26
+ * # 日志限流
+ */
     journal->reserve_throttle_and_backoff(tbl.length());
-
+/** comment by hy 2020-02-26
+ * # 启动新超时
+ */
     if (handle)
       handle->reset_tp_timeout();
 
+/** comment by hy 2020-02-23
+ * # 分配日志序号
+     在journal层面为op生成唯一sequence, 因为journal是单线程写，所以写一定是串行的
+ */
     uint64_t op_num = submit_manager.op_submit_start();
     o->op = op_num;
     trace.keyval("opnum", op_num);
@@ -2331,29 +2404,58 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
     if (m_filestore_do_dump)
       dump_transactions(o->tls, o->op, osr);
 
+/** comment by hy 2020-02-23
+ * # 根据日志模式的不同按照不同方式提交日志
+ */
     if (m_filestore_journal_parallel) {
+/** comment by hy 2020-02-06
+ * # 同时完成日志的提交和应用
+ */
       dout(5) << __FUNC__ << ": (parallel) " << o->op << " " << o->tls << dendl;
 
       trace.keyval("journal mode", "parallel");
       trace.event("journal started");
+/** comment by hy 2020-02-06
+ * # 日志提交,然后等应用
+ */
       _op_journal_transactions(tbl, orig_len, o->op, ondisk, osd_op);
 
       // queue inside submit_manager op submission lock
+/** comment by hy 2020-02-06
+ * # 把请求放入队列 op_wq,开始应用
+     FileStore::_process 执行,即往磁盘里面读数据
+ */
       queue_op(osr, o);
       trace.event("op queued");
     } else if (m_filestore_journal_writeahead) {
       dout(5) << __FUNC__ << ": (writeahead) " << o->op << " " << o->tls << dendl;
-
+/** comment by hy 2020-02-06
+ * # 将操作放入应用中  把日志放入osr中
+     OpSequencer::queue_journal
+     多了步序列操作
+     ext4, xfs都需要wal
+     journal层面的sequence记录在OpSequencer中的journal queue中
+     JournalingObjectStore::finisher线程中会deque_journal
+ */
       osr->queue_journal(o);
 
       trace.keyval("journal mode", "writeahead");
       trace.event("journal started");
+/** comment by hy 2020-02-23
+ * # 完成了日志提交,然后开始日志的应用
+     writehead 提交日志
+     提交OP，注意这里的callback以及sequence
+ */
       _op_journal_transactions(tbl, orig_len, o->op,
 			       new C_JournaledAhead(this, osr, o, ondisk),
 			       osd_op);
     } else {
       ceph_abort();
     }
+/** comment by hy 2020-02-23
+ * # 通知 submanage 日志提交完成
+     op提交到journal队列完成
+ */
     submit_manager.op_submit_finish(op_num);
     utime_t end = ceph_clock_now();
     logger->tinc(l_filestore_queue_transaction_latency_avg, end - start);
@@ -2361,6 +2463,9 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   }
 
   if (!journal) {
+/** comment by hy 2020-02-06
+ * # 没日志的处理
+ */
     Op *o = build_op(tls, onreadable, onreadable_sync, osd_op);
     dout(5) << __FUNC__ << ": (no journal) " << o << " " << tls << dendl;
 
@@ -2372,19 +2477,31 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
     if (handle)
       handle->reset_tp_timeout();
 
+/** comment by hy 2020-02-23
+ * # 生成序号
+ */
     uint64_t op_num = submit_manager.op_submit_start();
     o->op = op_num;
 
     if (m_filestore_do_dump)
       dump_transactions(o->tls, o->op, osr);
 
+/** comment by hy 2020-02-23
+ * # 加入到提交队列
+ */
     queue_op(osr, o);
     trace.keyval("opnum", op_num);
     trace.keyval("journal mode", "none");
     trace.event("op queued");
 
     if (ondisk)
+/** comment by hy 2020-02-06
+ * # commit
+ */
       apply_manager.add_waiter(op_num, ondisk);
+/** comment by hy 2020-02-06
+ * # 记录序号
+ */
     submit_manager.op_submit_finish(op_num);
     utime_t end = ceph_clock_now();
     logger->tinc(l_filestore_queue_transaction_latency_avg, end - start);
@@ -2395,7 +2512,13 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   //prepare and encode transactions data out of lock
   bufferlist tbl;
   int orig_len = -1;
+/** comment by hy 2020-02-27
+ * # 正常流程
+ */
   if (journal->is_writeable()) {
+/** comment by hy 2020-02-27
+ * # 日志合并处理
+ */
     orig_len = journal->prepare_entry(tls, &tbl);
   }
   uint64_t op = submit_manager.op_submit_start();
@@ -2409,10 +2532,16 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   trace.keyval("journal mode", "trailing");
   apply_manager.op_apply_start(op);
   trace.event("do_transactions");
+/** comment by hy 2020-02-23
+ * # 完成日志的应用,即往文件系统中写数据
+ */
   int r = do_transactions(tls, op);
 
   if (r >= 0) {
     trace.event("journal started");
+/** comment by hy 2020-02-23
+ * # 提交日志到待日志写队列中
+ */
     _op_journal_transactions(tbl, orig_len, op, ondisk, osd_op);
   } else {
     delete ondisk;
@@ -2424,10 +2553,19 @@ int FileStore::queue_transactions(CollectionHandle& ch, vector<Transaction>& tls
   if (onreadable_sync) {
     onreadable_sync->complete(r);
   }
+/** comment by hy 2020-02-23
+ * # 准备应用日志
+ */
   apply_finishers[osr->id % m_apply_finisher_num]->queue(onreadable, r);
 
+/** comment by hy 2020-02-23
+ * # 判断提交号 通知提交完成
+ */
   submit_manager.op_submit_finish(op);
   trace.event("op_apply_finish");
+/** comment by hy 2020-02-23
+ * # 通知应用完成
+ */
   apply_manager.op_apply_finish(op);
 
   utime_t end = ceph_clock_now();
@@ -2442,15 +2580,28 @@ void FileStore::_journaled_ahead(OpSequencer *osr, Op *o, Context *ondisk)
   o->trace.event("writeahead journal finished");
 
   // this should queue in order because the journal does it's completions in order.
+/** comment by hy 2020-04-23
+ * # 将op在filestore层面排队，准备写入文件系统
+ */
   queue_op(osr, o);
 
   list<Context*> to_queue;
+/** comment by hy 2020-04-23
+ * # journal已经写成功，出队列
+ */
   osr->dequeue_journal(&to_queue);
 
   // do ondisk completions async, to prevent any onreadable_sync completions
   // getting blocked behind an ondisk completion.
+/** comment by hy 2020-04-23
+ * # journal写好了，数据就真正落盘了，所以执行ondisk回调
+     注意此时数据还未写入文件系统，所以不可读
+ */
   if (ondisk) {
     dout(10) << " queueing ondisk " << ondisk << dendl;
+/** comment by hy 2020-04-23
+ * # 放入ondisk_finisher的队列，等待回调
+ */
     ondisk_finishers[osr->id % m_ondisk_finisher_num]->queue(ondisk);
   }
   if (!to_queue.empty()) {
@@ -2466,10 +2617,19 @@ int FileStore::_do_transactions(
 {
   int trans_num = 0;
 
+/** comment by hy 2020-02-27
+ * # 一个事务慢慢执行
+ */
   for (vector<Transaction>::iterator p = tls.begin();
        p != tls.end();
        ++p, trans_num++) {
+/** comment by hy 2020-02-27
+ * # 启动时间...
+ */
     _do_transaction(*p, op_seq, trans_num, handle, osr_name);
+/** comment by hy 2020-02-27
+ * # 每个事务都设置了时间
+ */
     if (handle)
       handle->reset_tp_timeout();
   }
@@ -2774,12 +2934,18 @@ void FileStore::_do_transaction(
 
   SequencerPosition spos(op_seq, trans_num, 0);
   while (i.have_op()) {
+/** comment by hy 2020-02-27
+ * # 一个操作也有超时,这些超时有点乱,我要好好整理
+ */
     if (handle)
       handle->reset_tp_timeout();
 
     Transaction::Op *op = i.decode_op();
     int r = 0;
 
+/** comment by hy 2020-02-27
+ * # 测试
+ */
     _inject_failure();
 
     switch (op->op) {
@@ -2812,6 +2978,9 @@ void FileStore::_do_transaction(
         i.decode_bl(bl);
         tracepoint(objectstore, write_enter, osr_name, off, len);
         if (_check_replay_guard(cid, oid, spos) > 0)
+/** comment by hy 2020-02-06
+ * # 写的操作,每次写都打开和关闭,缓存打开和关闭比较适合这种场景
+ */
           r = _write(cid, oid, off, len, bl, fadvise_flags);
         tracepoint(objectstore, write_exit, r);
       }
@@ -3684,6 +3853,9 @@ int FileStore::_write(const coll_t& cid, const ghobject_t& oid,
   }
 
   // write
+/** comment by hy 2020-04-23
+ * # 写文件内容
+ */
   r = bl.write_fd(**fd, offset);
   if (r < 0) {
     derr << __FUNC__ << ": write_fd on " << cid << "/" << oid
@@ -3705,6 +3877,9 @@ int FileStore::_write(const coll_t& cid, const ghobject_t& oid,
 #endif
     }
   } else {
+/** comment by hy 2020-02-06
+ * # 记录需要刷新的信息
+ */
     wbthrottle.queue_wb(fd, oid, offset, len,
         fadvise_flags & CEPH_OSD_OP_FLAG_FADVISE_DONTNEED);
   }
@@ -4163,9 +4338,18 @@ void FileStore::sync_entry()
     fin.swap(sync_waiters);
     l.unlock();
 
+/** comment by hy 2020-02-23
+ * # 暂停op_wq的线程池,等待正在应用的日志完成
+ */
     op_tp.pause();
+/** comment by hy 2020-04-23
+ * # 如果有新的请求需要commit, 返回true
+ */
     if (apply_manager.commit_start()) {
       auto start = ceph::real_clock::now();
+/** comment by hy 2020-04-23
+ * # 获取已经apply过的序列号
+ */
       uint64_t cp = apply_manager.get_committing_seq();
 
       sync_entry_timeo_lock.lock();
@@ -4204,7 +4388,13 @@ void FileStore::sync_entry()
 	}
 
 	snaps.push_back(cp);
+/** comment by hy 2020-04-23
+ * # 设置block为false，主要是为journal replay服务
+ */
 	apply_manager.commit_started();
+/** comment by hy 2020-04-23
+ * # 恢复线程池
+ */
 	op_tp.unpause();
 
 	if (cid > 0) {
@@ -4217,7 +4407,13 @@ void FileStore::sync_entry()
 	  dout(20) << " done waiting for checkpoint " << cid << " to complete" << dendl;
 	}
       } else {
+/** comment by hy 2020-04-23
+ * # 设置block为false，主要是为journal replay服务
+ */
 	apply_manager.commit_started();
+/** comment by hy 2020-04-23
+ * # 恢复线程池
+ */
 	op_tp.unpause();
 
 	int err = object_map->sync();
@@ -4226,12 +4422,17 @@ void FileStore::sync_entry()
 	  ceph_abort_msg("object_map sync returned error");
 	}
 
+/** comment by hy 2020-02-23
+ * # 内存数据同步到磁盘中
+ */
 	err = backend->syncfs();
 	if (err < 0) {
 	  derr << "syncfs got " << cpp_strerror(err) << dendl;
 	  ceph_abort_msg("syncfs returned error");
 	}
-
+/** comment by hy 2020-04-23
+ * # 记录下commit的序列号
+ */
 	err = write_op_seq(op_fd, cp);
 	if (err < 0) {
 	  derr << "Error during write_op_seq: " << cpp_strerror(err) << dendl;
@@ -4257,6 +4458,9 @@ void FileStore::sync_entry()
       logger->tinc(l_filestore_commitcycle_latency, lat);
       logger->tinc(l_filestore_commitcycle_interval, dur);
 
+/** comment by hy 2020-02-23
+ * # 通知同步完成
+ */
       apply_manager.commit_finish();
       if (!m_disable_wbthrottle) {
         wbthrottle.clear();

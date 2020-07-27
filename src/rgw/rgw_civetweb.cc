@@ -86,7 +86,16 @@ size_t RGWCivetWeb::complete_request()
 
 int RGWCivetWeb::init_env(CephContext *cct)
 {
+/** comment by hy 2020-03-07
+ * # 加载配置文件默认选项 确定默认权限
+     这个是每个请求都加载吗,为什么这么奇怪
+     是不是哪被控制为单例了?
+     但是每个请求就一个这个
+ */
   env.init(cct);
+/** comment by hy 2020-03-07
+ * # 从 http server 获取消息信息
+ */
   const struct mg_request_info* info = mg_get_request_info(conn);
 
   if (! info) {
@@ -94,6 +103,9 @@ int RGWCivetWeb::init_env(CephContext *cct)
     return -EINVAL;
   }
 
+/** comment by hy 2020-03-07
+ * # 解析消息头,并保存到环境上下文中
+ */
   for (int i = 0; i < info->num_headers; i++) {
     const auto header = &info->http_headers[i];
 
@@ -105,6 +117,9 @@ int RGWCivetWeb::init_env(CephContext *cct)
     const boost::string_ref name(header->name);
     const auto& value = header->value;
 
+/** comment by hy 2020-03-15
+ * # 特殊的 http 头
+ */
     if (boost::algorithm::iequals(name, "content-length")) {
       env.set("CONTENT_LENGTH", value);
       continue;
@@ -120,6 +135,10 @@ int RGWCivetWeb::init_env(CephContext *cct)
 
     static const boost::string_ref HTTP_{"HTTP_"};
 
+/** comment by hy 2020-03-15
+ * # 其他 http 头 信息 加上 http 前缀 将 '-' 替换成 '_' 
+     并转化为大写字母
+ */
     char buf[name.size() + HTTP_.size() + 1];
     auto dest = std::copy(std::begin(HTTP_), std::end(HTTP_), buf);
     for (auto src = name.begin(); src != name.end(); ++src, ++dest) {

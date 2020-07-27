@@ -268,6 +268,21 @@ void BlueFS::_update_logger_stats()
   }
 }
 
+/*****************************************************************************
+ * 函 数 名  : BlueFS.add_block_device
+ * 负 责 人  : hy
+ * 创建日期  : 2020年5月28日
+ * 函数功能  :  
+ * 输入参数  : unsigned id                 类型，如db
+               const string& path           
+               bool trim                    
+               bool shared_with_bluestore   
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int BlueFS::add_block_device(unsigned id, const string& path, bool trim,
 			     bool shared_with_bluestore)
 {
@@ -495,13 +510,18 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
 
   // set volume selector if not provided before/outside
   if (vselector == nullptr) {
+/** comment by hy 2020-07-14
+ * # 已经预留了 5% 空间
+ */
     vselector.reset(
       new OriginalVolumeSelector(
         get_block_device_size(BlueFS::BDEV_WAL) * 95 / 100,
         get_block_device_size(BlueFS::BDEV_DB) * 95 / 100,
         get_block_device_size(BlueFS::BDEV_SLOW) * 95 / 100));
   }
-
+/** comment by hy 2020-06-22
+ * # 初始化内存分配器
+ */
   _init_alloc();
   _init_logger();
 
@@ -533,6 +553,9 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
       dout(20) << __func__ << " op_alloc_add " << bdev << " 0x"
                << std::hex << q.get_start() << "~" << q.get_len() << std::dec
                << dendl;
+/** comment by hy 2020-06-25
+ * # id, 偏移量,和长度
+ */
       log_t.op_alloc_add(bdev, q.get_start(), q.get_len());
     }
   }
@@ -629,6 +652,9 @@ int BlueFS::mount()
 {
   dout(1) << __func__ << dendl;
 
+/** comment by hy 2020-04-22
+ * # 读取超级块
+ */
   int r = _open_super();
   if (r < 0) {
     derr << __func__ << " failed to open super: " << cpp_strerror(r) << dendl;
@@ -646,9 +672,18 @@ int BlueFS::mount()
 
   block_all.clear();
   block_all.resize(MAX_BDEV);
+/** comment by hy 2020-04-22
+ * # 初始化allocator为磁盘所有的空间
+ */
   _init_alloc();
   _init_logger();
 
+/** comment by hy 2020-04-22
+ * # 超级快(SuperBlock)中，记录了日志文件的inode，
+     异常情况下通过重新mount文件系统，读取超级块，
+     定位到日志文件，然后读取日志进行回重建所有文件的内存映像(file_map)
+     遍历file_map，即可初始化Allocator的空间。
+ */
   r = _replay(false, false);
   if (r < 0) {
     derr << __func__ << " failed to replay log: " << cpp_strerror(r) << dendl;
@@ -660,6 +695,9 @@ int BlueFS::mount()
   for (auto& p : file_map) {
     dout(30) << __func__ << " noting alloc for " << p.second->fnode << dendl;
     for (auto& q : p.second->fnode.extents) {
+/** comment by hy 2020-04-22
+ * # 将已有文件占用的磁盘块从allocator中删除
+ */
       alloc[q.bdev]->init_rm_free(q.offset, q.length);
     }
   }
@@ -2503,6 +2541,9 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex>& l,
 				uint64_t want_seq,
 				uint64_t jump_to)
 {
+/** comment by hy 2020-06-25
+ * # 等待下盘
+ */
   while (log_flushing) {
     dout(10) << __func__ << " want_seq " << want_seq
 	     << " log is currently flushing, waiting" << dendl;
@@ -2533,8 +2574,14 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex>& l,
   auto lsi = dirty_files.find(seq);
   if (lsi != dirty_files.end()) {
     dout(20) << __func__ << " " << lsi->second.size() << " dirty_files" << dendl;
+/** comment by hy 2020-06-25
+ * # 序号找对应的为刷文件
+ */
     for (auto &f : lsi->second) {
       dout(20) << __func__ << "   op_file_update " << f.fnode << dendl;
+/** comment by hy 2020-06-25
+ * # 文件系统中的文件
+ */
       log_t.op_file_update(f.fnode);
     }
   }
@@ -2545,9 +2592,15 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex>& l,
   // allocate some more space (before we run out)?
   int64_t runway = log_writer->file->fnode.get_allocated() -
     log_writer->get_effective_write_pos();
+/** comment by hy 2020-06-25
+ * # bluefs_min_log_runway 默认 1M
+ */
   if (runway < (int64_t)cct->_conf->bluefs_min_log_runway) {
     dout(10) << __func__ << " allocating more log runway (0x"
 	     << std::hex << runway << std::dec  << " remaining)" << dendl;
+/** comment by hy 2020-06-25
+ * # 达到最大值
+ */
     while (new_log_writer) {
       dout(10) << __func__ << " waiting for async compaction" << dendl;
       log_cond.wait(l);
@@ -2655,13 +2708,18 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
 	   << " to " << h->file->fnode << dendl;
   ceph_assert(!h->file->deleted);
   ceph_assert(h->file->num_readers.load() == 0);
-
+/** comment by hy 2020-06-25
+ * # 将 buffer list 放入
+ */
   h->buffer_appender.flush();
 
   bool buffered;
   if (h->file->fnode.ino == 1)
     buffered = false;
   else
+/** comment by hy 2020-06-25
+ * # 读取进行缓冲读取配置选项,默认关闭
+ */
     buffered = cct->_conf->bluefs_buffered_io;
 
   if (offset + length <= h->pos)
@@ -2696,6 +2754,9 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
       ceph_abort_msg("bluefs enospc");
       return r;
     }
+/** comment by hy 2020-06-25
+ * # 避免写惩罚， 默认为 false,要求 rockdb 启动回收管理
+ */
     if (cct->_conf->bluefs_preextend_wal_files &&
 	h->writer_type == WRITER_WAL) {
       // NOTE: this *requires* that rocksdb also has log recycling
@@ -2710,6 +2771,9 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     }
     must_dirty = true;
   }
+/** comment by hy 2020-06-25
+ * # 文件超过大小
+ */
   if (h->file->fnode.size < offset + length) {
     h->file->fnode.size = offset + length;
     if (h->file->fnode.ino > 1) {
@@ -2719,6 +2783,9 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
       must_dirty = true;
     }
   }
+/** comment by hy 2020-06-25
+ * # 放入 dirty_files 容器中
+ */
   if (must_dirty) {
     h->file->fnode.mtime = ceph_clock_now();
     ceph_assert(h->file->fnode.ino >= 1);
@@ -2826,6 +2893,9 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     uint64_t x_len = std::min(p->length - x_off, length);
     bufferlist t;
     t.substr_of(bl, bloff, x_len);
+/** comment by hy 2020-06-25
+ * # 设备写操作, bluefs_sync_write 默认为 false
+ */
     if (cct->_conf->bluefs_sync_write) {
       bdev[p->bdev]->write(p->offset + x_off, t, buffered, h->write_hint);
     } else {
@@ -2842,6 +2912,9 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     x_off = 0;
   }
   logger->inc(l_bluefs_bytes_written_slow, bytes_written_slow);
+/** comment by hy 2020-07-14
+ * # 将文件写 buffer 按照设备分组
+ */
   for (unsigned i = 0; i < MAX_BDEV; ++i) {
     if (bdev[i]) {
       if (h->iocv[i] && h->iocv[i]->has_pending_aios()) {
@@ -2904,6 +2977,9 @@ int BlueFS::_flush(FileWriter *h, bool force)
            << std::hex << offset << "~" << length << std::dec
 	   << " to " << h->file->fnode << dendl;
   ceph_assert(h->pos <= h->file->fnode.size);
+/** comment by hy 2020-06-25
+ * # 范围下盘是指
+ */
   return _flush_range(h, offset, length);
 }
 
@@ -3087,6 +3163,9 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
       hint = node->extents.back().end();
     }   
     extents.reserve(4);  // 4 should be (more than) enough for most allocations
+/** comment by hy 2020-04-22
+ * # 真正分配空间的操作
+ */
     alloc_len = alloc[id]->allocate(round_up_to(len, alloc_size[id]),
 				    alloc_size[id], hint, &extents);
   }
@@ -3094,9 +3173,15 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
       alloc_len < 0 ||
       alloc_len < (int64_t)round_up_to(len, alloc_size[id])) {
     if (alloc_len > 0) {
+/** comment by hy 2020-04-22
+ * # 预留空间
+ */
       alloc[id]->release(extents);
     }
     if (id != BDEV_SLOW) {
+/** comment by hy 2020-04-22
+ * # 空间不足，递归降级到下一级的设备
+ */
       if (bdev[id]) {
 	dout(1) << __func__ << " failed to allocate 0x" << std::hex << len
 		<< " on bdev " << (int)id
@@ -3167,13 +3252,19 @@ int BlueFS::_preallocate(FileRef f, uint64_t off, uint64_t len)
   if (off + len > allocated) {
     uint64_t want = off + len - allocated;
     vselector->sub_usage(f->vselector_hint, f->fnode);
-
+/** comment by hy 2020-04-22
+ * # 分配空间
+ */
     int r = _allocate(vselector->select_prefer_bdev(f->vselector_hint),
       want,
       &f->fnode);
     vselector->add_usage(f->vselector_hint, f->fnode);
     if (r < 0)
       return r;
+/** comment by hy 2020-04-22
+ * # 
+ 记录日志，日志就是文件的inode信息，inode中包含extents，即物理磁盘空间
+ */
     log_t.op_file_update(f->fnode);
   }
   return 0;

@@ -51,11 +51,22 @@ protected:
   ceph::condition_variable fs_map_cond;
   bool digest_received;
   ceph::condition_variable digest_cond;
-
+/** comment by hy 2020-04-23
+ * # python插件相关的处理类
+ */
   PyModuleRegistry *py_module_registry;
+/** comment by hy 2020-04-23
+ * # 集群daemon进程metadata相关统计信息
+ */
   DaemonStateIndex daemon_state;
+/** comment by hy 2020-04-23
+ * # 整个集群状态
+ */
   ClusterState cluster_state;
-
+/** comment by hy 2020-04-23
+ * # mgr是个service，需要绑定地址并进行监听，
+     其他daemon，比如osd, mds等就可以连接mgr进行通信
+ */
   DaemonServer server;
 
   LogChannelRef clog;

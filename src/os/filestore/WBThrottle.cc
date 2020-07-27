@@ -137,6 +137,9 @@ bool WBThrottle::get_next_should_flush(
   ceph_assert(ceph_mutex_is_locked(lock));
   ceph_assert(next);
   {
+/** comment by hy 2020-04-23
+ * # 三个条件都小于soft值，睡眠
+ */
     cond.wait(locker, [this] {
       return stopping || (beyond_limit() && !pending_wbs.empty());
     });
@@ -144,8 +147,13 @@ bool WBThrottle::get_next_should_flush(
   if (stopping)
     return false;
   ceph_assert(!pending_wbs.empty());
+/** comment by hy 2020-04-23
+ * # 从lru中获取需要刷新的对象，并从lru中删除
+ */
   ghobject_t obj(pop_object());
-
+/** comment by hy 2020-04-23
+ * # 获取本次刷新的item
+ */
   ceph::unordered_map<ghobject_t, pair<PendingWB, FDRef> >::iterator i =
     pending_wbs.find(obj);
   *next = boost::make_tuple(obj, i->second.second, i->second.first);
@@ -159,6 +167,9 @@ void *WBThrottle::entry()
   std::unique_lock l{lock};
   boost::tuple<ghobject_t, FDRef, PendingWB> wb;
   while (get_next_should_flush(l, &wb)) {
+/** comment by hy 2020-04-23
+ * # 获取一个新的item
+ */
     clearing = wb.get<0>();
     cur_ios -= wb.get<2>().ios;
     logger->dec(l_wbthrottle_ios_dirtied, wb.get<2>().ios);
@@ -169,6 +180,9 @@ void *WBThrottle::entry()
     logger->dec(l_wbthrottle_inodes_dirtied);
     logger->inc(l_wbthrottle_inodes_wb);
     l.unlock();
+/** comment by hy 2020-04-23
+ * # 执行sync操作
+ */
 #if defined(HAVE_FDATASYNC)
     int r = ::fdatasync(**wb.get<1>());
 #else
@@ -186,7 +200,13 @@ void *WBThrottle::entry()
 #endif
     l.lock();
     clearing = ghobject_t();
+/** comment by hy 2020-04-23
+ * # 唤醒之前在_do_op中的wait操作
+ */
     cond.notify_all();
+/** comment by hy 2020-04-23
+ * # 重置wb
+ */
     wb = boost::tuple<ghobject_t, FDRef, PendingWB>();
   }
   return 0;
@@ -199,7 +219,14 @@ void WBThrottle::queue_wb(
   std::lock_guard l{lock};
   ceph::unordered_map<ghobject_t, pair<PendingWB, FDRef> >::iterator wbiter =
     pending_wbs.find(hoid);
+
   if (wbiter == pending_wbs.end()) {
+/** comment by hy 2020-04-23
+ * # 还没记录过
+ */
+/** comment by hy 2020-04-23
+ * # 新建一个item
+ */
     wbiter = pending_wbs.insert(
       make_pair(hoid,
 	make_pair(
@@ -207,6 +234,12 @@ void WBThrottle::queue_wb(
 	  fd))).first;
     logger->inc(l_wbthrottle_inodes_dirtied);
   } else {
+/** comment by hy 2020-04-23
+ * # 已经记录了
+ */
+/** comment by hy 2020-04-23
+ * # 从lru中删除旧的对象, 后面会加入新的对象到lru
+ */
     remove_object(hoid);
   }
 
@@ -216,6 +249,9 @@ void WBThrottle::queue_wb(
   logger->inc(l_wbthrottle_bytes_dirtied, len);
 
   wbiter->second.first.add(nocache, len, 1);
+/** comment by hy 2020-04-23
+ * # 将对象插入到lru
+ */
   insert_object(hoid);
   if (beyond_limit())
     cond.notify_all();

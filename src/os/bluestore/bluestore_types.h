@@ -50,6 +50,10 @@ ostream& operator<<(ostream& out, const bluestore_bdev_label_t& l);
 
 /// collection metadata
 struct bluestore_cnode_t {
+/** comment by hy 2020-02-27
+ * # 指示归属PG的对象,在执行到PG的映射过程中
+     其中32位的全精度hash值有多少位是有效
+ */
   uint32_t bits;   ///< how many bits of coll pgid are significant
 
   explicit bluestore_cnode_t(int b=0) : bits(b) {}
@@ -99,7 +103,13 @@ struct bluestore_pextent_t : public bluestore_interval_t<uint64_t, uint32_t>
     bluestore_interval_t(ext.offset, ext.length) {}
 
   DENC(bluestore_pextent_t, v, p) {
+/** comment by hy 2020-02-27
+ * # offset 磁盘上的物理偏移
+ */
     denc_lba(v.offset, p);
+/** comment by hy 2020-02-27
+ * # 长度
+ */
     denc_varint_lowz(v.length, p);
   }
 
@@ -427,28 +437,60 @@ ostream& operator<<(ostream& out, const bluestore_blob_use_tracker_t& rm);
 /// blob: a piece of data on disk
 struct bluestore_blob_t {
 private:
+/** comment by hy 2020-02-23
+ * # 物理上磁盘的集合,单个extent的类型 bluestore_pextent_t
+ */
   PExtentVector extents;              ///< raw data position on device
   uint32_t logical_length = 0;        ///< original length of data stored in the blob
+/** comment by hy 2020-02-27
+ * # 压缩控制,分别对应压缩前后用户数据的长度
+ */
   uint32_t compressed_length = 0;     ///< compressed length if any
 
 public:
   enum {
+/** comment by hy 2020-02-27
+ * # 可以被修改
+ */
     LEGACY_FLAG_MUTABLE = 1,  ///< [legacy] blob can be overwritten or split
+/** comment by hy 2020-02-27
+ * # 经过压缩
+ */
     FLAG_COMPRESSED = 2,      ///< blob is compressed
+/** comment by hy 2020-02-27
+ * # 经过校验
+ */
     FLAG_CSUM = 4,            ///< blob has checksums
+/** comment by hy 2020-02-27
+ * # 未被使用的块
+ */
     FLAG_HAS_UNUSED = 8,      ///< blob has unused map
     FLAG_SHARED = 16,         ///< blob is shared; see external SharedBlob
   };
   static string get_flags_string(unsigned flags);
-
+/** comment by hy 2020-02-27
+ * # 上述枚举值
+ */
   uint32_t flags = 0;                 ///< FLAG_*
 
   typedef uint16_t unused_t;
+/** comment by hy 2020-02-27
+ * # blob所有未被使用物理块的集合,以块大小为单位对整个blob的物理空间进行划分
+     使用单个比特标识每个区域状态,如果被设置表示包换用户数据,反之不包含
+ */
   unused_t unused = 0;     ///< portion that has never been written to (bitmap)
-
+/** comment by hy 2020-02-27
+ * # 指定一种校验算法
+ */
   uint8_t csum_type = Checksummer::CSUM_NONE;      ///< CSUM_*
+/** comment by hy 2020-02-27
+ * # 用于指定计算校验和时,每次输入的原始数据块大小
+ */
   uint8_t csum_chunk_order = 0;       ///< csum block size is 1<<block_order bytes
-
+/** comment by hy 2020-02-27
+ * # 用于保存具体校验和
+     blob 运行保存的最大数据长度为512KB,那么至多会产生 512K/4K *4 字节长度
+ */
   bufferptr csum_data;                ///< opaque vector of csum data
 
   bluestore_blob_t(uint32_t f = 0) : flags(f) {}
@@ -894,12 +936,27 @@ ostream& operator<<(ostream& out, const bluestore_shared_blob_t& o);
 
 /// onode: per-object metadata
 struct bluestore_onode_t {
+/** comment by hy 2020-02-23
+ * # 逻辑标识,单个BlueStore 实例内的唯一
+ */
   uint64_t nid = 0;                    ///< numeric id (locally unique)
+/** comment by hy 2020-02-23
+ * # 对象大小
+ */
   uint64_t size = 0;                   ///< object size
+/** comment by hy 2020-02-23
+ * # 对象扩展属性对
+ */
   map<mempool::bluestore_cache_other::string, bufferptr> attrs;        ///< attrs
 
   struct shard_info {
+/** comment by hy 2020-02-27
+ * # 分片对应的逻辑起始地址
+ */
     uint32_t offset = 0;  ///< logical offset for start of shard
+/** comment by hy 2020-02-27
+ * # 分片编码后的长度
+ */
     uint32_t bytes = 0;   ///< encoded bytes
     DENC(shard_info, v, p) {
       denc_varint(v.offset, p);
@@ -907,12 +964,21 @@ struct bluestore_onode_t {
     }
     void dump(Formatter *f) const;
   };
+/** comment by hy 2020-02-23
+ * # 对象关联的omap的分片概要信息
+     用于从kvdb中索引某个具体分片
+ */
   vector<shard_info> extent_map_shards; ///< extent map shards (if any)
-
+/** comment by hy 2020-02-23
+ * # 用于优化基于对象的读,写,压缩等策略
+ */
   uint32_t expected_object_size = 0;
   uint32_t expected_write_size = 0;
   uint32_t alloc_hint_flags = 0;
 
+/** comment by hy 2020-02-23
+ * # 对象关联的omap是否使用,参见以下枚举
+ */
   uint8_t flags = 0;
 
   enum {
@@ -1031,8 +1097,17 @@ struct bluestore_deferred_transaction_t {
 };
 WRITE_CLASS_DENC(bluestore_deferred_transaction_t)
 
+/** comment by hy 2020-02-27
+ * # 数据压缩
+ */
 struct bluestore_compression_header_t {
+/** comment by hy 2020-02-27
+ * # 压缩类型
+ */
   uint8_t type = Compressor::COMP_ALG_NONE;
+/** comment by hy 2020-02-27
+ * # 数据压缩后的长度
+ */
   uint32_t length = 0;
 
   bluestore_compression_header_t() {}

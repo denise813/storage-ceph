@@ -45,6 +45,9 @@ class PosixNetworkStack : public NetworkStack {
 
   void spawn_worker(unsigned i, std::function<void ()> &&func) override {
     threads.resize(i+1);
+/** comment by hy 2020-04-23
+ * # 线程库创建线程
+ */
     threads[i] = std::thread(func);
   }
   void join_worker(unsigned i) override {

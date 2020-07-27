@@ -67,6 +67,9 @@ void Request<I>::finish(int r) {
   ldout(cct, 10) << this << " " << __func__ << ": r=" << r << dendl;
 
   ceph_assert(!m_appended_op_event || m_committed_op_event);
+/** comment by hy 2020-02-25
+ * # finish 框架
+ */
   AsyncRequest<I>::finish(r);
 }
 

@@ -120,6 +120,9 @@ inline auto make_throttle(uint64_t window_size, optional_yield y)
 #ifdef HAVE_BOOST_CONTEXT
   std::unique_ptr<Aio> aio;
   if (y) {
+/** comment by hy 2020-03-16
+ * # 协程选项
+ */
     aio = std::make_unique<YieldingAioThrottle>(window_size,
                                                 y.get_io_context(),
                                                 y.get_yield_context());
@@ -128,6 +131,9 @@ inline auto make_throttle(uint64_t window_size, optional_yield y)
   }
   return aio;
 #else
+/** comment by hy 2020-03-17
+ * # 
+ */
   return std::make_optional<BlockingAioThrottle>(window_size);
 #endif
 }

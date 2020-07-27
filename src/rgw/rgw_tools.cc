@@ -37,8 +37,14 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
                    librados::IoCtx& ioctx, bool create,
 		   bool mostly_omap)
 {
+/** comment by hy 2020-03-06
+ * # 创建pool上下文 打开 pool 先判断有没有
+ */
   int r = rados->ioctx_create(pool.name.c_str(), ioctx);
   if (r == -ENOENT && create) {
+/** comment by hy 2020-03-06
+ * # 发送创建 pool, 默认使用 -1
+ */
     r = rados->pool_create(pool.name.c_str());
     if (r == -ERANGE) {
       dout(0)
@@ -52,11 +58,17 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
       return r;
     }
 
+/** comment by hy 2020-03-06
+ * # 创建 pool 上下文
+ */
     r = rados->ioctx_create(pool.name.c_str(), ioctx);
     if (r < 0) {
       return r;
     }
 
+/** comment by hy 2020-03-06
+ * # 将 pool 设置为给 rgw 使用
+ */
     r = ioctx.application_enable(pg_pool_t::APPLICATION_NAME_RGW, false);
     if (r < 0 && r != -EOPNOTSUPP) {
       return r;
@@ -65,6 +77,9 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
     if (mostly_omap) {
       // set pg_autoscale_bias
       bufferlist inbl;
+/** comment by hy 2020-03-06
+ * # 设置pg数量建议大小,这是用于自动扩缩容的初始参数
+ */
       float bias = g_conf().get_val<double>("rgw_rados_pool_autoscale_bias");
       int r = rados->mon_command(
 	"{\"prefix\": \"osd pool set\", \"pool\": \"" +
@@ -76,6 +91,9 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
 		 << pool.name << dendl;
       }
       // set pg_num_min
+/** comment by hy 2020-03-06
+ * # 默认为 8
+ */
       int min = g_conf().get_val<uint64_t>("rgw_rados_pool_pg_num_min");
       r = rados->mon_command(
 	"{\"prefix\": \"osd pool set\", \"pool\": \"" +
@@ -87,6 +105,9 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
 		 << pool.name << dendl;
       }
       // set recovery_priority
+/** comment by hy 2020-03-06
+ * # 默认为 5
+ */
       int p = g_conf().get_val<uint64_t>("rgw_rados_pool_recovery_priority");
       r = rados->mon_command(
 	"{\"prefix\": \"osd pool set\", \"pool\": \"" +
@@ -101,6 +122,9 @@ int rgw_init_ioctx(librados::Rados *rados, const rgw_pool& pool,
   } else if (r < 0) {
     return r;
   }
+/** comment by hy 2020-03-06
+ * # 设置命名空间
+ */
   if (!pool.ns.empty()) {
     ioctx.set_namespace(pool.ns);
   }
@@ -161,9 +185,15 @@ int rgw_put_system_obj(RGWSysObjectCtx& obj_ctx, const rgw_pool& pool, const str
     pattrs = &no_attrs;
   }
 
+/** comment by hy 2020-03-08
+ * # 
+ */
   rgw_raw_obj obj(pool, oid);
 
   auto sysobj = obj_ctx.get_obj(obj);
+/** comment by hy 2020-03-08
+ * # write
+ */
   int ret = sysobj.wop()
                   .set_objv_tracker(objv_tracker)
                   .set_exclusive(exclusive)
@@ -251,6 +281,9 @@ int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
                       optional_yield y)
 {
 #ifdef HAVE_BOOST_CONTEXT
+/** comment by hy 2020-03-11
+ * # 协程处理,这个只有用了boot http 前端才支持
+ */
   // given a yield_context, call async_operate() to yield the coroutine instead
   // of blocking
   if (y) {
@@ -268,6 +301,9 @@ int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
     dout(20) << "WARNING: blocking librados call" << dendl;
   }
 #endif
+/** comment by hy 2020-03-11
+ * # 因为有第三个参数,所以发送读取消息
+ */
   return ioctx.operate(oid, op, nullptr);
 }
 
@@ -412,6 +448,10 @@ void rgw_filter_attrset(map<string, bufferlist>& unfiltered_attrset, const strin
   map<string, bufferlist>::iterator iter;
   for (iter = unfiltered_attrset.lower_bound(check_prefix);
        iter != unfiltered_attrset.end(); ++iter) {
+/** comment by hy 2020-03-11
+ * # 因为排序好了,所以 遇到第一个不是,就是最后一个
+     不是 bug
+ */
     if (!boost::algorithm::starts_with(iter->first, check_prefix))
       break;
     (*attrset)[iter->first] = iter->second;

@@ -480,6 +480,9 @@ public:
     if (!is_primary() && !is_ec_pg()) {
       replica_clear_repop_obc(logv, t);
     }
+/** comment by hy 2020-07-13
+ * # 处理 pg 信息
+ */
     recovery_state.append_log(
       logv, trim_to, roll_forward_to, min_last_complete_ondisk,
       t, transaction_applied, async);
@@ -588,14 +591,28 @@ public:
    * Capture all object state associated with an in-progress read or write.
    */
   struct OpContext {
+/** comment by hy 2020-02-27
+ * # 关联的客户端请求
+ */
     OpRequestRef op;
     osd_reqid_t reqid;
     vector<OSDOp> *ops;
-
+/** comment by hy 2020-02-27
+ * # op 执行之前，对象状态
+ */
     const ObjectState *obs; // Old objectstate
+/** comment by hy 2020-02-27
+ * # op 执行之前，对象关联的 SS 属性
+ */
     const SnapSet *snapset; // Old snapset
-
+/** comment by hy 2020-02-27
+ * # op 执行之后（准确地说，是在 Primary 完成 op 事务封装之后）
+ */
     ObjectState new_obs;  // resulting ObjectState
+/** comment by hy 2020-02-27
+ * # op 执行之后 准确地说，是在主完成 op 事务封装之后,
+     新的 SS 属性
+ */
     SnapSet new_snapset;  // resulting SnapSet (in case of a write)
     //pg_stat_t new_stats;  // resulting Stats
     object_stat_sum_t delta_stats;
@@ -628,7 +645,16 @@ public:
     uint64_t bytes_written, bytes_read;
 
     utime_t mtime;
+/** comment by hy 2020-02-27
+ * # 对象当前最新的快照上下文 参见表 4-6
+     每次收到 op 时， 基于 op 或者 PGPool 更新
+ */
     SnapContext snapc;           // writer snap context
+/** comment by hy 2020-02-27
+ * # 如果op 包含修改操作, 那么 PG 将为 op 生成一个 PG 内唯一的序列号
+     该序列号连续且单调递增,用于后续 例如 Peering 对本次修改操作进
+     行追踪和回溯
+ */
     eversion_t at_version;       // pg's current version pointer
     version_t user_at_version;   // pg's current user version pointer
 
@@ -638,11 +664,30 @@ public:
     int processed_subop_count = 0;
 
     PGTransactionUPtr op_t;
+/** comment by hy 2020-02-27
+ * # PG 基于当前 op 产生的所有日志集合。
+     注意：日志是基于对象的 。 针对原始对象（例如 head 对象）
+     的所有修改操作只会产生一条单一的日忘记录，
+     但是快照机制的存在使得 PG 在执行 op 过程中有可能创建
+     克隆对象、创建或者删除 snapdir 对象。因为后面这些操作
+     是针对不同的对象，所以需要为其生成单独的日志记录
+     这解释了这里为什么使用日志集合
+ */
     vector<pg_log_entry_t> log;
     std::optional<pg_hit_set_history_t> updated_hset_history;
-
+/** comment by hy 2020-02-27
+ * # op 本次修改操作波及的数据范围
+ */
     interval_set<uint64_t> modified_ranges;
+/** comment by hy 2020-02-27
+ * # 对象上下文
+ */
     ObjectContextRef obc;
+/** comment by hy 2020-02-27
+ * # 克隆对象上下文（参见表 4-7 ），
+     仅在 op 执行过程中产生了新的克隆，或者 op
+     直接针对快照对象或者克隆对象进行操作时加载
+ */
     ObjectContextRef clone_obc;    // if we created a clone
     ObjectContextRef head_obc;     // if we also update snapset (see trim_object)
 
@@ -660,10 +705,32 @@ public:
     mempool::osd_pglog::map<uint32_t, int> extra_reqid_return_codes;
 
     hobject_t new_temp_oid, discard_temp_oid;  ///< temp objects we should start/stop tracking
-
+/** comment by hy 2020-02-27
+ * # 回调上下文， OS 将事务写入日志后执行
+     收到所有副本应答写入日志完成之后执行，执行后
+     将设置 RepGather 中的 all_applied 标志为 true
+ */
     list<std::function<void()>> on_applied;
+/** comment by hy 2020-02-27
+ * # 回调上下文， OS 将事务写人磁盘后执行
+     对 BlueStore 而言，写日志和写磁盘是同时完成的
+     收到所有副本应答写入磁盘完成之后执行，执
+     行后 将设置 RepGather 中的 all_committed 标志
+     为 true
+     同时调用 eval_repop 来评估 RepGather 是否最终
+     完成
+ */
     list<std::function<void()>> on_committed;
+/** comment by hy 2020-02-27
+ * # 典型操作为删除 OpContext
+ */
     list<std::function<void()>> on_finish;
+/** comment by hy 2020-02-27
+ * # 典型操作为执行 Watch/Notify 相关的操作
+     这两个操作需要保证在 op 真正完成后
+     （即 op 在所有副本之间都完成之后）执行，
+     执行顺序为 on success -> on finish
+ */
     list<std::function<void()>> on_success;
     template <typename F>
     void register_on_finish(F &&f) {
@@ -673,6 +740,9 @@ public:
     void register_on_success(F &&f) {
       on_success.emplace_back(std::forward<F>(f));
     }
+/** comment by hy 2020-07-13
+ * # pg 日志的应用
+ */
     template <typename F>
     void register_on_applied(F &&f) {
       on_applied.emplace_back(std::forward<F>(f));
@@ -772,17 +842,35 @@ public:
    */
   class RepGather {
   public:
+/** comment by hy 2020-02-27
+ * # op 关联的对象标识
+ */
     hobject_t hoid;
+/** comment by hy 2020-02-27
+ * # RepGather 和 op 一一对应
+ */
     OpRequestRef op;
+/** comment by hy 2020-02-27
+ * # 负责将 RepGather 挂人 PG 全局的 repop_queue
+ */
     xlist<RepGather*>::item queue_item;
     int nref;
 
     eversion_t v;
     int r = 0;
-
+/** comment by hy 2020-02-27
+ * # RepGather 在 OSD 内的全局唯一标志
+ */
     ceph_tid_t rep_tid;
-
+/** comment by hy 2020-02-27
+ * # RepGather 被终止，例如 PG 收到新的 OSDMap 
+     并且需要切换到一个新的 Interval
+ */
     bool rep_aborted;
+/** comment by hy 2020-02-27
+ * # Primary 成功收到了所有副本（包括自身）
+     已经成功将基于 op 生成的本地事务写入磁盘的应答
+ */
     bool all_committed;
     
     utime_t   start;
@@ -790,9 +878,17 @@ public:
     eversion_t          pg_local_last_complete;
 
     ObcLockManager lock_manager;
-
+/** comment by hy 2020-02-27
+ * # 同 OpContext 中的 on_committed
+ */
     list<std::function<void()>> on_committed;
+/** comment by hy 2020-02-27
+ * # 同 OpContext 中的 on_success
+ */
     list<std::function<void()>> on_success;
+/** comment by hy 2020-02-27
+ * # 同 OpContext 中的 on_finish
+ */
     list<std::function<void()>> on_finish;
     
     RepGather(

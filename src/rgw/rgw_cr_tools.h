@@ -11,6 +11,9 @@
 #include "services/svc_bucket_sync.h"
 
 struct rgw_user_create_params {
+/** comment by hy 2020-03-09
+ * # 
+ */
   rgw_user user;
   std::string display_name;
   std::string email;

@@ -178,17 +178,31 @@ static set<string> hostnames_s3website_set;
 
 void rgw_rest_init(CephContext *cct, const RGWZoneGroup& zone_group)
 {
+/** comment by hy 2020-03-06
+ * # 基本属性关键字
+ */
   for (const auto& rgw2http : base_rgw_to_http_attrs)  {
     rgw_to_http_attrs[rgw2http.rgw_attr] = rgw2http.http_attr;
   }
 
+/** comment by hy 2020-03-06
+ * # 一些常用属性
+ */
   for (const auto& http2rgw : generic_attrs) {
     generic_attrs_map[http2rgw.http_header] = http2rgw.rgw_attr;
   }
 
+/** comment by hy 2020-03-06
+ * # 配置文件对应的扩展属性
+ */
   list<string> extended_http_attrs;
   get_str_list(cct->_conf->rgw_extended_http_attrs, extended_http_attrs);
 
+/** comment by hy 2020-03-06
+ * # 加上缀放入基本属性中，属性头,一般属性中
+     基本属性前缀
+     头和一般属性前缀
+ */
   list<string>::iterator iter;
   for (iter = extended_http_attrs.begin(); iter != extended_http_attrs.end(); ++iter) {
     string rgw_attr = RGW_ATTR_PREFIX;
@@ -202,10 +216,16 @@ void rgw_rest_init(CephContext *cct, const RGWZoneGroup& zone_group)
     generic_attrs_map[http_header] = rgw_attr;
   }
 
+/** comment by hy 2020-03-06
+ * # http 返回码,对应字符
+ */
   for (const struct rgw_http_status_code *h = http_codes; h->code; h++) {
     http_status_names[h->code] = h->name;
   }
 
+/** comment by hy 2020-03-06
+ * # 域名集合
+ */
   hostnames_set.insert(cct->_conf->rgw_dns_name);
   hostnames_set.insert(zone_group.hostnames.begin(), zone_group.hostnames.end());
   hostnames_set.erase(""); // filter out empty hostnames
@@ -220,6 +240,9 @@ void rgw_rest_init(CephContext *cct, const RGWZoneGroup& zone_group)
    * X.B.A ambigously splits to both {X, B.A} and {X.B, A}
    */
 
+/** comment by hy 2020-03-06
+ * # s3特定的集合
+ */
   hostnames_s3website_set.insert(cct->_conf->rgw_dns_s3website_name);
   hostnames_s3website_set.insert(zone_group.hostnames_s3website.begin(), zone_group.hostnames_s3website.end());
   hostnames_s3website_set.erase(""); // filter out empty hostnames
@@ -721,6 +744,9 @@ void abort_early(struct req_state *s, RGWOp* op, int err_no,
 void dump_continue(struct req_state * const s)
 {
   try {
+/** comment by hy 2020-03-19
+ * # http 100 事用于握手的请求
+ */
     RESTFUL_IO(s)->send_100_continue();
   } catch (rgw::io::Exception& e) {
     ldout(s->cct, 0) << "ERROR: RESTFUL_IO(s)->send_100_continue() returned err="
@@ -1652,8 +1678,17 @@ int RGWRESTOp::verify_permission()
 RGWOp* RGWHandler_REST::get_op(void)
 {
   RGWOp *op;
+/** comment by hy 2020-02-08
+ * # 参见 RGWHandler_Bucket
+     继承 RGWHandler_REST
+     等类处理
+ */
   switch (s->op) {
    case OP_GET:
+/** comment by hy 2020-03-07
+ * # 例如 RGWHandler_Bucket::op_get 的 get 方法
+     返回 RGWOp_Bucket_Info 
+ */
      op = op_get();
      break;
    case OP_PUT:
@@ -1851,10 +1886,16 @@ int RGWHandler_REST::init_permissions(RGWOp* op)
         map<string, bufferlist> uattrs;
         if (auto ret = store->ctl()->user->get_attrs_by_uid(s->user->get_id(), &uattrs, null_yield); ! ret) {
           if (s->iam_user_policies.empty()) {
+/** comment by hy 2020-03-07
+ * # 存放策略
+ */
             s->iam_user_policies = get_iam_user_policy_from_attr(s->cct, store, uattrs, s->user->get_tenant());
           } else {
           // This scenario can happen when a STS token has a policy, then we need to append other user policies
           // to the existing ones. (e.g. token returned by GetSessionToken)
+/** comment by hy 2020-03-07
+ * # 缓存中没有，放入缓存
+ */
           auto user_policies = get_iam_user_policy_from_attr(s->cct, store, uattrs, s->user->get_tenant());
           s->iam_user_policies.insert(s->iam_user_policies.end(), user_policies.begin(), user_policies.end());
           }
@@ -1863,10 +1904,15 @@ int RGWHandler_REST::init_permissions(RGWOp* op)
         lderr(s->cct) << "Error reading IAM User Policy: " << e.what() << dendl;
       }
     }
+/** comment by hy 2020-03-07
+ * # 头上IAM相关的信息
+ */
     rgw_build_iam_environment(store, s);
     return 0;
   }
-
+/** comment by hy 2020-03-07
+ * # 
+ */
   return do_init_permissions();
 }
 
@@ -1908,6 +1954,10 @@ int RGWHandler_REST::read_permissions(RGWOp* op_obj)
     return -EINVAL;
   }
 
+/** comment by hy 2020-03-08
+ * # 读取 ACL
+     仅仅bucket 就没有ACL
+ */
   return do_read_permissions(op_obj, only_bucket);
 }
 
@@ -1963,7 +2013,13 @@ RGWRESTMgr* RGWRESTMgr::get_resource_mgr(struct req_state* const s,
     if (uri.compare(0, iter->first, resource) == 0 &&
 	(uri.size() == iter->first ||
 	 uri[iter->first] == '/')) {
+/** comment by hy 2020-03-15
+ * # 前缀表示资源
+ */
       std::string suffix = uri.substr(iter->first);
+/** comment by hy 2020-03-15
+ * # 根据资源选择资源对应的 mgr
+ */
       return resource_mgrs[resource]->get_resource_mgr(s, suffix, out_uri);
     }
   }
@@ -2280,11 +2336,17 @@ RGWHandler_REST* RGWREST::get_handler(
   RGWRESTMgr** const pmgr,
   int* const init_error
 ) {
+/** comment by hy 2020-02-08
+ * # 
+ */
   *init_error = preprocess(s, rio);
   if (*init_error < 0) {
     return nullptr;
   }
 
+/** comment by hy 2020-02-08
+ * # 解析出s3还是其他
+ */
   RGWRESTMgr *m = mgr.get_manager(s, frontend_prefix, s->decoded_uri,
                                   &s->relative_uri);
   if (! m) {
@@ -2296,11 +2358,17 @@ RGWHandler_REST* RGWREST::get_handler(
     *pmgr = m;
   }
 
+/** comment by hy 2020-02-08
+ * # 解析出对应的处理者
+ */
   RGWHandler_REST* handler = m->get_handler(s, auth_registry, frontend_prefix);
   if (! handler) {
     *init_error = -ERR_METHOD_NOT_ALLOWED;
     return NULL;
   }
+/** comment by hy 2020-02-08
+ * # 进行必要的初始化
+ */
   *init_error = handler->init(store, s, rio);
   if (*init_error < 0) {
     m->put_handler(handler);

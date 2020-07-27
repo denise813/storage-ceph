@@ -156,6 +156,9 @@ public:
   class StandbyInfo
   {
   public:
+/** comment by hy 2020-04-23
+ * # 全局id, 这个id是由monitor client向monitor获取的
+ */
     uint64_t gid = 0;
     std::string name;
     std::vector<ModuleInfo> available_modules;
@@ -226,12 +229,24 @@ public:
   epoch_t last_failure_osd_epoch = 0;
 
   /// global_id of the ceph-mgr instance selected as a leader
+/** comment by hy 2020-04-23
+ * # active mgr进程的id
+ */
   uint64_t active_gid = 0;
   /// server address reported by the leader once it is active
+/** comment by hy 2020-04-23
+ * # active mgr进程的地址
+ */
   entity_addrvec_t active_addrs;
   /// whether the nominated leader is active (i.e. has initialized its server)
+/** comment by hy 2020-04-23
+ * # 是否已经初始化完成，可以使用
+ */
   bool available = false;
   /// the name (foo in mgr.<foo>) of the active daemon
+/** comment by hy 2020-04-23
+ * # active mgr进程的名字
+ */
   std::string active_name;
   /// when the active mgr became active, or we lost the active mgr
   utime_t active_change;
@@ -239,7 +254,9 @@ public:
   uint64_t active_mgr_features = 0;
 
   std::vector<entity_addrvec_t> clients; // for blacklist
-
+/** comment by hy 2020-04-23
+ * # standby mgr进程的信息汇总
+ */
   std::map<uint64_t, StandbyInfo> standbys;
 
   // Modules which are enabled

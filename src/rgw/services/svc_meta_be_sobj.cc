@@ -147,6 +147,11 @@ int RGWSI_MetaBackend_SObj::get_entry(RGWSI_MetaBackend::Context *_ctx,
 
   rgw_pool pool;
   string oid;
+/** comment by hy 2020-03-19
+ * # RGWSI_Bucket_SObj_Module::get_pool_and_oid
+     RGWSI_BucketInstance_SObj_Module::get_pool_and_oid
+     获得对应的pool 以及带前缀的对象
+ */
   ctx->module->get_pool_and_oid(key, &pool, &oid);
 
   return rgw_get_system_obj(*ctx->obj_ctx, pool, oid, *params.pbl,
@@ -167,8 +172,24 @@ int RGWSI_MetaBackend_SObj::put_entry(RGWSI_MetaBackend::Context *_ctx,
 
   rgw_pool pool;
   string oid;
+/** comment by hy 2020-03-08
+ * # 对于 bucket instance
+     pool = zone.rgw.meta:root
+     oid = bucket.meta:XXXX
+
+     对于 bucket
+     oid = XXX
+     pool = zone.rgw.meta:root
+
+     RGWSI_Bucket_SObj_Module::get_pool_and_oid
+     RGWSI_BucketInstance_SObj_Module::::get_pool_and_oid
+
+ */
   ctx->module->get_pool_and_oid(key, &pool, &oid);
 
+/** comment by hy 2020-03-08
+ * # 调用 rados::write 写对象
+ */
   return rgw_put_system_obj(*ctx->obj_ctx, pool, oid, params.bl, params.exclusive,
                             objv_tracker, params.mtime, y, params.pattrs);
 }

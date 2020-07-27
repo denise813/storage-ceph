@@ -137,6 +137,10 @@ public:
 
     ThreadPool *thread_pool;
     get_thread_pool_instance(cct, &thread_pool, &op_work_queue);
+/** comment by hy 2020-02-18
+ * # 每个rbd对应一个队列
+     默认超时时间未60s
+ */
     io_work_queue = new io::ImageRequestWQ<>(
       this, "librbd::io_work_queue",
       cct->_conf.get_val<uint64_t>("rbd_op_thread_timeout"),
@@ -230,7 +234,10 @@ public:
     layout.stripe_count = stripe_count;
     layout.object_size = 1ull << order;
     layout.pool_id = pool_id;  // FIXME: pool id overflow?
-
+/** comment by hy 2020-02-19
+ * # 这个写得比较奇怪,初始化的时候设置未NULL,但是open 中的上一步
+     调用了 data_object_name ,在这里清理
+ */
     delete[] format_string;
     size_t len = object_prefix.length() + 16;
     format_string = new char[len];
@@ -629,8 +636,14 @@ public:
   const ParentImageInfo* ImageCtx::get_parent_info(snap_t in_snap_id) const
   {
     ceph_assert(ceph_mutex_is_locked(image_lock));
+/** comment by hy 2020-02-21
+ * # 找到原始卷
+ */
     if (in_snap_id == CEPH_NOSNAP)
       return &parent_md;
+/** comment by hy 2020-02-21
+ * # 这里尽然递归调用
+ */
     const SnapInfo *info = get_snap_info(in_snap_id);
     if (info)
       return &info->parent;
@@ -664,6 +677,9 @@ public:
   int ImageCtx::get_parent_overlap(snap_t in_snap_id, uint64_t *overlap) const
   {
     ceph_assert(ceph_mutex_is_locked(image_lock));
+/** comment by hy 2020-02-21
+ * # 获取快照父信息
+ */
     const auto info = get_parent_info(in_snap_id);
     if (info) {
       *overlap = info->overlap;
@@ -674,6 +690,11 @@ public:
 
   void ImageCtx::register_watch(Context *on_finish) {
     ceph_assert(image_watcher != NULL);
+/** comment by hy 2020-02-19
+ * # 将客户端自己注册为watcher
+     执行向osd主注册
+     onfinish = handle_register_watch
+ */
     image_watcher->register_watch(on_finish);
   }
 
@@ -681,6 +702,9 @@ public:
 					  uint64_t overlap)
   {
     // drop extents completely beyond the overlap
+/** comment by hy 2020-02-21
+ * # 叠加的对象范围
+ */
     while (!objectx.empty() && objectx.back().first >= overlap)
       objectx.pop_back();
 

@@ -31,11 +31,16 @@ class SafeTimer
   bool safe_callbacks;
 
   friend class SafeTimerThread;
+/** comment by hy 2020-02-17
+ * # 定时器线程
+ */
   SafeTimerThread *thread;
 
   void timer_thread();
   void _shutdown();
-
+/** comment by hy 2020-02-17
+ * # 目标时间与定时任务
+ */
   using clock_t = ceph::real_clock;
   using scheduled_map_t = std::multimap<clock_t::time_point, Context*>;
   scheduled_map_t schedule;

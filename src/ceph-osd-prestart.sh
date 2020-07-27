@@ -23,6 +23,7 @@ if [ -z "$id"  ]; then
     exit 1;
 fi
 
+# 数据目录
 data="/var/lib/ceph/osd/${cluster:-ceph}-$id"
 
 # assert data directory exists - see http://tracker.ceph.com/issues/17091
@@ -31,6 +32,7 @@ if [ ! -d "$data" ]; then
     exit 1
 fi
 
+# 日志目录
 journal="$data/journal"
 
 if [ -L "$journal" -a ! -e "$journal" ]; then

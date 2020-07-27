@@ -26,6 +26,9 @@ public:
   class Obj {
     friend class ROp;
 
+/** comment by hy 2020-03-15
+ * # or = RGWSI_SysObj_Cache
+ */
     RGWSI_SysObj_Core *core_svc;
     RGWSysObjectCtx& ctx;
     rgw_raw_obj obj;
@@ -205,6 +208,9 @@ public:
     friend class Op;
     friend class RGWSI_SysObj_Core;
 
+/** comment by hy 2020-03-15
+ * # or = RGWSI_SysObj_Cache 
+ */
     RGWSI_SysObj_Core *core_svc;
     rgw_pool pool;
 
@@ -258,6 +264,9 @@ public:
 
 protected:
   RGWSI_RADOS *rados_svc{nullptr};
+/** comment by hy 2020-03-15
+ * # or RGWSI_SysObj_Cache
+ */
   RGWSI_SysObj_Core *core_svc{nullptr};
 
   void init(RGWSI_RADOS *_rados_svc,

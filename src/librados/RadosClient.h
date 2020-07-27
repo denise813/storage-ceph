@@ -42,8 +42,11 @@ class librados::RadosClient : public Dispatcher
 		  std::function<void(CephContext*)> > cct_deleter;
 
 public:
+/** comment by hy 2020-01-15
+ * # 基类中的上下文,是一个指针
+ */
   using Dispatcher::cct;
-  const ConfigProxy& conf;
+  const ConfigProxy& conf; /* 配置文件 */
 private:
   enum {
     DISCONNECTED,
@@ -51,10 +54,18 @@ private:
     CONNECTED,
   } state;
 
+/** comment by hy 2020-01-15
+ * # 初始化需要上下文
+ */
   MonClient monclient;
+/** comment by hy 2020-01-15
+ * # 初始化需要上下文和网络消息
+ */
   MgrClient mgrclient;
   Messenger *messenger;
-
+/** comment by hy 2020-01-15
+ * # rados 客户端实例由 monitor 分配
+ */
   uint64_t instance_id;
 
   bool _dispatch(Message *m);
@@ -65,16 +76,34 @@ private:
   void ms_handle_remote_reset(Connection *con) override;
   bool ms_handle_refused(Connection *con) override;
 
+/** comment by hy 2020-01-15
+ * # 初始化为 NULL
+ */
   Objecter *objecter;
 
   ceph::mutex lock = ceph::make_mutex("librados::RadosClient::lock");
   ceph::condition_variable cond;
+/** comment by hy 2020-01-15
+ * # radosclient 定时任务的全局定时器
+ */
   SafeTimer timer;
+/** comment by hy 2020-01-15
+ * # 初始化为1
+ */
   int refcnt;
 
   version_t log_last_version;
+/** comment by hy 2020-01-15
+ * # log_cb 初始化时为NULL
+ */
   rados_log_callback_t log_cb;
+/** comment by hy 2020-01-15
+ * # log_cb2 初始化时为NULL
+ */
   rados_log_callback2_t log_cb2;
+/** comment by hy 2020-01-15
+ * # log_cb_arg 初始化时为NULL
+ */
   void *log_cb_arg;
   string log_watch;
 
@@ -85,11 +114,17 @@ private:
   int wait_for_osdmap();
 
 public:
+/** comment by hy 2020-01-15
+ * # rados 回调函数调度器
+ */
   Finisher finisher;
 
   explicit RadosClient(CephContext *cct_);
   ~RadosClient() override;
   int ping_monitor(string mon_id, string *result);
+/** comment by hy 2020-01-15
+ * # 初始化流程
+ */
   int connect();
   void shutdown();
 

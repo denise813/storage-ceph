@@ -32,11 +32,23 @@ inline namespace v15_2_0 {
     // embedded slots. This would allow to avoid the "if" in dtor of ptr_node.
     std::aligned_storage<sizeof(ptr_node),
 			 alignof(ptr_node)>::type bptr_storage;
+/** comment by hy 2020-01-13
+ * # 数据指针
+ */
     char *data;
+/** comment by hy 2020-01-13
+ * # 数据长度
+ */
     unsigned len;
+/** comment by hy 2020-01-13
+ * # 引用计数,初始化值为0
+ */
     ceph::atomic<unsigned> nref { 0 };
     int mempool;
-
+/** comment by hy 2020-02-17
+ * # 第一个字段数据的起始低端,开始和结束
+     第二个字段base crc,以及计算后的校验码
+ */
     std::pair<size_t, size_t> last_crc_offset {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
     std::pair<uint32_t, uint32_t> last_crc_val;
 

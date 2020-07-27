@@ -23,6 +23,9 @@ RGWSI_RADOS::~RGWSI_RADOS()
 
 int RGWSI_RADOS::do_start()
 {
+/** comment by hy 2020-03-11
+ * # 我觉得这里可以加上一个防止重复初始化标志
+ */
   int ret = rados.init_with_context(cct);
   if (ret < 0) {
     return ret;
@@ -32,6 +35,12 @@ int RGWSI_RADOS::do_start()
     return ret;
   }
 
+/** comment by hy 2020-03-11
+ * # 启动线程池 组,用于消息的发送
+     发送完成后调用其回调函数
+     rgw_num_async_rados_threads 这里是线程数量
+     默认32个,在红帽版本14.2.4 中没有这个异步操作
+ */
   async_processor.reset(new RGWAsyncRadosProcessor(cct, cct->_conf->rgw_num_async_rados_threads));
   async_processor->start();
 
@@ -108,6 +117,9 @@ void RGWSI_RADOS::Obj::init(const rgw_raw_obj& obj)
 
 int RGWSI_RADOS::Obj::open()
 {
+/** comment by hy 2020-03-11
+ * # 打开pool
+ */
   int r = ref.pool.open();
   if (r < 0) {
     return r;

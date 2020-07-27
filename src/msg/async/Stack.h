@@ -66,6 +66,9 @@ class ServerSocketImpl {
 /// A \c ConnectedSocket represents a full-duplex stream between
 /// two endpoints, a local endpoint and a remote endpoint.
 class ConnectedSocket {
+/** comment by hy 2020-04-23
+ * # 依赖于具体协议栈的实现
+ */
   std::unique_ptr<ConnectedSocketImpl> _csi;
 
  public:
@@ -90,12 +93,18 @@ class ConnectedSocket {
   /// Read the input stream with copy.
   ///
   /// Copy an object returning data sent from the remote endpoint.
+/** comment by hy 2020-04-23
+ * # 读数据
+ */
   ssize_t read(char* buf, size_t len) {
     return _csi->read(buf, len);
   }
   /// Gets the output stream.
   ///
   /// Gets an object that sends data to the remote endpoint.
+/** comment by hy 2020-04-23
+ * # 写数据
+ */
   ssize_t send(bufferlist &bl, bool more) {
     return _csi->send(bl, more);
   }
@@ -134,6 +143,9 @@ class ConnectedSocket {
 
 /// A listening socket, waiting to accept incoming network connections.
 class ServerSocket {
+/** comment by hy 2020-04-23
+ * # 依赖于具体协议栈的实现
+ */
   std::unique_ptr<ServerSocketImpl> _ssi;
  public:
   /// Constructs a \c ServerSocket not corresponding to a connection
@@ -155,6 +167,9 @@ class ServerSocket {
   ///
   /// \Accepts a \ref ConnectedSocket representing the connection, and
   ///          a \ref entity_addr_t describing the remote endpoint.
+/** comment by hy 2020-04-23
+ * # 接受连接请求，成功后第一个参数为已经成功连接的套接字
+ */
   int accept(ConnectedSocket *sock, const SocketOptions &opt, entity_addr_t *out, Worker *w) {
     return _ssi->accept(sock, opt, out, w);
   }
@@ -216,9 +231,15 @@ class Worker {
 
   CephContext *cct;
   PerfCounters *perf_logger;
+/** comment by hy 2020-04-23
+ * # worker的ID
+ */
   unsigned id;
 
   std::atomic_uint references;
+/** comment by hy 2020-04-23
+ * # 处理事件
+ */
   EventCenter center;
 
   Worker(const Worker&) = delete;

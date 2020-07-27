@@ -176,6 +176,12 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service(PAXOS_NUM),
   admin_hook(NULL),
   routed_request_tid(0),
+/** comment by hy 2020-04-24
+ * # 第一个参数是CephContext，第二个是配置文件是否激活tracker，
+     如果没激活，就不会跟踪op
+     第三个参数是分片大小，内部实现的时候做了shard，
+     避免所有op对象记录在同一个链表中，导致性能瓶颈
+ */
   op_tracker(cct, g_conf().get_val<bool>("mon_enable_op_tracker"), 1)
 {
   clog = log_client.create_channel(CLOG_CHANNEL_CLUSTER);
@@ -198,10 +204,17 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
                                     gss_ktfile_client.c_str(), 1));
     ceph_assert(set_result == 0);
   }
-
+/** comment by hy 2020-04-24
+ * # 容忍处理op的最长时间，超过后，会打印警告日志
+     警告日志个数上限
+ */
   op_tracker.set_complaint_and_threshold(
       g_conf().get_val<std::chrono::seconds>("mon_op_complaint_time").count(),
       g_conf().get_val<int64_t>("mon_op_log_threshold"));
+/** comment by hy 2020-04-24
+ * # 设置OpHistory的大小
+     设置OpHistory中op最长停留时间
+ */
   op_tracker.set_history_size_and_duration(
       g_conf().get_val<uint64_t>("mon_op_history_size"),
       g_conf().get_val<std::chrono::seconds>("mon_op_history_duration").count());
@@ -218,7 +231,13 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
   paxos_service[PAXOS_AUTH].reset(new AuthMonitor(this, paxos, "auth"));
   paxos_service[PAXOS_MGR].reset(new MgrMonitor(this, paxos, "mgr"));
   paxos_service[PAXOS_MGRSTAT].reset(new MgrStatMonitor(this, paxos, "mgrstat"));
+/** comment by hy 2020-04-23
+ * # 主要监控monitor的数据存储空间变化情况，查看磁盘是否满了
+ */
   paxos_service[PAXOS_HEALTH].reset(new HealthMonitor(this, paxos, "health"));
+/** comment by hy 2020-04-23
+ * # 存储一些用户自定义的k/v数据
+ */
   paxos_service[PAXOS_CONFIG].reset(new ConfigMonitor(this, paxos, "config"));
 
   config_key_service = new ConfigKeyService(this, paxos);
@@ -807,7 +826,9 @@ int Monitor::preinit()
 
   sync_last_committed_floor = store->get("mon_sync", "last_committed_floor");
   dout(10) << "sync_last_committed_floor " << sync_last_committed_floor << dendl;
-
+/** comment by hy 2020-04-23
+ * # Paxos::init->PaxosService::init->（OSDMonitorXX)::init
+ */
   init_paxos();
 
   if (is_keyring_required()) {
@@ -904,6 +925,9 @@ int Monitor::init()
   mgrmon()->prime_mgr_client();
 
   state = STATE_PROBING;
+/** comment by hy 2020-04-23
+ * # 触发
+ */
   bootstrap();
   // add features of myself into feature_map
   session_map.feature_map.add_mon(con_self->get_features());
@@ -913,13 +937,21 @@ int Monitor::init()
 void Monitor::init_paxos()
 {
   dout(10) << __func__ << dendl;
+/** comment by hy 2020-04-23
+ * # 初始化paxos
+ */
   paxos->init();
 
   // init services
   for (auto& svc : paxos_service) {
+/** comment by hy 2020-04-23
+ * # 初始化服务，只有LogMonitor实现了init函数，做了简单初始化
+ */
     svc->init();
   }
-
+/** comment by hy 2020-04-23
+ * # 更新各服务信息
+ */
   refresh_from_paxos(NULL);
 }
 
@@ -942,6 +974,10 @@ void Monitor::refresh_from_paxos(bool *need_bootstrap)
   }
 
   for (auto& svc : paxos_service) {
+/** comment by hy 2020-04-23
+ * # 更新 PaxosService::refresh ->
+     PaxosService::update_from_paxos
+ */
     svc->refresh(need_bootstrap);
   }
   for (auto& svc : paxos_service) {
@@ -1120,6 +1156,9 @@ void Monitor::respawn()
 void Monitor::bootstrap()
 {
   dout(10) << "bootstrap" << dendl;
+/** comment by hy 2020-04-23
+ * # 等待writing的数据完成
+ */
   wait_for_paxos_write();
 
   sync_reset_requester();
@@ -1180,7 +1219,9 @@ void Monitor::bootstrap()
 
   // reset
   state = STATE_PROBING;
-
+/** comment by hy 2020-04-23
+ * # 重置paxos及其服务
+ */
   _reset();
 
   // sync store
@@ -1191,6 +1232,9 @@ void Monitor::bootstrap()
   }
 
   // singleton monitor?
+/** comment by hy 2020-04-23
+ * # 只有一个monitor，没必要联系其他monitor进行leader选举
+ */
   if (monmap->size() == 1 && rank == 0) {
     win_standalone_election();
     return;
@@ -1204,6 +1248,9 @@ void Monitor::bootstrap()
 
   // probe monitors
   dout(10) << "probing other monitors" << dendl;
+/** comment by hy 2020-04-23
+ * # 发送消息，收集信息
+ */
   for (unsigned i = 0; i < monmap->size(); i++) {
     if ((int)i != rank)
       send_mon_message(
@@ -1304,10 +1351,15 @@ void Monitor::_reset()
   quorum_feature_map.clear();
 
   scrub_reset();
-
+/** comment by hy 2020-04-23
+ * # 重启paxos
+ */
   paxos->restart();
 
   for (auto& svc : paxos_service) {
+/** comment by hy 2020-04-23
+ * # 重启服务
+ */
     svc->restart();
   }
 }
@@ -2014,6 +2066,9 @@ void Monitor::handle_probe_reply(MonOpRequestRef op)
 	     << sync_last_committed_floor << ", ignoring"
 	     << dendl;
   } else {
+/** comment by hy 2020-04-23
+ * # 同步数据
+ */
     if (paxos->get_version() < m->paxos_first_version &&
 	m->paxos_first_version > 1) {  // no need to sync if we're 0 and they start at 1.
       dout(10) << " peer paxos first versions [" << m->paxos_first_version
@@ -2080,7 +2135,9 @@ void Monitor::handle_probe_reply(MonOpRequestRef op)
       dout(10) << " mostly ignoring mon." << m->name << ", not part of monmap" << dendl;
       return;
     }
-
+/** comment by hy 2020-04-23
+ * # 满足条件，开始选举
+ */
     unsigned need = monmap->min_quorum_size();
     dout(10) << " outside_quorum now " << outside_quorum << ", need " << need << dendl;
     if (outside_quorum.size() >= need) {
@@ -2117,6 +2174,9 @@ void Monitor::start_election()
   logger->inc(l_mon_election_call);
 
   clog->info() << "mon." << name << " calling monitor election";
+/** comment by hy 2020-04-23
+ * # 开始选举
+ */
   elector.call_election();
 }
 
@@ -2177,6 +2237,9 @@ void Monitor::win_election(epoch_t epoch, const set<int>& active, uint64_t featu
 	   << " min_mon_release " << min_mon_release
            << dendl;
   ceph_assert(is_electing());
+/** comment by hy 2020-04-23
+ * # 更新状态
+ */
   state = STATE_LEADER;
   leader_since = ceph_clock_now();
   quorum_since = mono_clock::now();
@@ -2192,14 +2255,22 @@ void Monitor::win_election(epoch_t epoch, const set<int>& active, uint64_t featu
       << " in quorum (ranks " << quorum << ")";
 
   set_leader_commands(get_local_commands(mon_features));
-
+/** comment by hy 2020-04-23
+ * # 初始化leader的paxos
+ */
   paxos->leader_init();
   // NOTE: tell monmap monitor first.  This is important for the
   // bootstrap case to ensure that the very first paxos proposal
   // codifies the monmap.  Otherwise any manner of chaos can ensue
   // when monitors are call elections or participating in a paxos
   // round without agreeing on who the participants are.
+/** comment by hy 2020-04-23
+ * # active服务
+ */
   monmon()->election_finished();
+/** comment by hy 2020-04-23
+ * # active服务
+ */
   _finish_svc_election();
 
   logger->inc(l_mon_election_win);
@@ -2224,11 +2295,22 @@ void Monitor::win_election(epoch_t epoch, const set<int>& active, uint64_t featu
     encode(m, bl);
     t->put(MONITOR_STORE_PREFIX, "last_metadata", bl);
   }
-
+/** comment by hy 2020-04-23
+ * # 完成
+ */
   finish_election();
+/** comment by hy 2020-04-23
+ * # 启动leader的服务
+ */
   if (monmap->size() > 1 &&
       monmap->get_epoch() > 0) {
+/** comment by hy 2020-04-23
+ * # leader需要检查monitor时钟倾斜
+ */
     timecheck_start();
+/** comment by hy 2020-04-23
+ * # 磁盘状态检查
+ */
     health_tick_start();
 
     // Freshen the health status before doing health_to_clog in case
@@ -2258,6 +2340,9 @@ void Monitor::lose_election(epoch_t epoch, set<int> &q, int l,
                             const mon_feature_t& mon_features,
 			    ceph_release_t min_mon_release)
 {
+/** comment by hy 2020-04-23
+ * # 更新状态
+ */
   state = STATE_PEON;
   leader_since = utime_t();
   quorum_since = mono_clock::now();
@@ -2272,12 +2357,19 @@ void Monitor::lose_election(epoch_t epoch, set<int> &q, int l,
            << " mon_features are " << quorum_mon_features
 	   << " min_mon_release " << min_mon_release
            << dendl;
-
+/** comment by hy 2020-04-23
+ * # 初始化peon的paxos
+ */
   paxos->peon_init();
+/** comment by hy 2020-04-23
+ * # active服务
+ */
   _finish_svc_election();
 
   logger->inc(l_mon_election_lose);
-
+/** comment by hy 2020-04-23
+ * # 完成
+ */
   finish_election();
 }
 
@@ -2882,6 +2974,19 @@ void Monitor::log_health(
   }
 }
 
+/*****************************************************************************
+ * 函 数 名  : Monitor.get_cluster_status
+ * 负 责 人  : hy
+ * 创建日期  : 2020年4月22日
+ * 函数功能  : ceph -s
+ * 输入参数  : stringstream &ss   
+               Formatter *f       
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void Monitor::get_cluster_status(stringstream &ss, Formatter *f)
 {
   if (f)
@@ -2906,6 +3011,9 @@ void Monitor::get_cluster_status(stringstream &ss, Formatter *f)
 	std::chrono::duration_cast<std::chrono::seconds>(
 	  mono_clock::now() - quorum_since).count());
     }
+/** comment by hy 2020-04-22
+ * # 打印信息
+ */
     f->open_object_section("monmap");
     monmap->dump_summary(f);
     f->close_section();
@@ -3152,6 +3260,9 @@ void Monitor::handle_tell_command(MonOpRequestRef op)
     return reply_tell_command(op, -EACCES, "insufficient caps");
   }
   // pass it to asok
+/** comment by hy 2020-03-26
+ * # 管理命令
+ */
   cct->get_admin_socket()->queue_tell_command(m);
 }
 
@@ -3255,6 +3366,9 @@ void Monitor::handle_command(MonOpRequestRef op)
   if (!mgr_cmds.empty()) {
     mgr_cmd = _get_moncommand(prefix, mgr_cmds);
   }
+/** comment by hy 2020-05-04
+ * # 判断是不是主控命令,如果不是就走mgr
+ */
   leader_cmd = _get_moncommand(prefix, leader_mon_commands);
   if (!leader_cmd) {
     leader_cmd = mgr_cmd;
@@ -3344,6 +3458,9 @@ void Monitor::handle_command(MonOpRequestRef op)
   // new.  see bottom of MonCommands.h.  we need to handle both (1)
   // pre-octopus clients and (2) octopus clients with a mix of pre-octopus
   // and octopus mons.
+/** comment by hy 2020-03-26
+ * # 管理命令实现的前缀操作
+ */
   if ((!HAVE_FEATURE(m->get_connection()->get_features(), SERVER_OCTOPUS) ||
        monmap->min_mon_release < ceph_release_t::octopus) &&
       (prefix == "injectargs" ||
@@ -3368,6 +3485,9 @@ void Monitor::handle_command(MonOpRequestRef op)
     return;
   }
 
+/* comment by hy 2020-03-26
+ * # 指定命令时mgr的
+ */
   if (mon_cmd->is_mgr()) {
     const auto& hdr = m->get_header();
     uint64_t size = hdr.front_len + hdr.middle_len + hdr.data_len;
@@ -3529,6 +3649,9 @@ void Monitor::handle_command(MonOpRequestRef op)
 	rdata.append(plain);
       }
     } else if (prefix == "df") {
+/** comment by hy 2020-03-26
+ * # rados df 流程
+ */
       bool verbose = (detail == "detail");
       if (f)
         f->open_object_section("stats");
@@ -4221,6 +4344,12 @@ void Monitor::waitlist_or_zap_client(MonOpRequestRef op)
   Message *m = op->get_req();
   MonSession *s = op->get_session();
   ConnectionRef con = op->get_connection();
+/** comment by hy 2020-01-22
+ * # 判断消息接收后小于上一次的续约时间
+         将消息包装成重试操作,放入等待仲裁链表中,等待tick线程重复分发
+         并且给请求打上等待标签
+     否则移除会话操作标记为 zap(销毁)
+ */
   utime_t too_old = ceph_clock_now();
   too_old -= g_ceph_context->_conf->mon_lease;
   if (m->get_recv_stamp() > too_old &&
@@ -4243,32 +4372,53 @@ void Monitor::waitlist_or_zap_client(MonOpRequestRef op)
 
 void Monitor::_ms_dispatch(Message *m)
 {
+/** comment by hy 2020-01-22
+ * # 正在停止
+ */
   if (is_shutdown()) {
     m->put();
     return;
   }
 
+/** comment by hy 2020-01-22
+ * # 解析mon头
+ */
   MonOpRequestRef op = op_tracker.create_request<MonOpRequest>(m);
   bool src_is_mon = op->is_src_mon();
   op->mark_event("mon:_ms_dispatch");
+/** comment by hy 2020-01-22
+ * # 获取连接状态
+ */
   MonSession *s = op->get_session();
   if (s && s->closed) {
     return;
   }
 
+/** comment by hy 2020-01-22
+ * # 消息来自于其他mon
+ */
   if (src_is_mon && s) {
     ConnectionRef con = m->get_connection();
+/** comment by hy 2020-01-22
+ * # 这里是连接特性变化处理流程
+ */
     if (con->get_messenger() && con->get_features() != s->con_features) {
       // only update features if this is a non-anonymous connection
       dout(10) << __func__ << " feature change for " << m->get_source_inst()
                << " (was " << s->con_features
                << ", now " << con->get_features() << ")" << dendl;
+/** comment by hy 2020-01-22
+ * # 关闭现在的连接,等待建立一个新连接
+ */
       // connection features changed - recreate session.
       if (s->con && s->con != con) {
         dout(10) << __func__ << " connection for " << m->get_source_inst()
                  << " changed from session; mark down and replace" << dendl;
         s->con->mark_down();
       }
+/** comment by hy 2020-01-22
+ * # 清理资源
+ */
       if (s->item.is_on_list()) {
         // forwarded messages' sessions are not in the sessions map and
         // exist only while the op is being handled.
@@ -4279,6 +4429,13 @@ void Monitor::_ms_dispatch(Message *m)
     }
   }
 
+/** comment by hy 2020-01-22
+ * # 没有建立对应的会话的前提下
+     消息不来自与 mon,
+         且不是是认证消息,获取monmap 消息 ping mon消息
+         丢弃消息
+     否则建立会话
+ */
   if (!s) {
     // if the sender is not a monitor, make sure their first message for a
     // session is an MAuth.  If it is not, assume it's a stray message,
@@ -4293,6 +4450,9 @@ void Monitor::_ms_dispatch(Message *m)
       return;
     }
 
+/** comment by hy 2020-01-22
+ * # 获取连接建立会话,设置主链接
+ */
     ConnectionRef con = m->get_connection();
     {
       std::lock_guard l(session_map_lock);
@@ -4323,7 +4483,9 @@ void Monitor::_ms_dispatch(Message *m)
   }
 
   ceph_assert(s);
-
+/** comment by hy 2020-01-22
+ * # mon_session_timeout = 300s
+ */
   s->session_timeout = ceph_clock_now();
   s->session_timeout += g_conf()->mon_session_timeout;
 
@@ -4333,12 +4495,21 @@ void Monitor::_ms_dispatch(Message *m)
   dout(20) << " entity " << s->entity_name
 	   << " caps " << s->caps.get_str() << dendl;
 
+/** comment by hy 2020-01-22
+ * # 当前处于同步中
+         本会话还未进行认证,
+         或者处于仲裁中,且不是ping这种命令
+         这些都是要卡，在一个续约周期的
+ */
   if ((is_synchronizing() ||
        (!s->authenticated && !exited_quorum.is_zero())) &&
       !src_is_mon &&
       m->get_type() != CEPH_MSG_PING) {
     waitlist_or_zap_client(op);
   } else {
+/** comment by hy 2020-04-23
+ * # 
+ */
     dispatch_op(op);
   }
   return;
@@ -4357,6 +4528,13 @@ void Monitor::dispatch_op(MonOpRequestRef op)
   /* we will consider the default type as being 'monitor' until proven wrong */
   op->set_type_monitor();
   /* deal with all messages that do not necessarily need caps */
+/** comment by hy 2020-04-23
+ * # dispatch-+->perprocess_query
+             -+->prepare_update
+             -+->propose_pending
+             -+->encode_pending
+             -+->refresh-+->update_from_poxos
+ */
   switch (op->get_req()->get_type()) {
     // auth
     case MSG_MON_GLOBAL_ID:
@@ -4375,6 +4553,9 @@ void Monitor::dispatch_op(MonOpRequestRef op)
       return;
   }
 
+/** comment by hy 2020-01-22
+ * # 以下消息都要经过认证后才可执行
+ */
   if (!op->get_session()->authenticated) {
     dout(5) << __func__ << " " << op->get_req()->get_source_inst()
             << " is not authenticated, dropping " << *(op->get_req())
@@ -4395,6 +4576,9 @@ void Monitor::dispatch_op(MonOpRequestRef op)
       return handle_mon_metadata(op);
 
     case CEPH_MSG_MON_SUBSCRIBE:
+/** comment by hy 2020-03-20
+ * # 如 订阅 osdmap
+ */
       /* FIXME: check what's being subscribed, filter accordingly */
       handle_subscribe(op);
       return;
@@ -4448,6 +4632,9 @@ void Monitor::dispatch_op(MonOpRequestRef op)
 
     // handle_command() does its own caps checking
     case MSG_MON_COMMAND:
+/** comment by hy 2020-03-20
+ * # 处理命令接口
+ */
       op->set_type_command();
       handle_command(op);
       return;
@@ -5079,6 +5266,9 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
 
     {
       std::lock_guard l(session_map_lock);
+/** comment by hy 2020-03-20
+ * # 加入订阅表
+ */
       session_map.add_update_sub(s, p->first, p->second.start,
 				 p->second.flags & CEPH_SUBSCRIBE_ONETIME,
 				 m->get_connection()->has_feature(CEPH_FEATURE_INCSUBOSDMAP));
@@ -5092,6 +5282,9 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
         mdsmon()->check_sub(sub);
       }
     } else if (p->first == "osdmap") {
+/** comment by hy 2020-03-20
+ * # osd map
+ */
       if ((int)s->is_capable("osd", MON_CAP_R)) {
 	if (s->osd_epoch > p->second.start) {
 	  // client needs earlier osdmaps on purpose, so reset the sent epoch
@@ -5684,6 +5877,9 @@ void Monitor::tick()
       if (s->session_timeout < now && s->con) {
 	// check keepalive, too
 	s->session_timeout = s->con->get_last_keepalive();
+/** comment by hy 2019-12-30
+ * # 检查客户端 keepalive mon_session_timeout = def(300)
+ */
 	s->session_timeout += g_conf()->mon_session_timeout;
       }
       if (s->session_timeout < now) {

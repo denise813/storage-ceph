@@ -80,7 +80,14 @@ int RGWSI_MetaBackend::do_mutate(RGWSI_MetaBackend::Context *ctx,
 {
   int ret;
 
+/** comment by hy 2020-03-08
+ * # 
+ */
   if (generic_prepare) {
+/** comment by hy 2020-03-15
+ * # 获取对应的log数据
+     并添加操作版本
+ */
     ret = prepare_mutate(ctx, key, mtime, objv_tracker, y);
     if (ret < 0 ||
 	ret == STATUS_NO_APPLY) {
@@ -88,16 +95,26 @@ int RGWSI_MetaBackend::do_mutate(RGWSI_MetaBackend::Context *ctx,
     }
   }
 
+/** comment by hy 2020-03-08
+ * # 
+ */
   RGWMetadataLogData log_data;
   ret = pre_modify(ctx, key, log_data, objv_tracker, op_type, y);
   if (ret < 0) {
     return ret;
   }
 
+/** comment by hy 2020-03-15
+ * # 回调函数
+     创建bucket
+     RGWSI_MetaBackend_SObj::put_entry
+ */
   ret = f();
 
   /* cascading ret into post_modify() */
-
+/** comment by hy 2020-03-08
+ * # 无
+ */
   ret = post_modify(ctx, key, log_data, objv_tracker, ret, y);
   if (ret < 0)
     return ret;
@@ -124,6 +141,9 @@ int RGWSI_MetaBackend::put(Context *ctx,
     return put_entry(ctx, key, params, objv_tracker, y);
   };
 
+/** comment by hy 2020-03-15
+ * # 
+ */
   return do_mutate(ctx, key, params.mtime, objv_tracker,
                 MDLOG_STATUS_WRITE,
                 y,

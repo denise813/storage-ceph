@@ -952,6 +952,9 @@ WRITE_CLASS_ENCODER(RGWUserInfo)
 struct rgw_raw_obj {
   rgw_pool pool;
   std::string oid;
+/** comment by hy 2020-03-11
+ * # oid 里面的key信息
+ */
   std::string loc;
 
   rgw_raw_obj() {}
@@ -1281,6 +1284,9 @@ struct req_info {
   RGWHTTPArgs args;
   meta_map_t x_meta_map;
 
+/** comment by hy 2020-03-15
+ * # 主机名称
+ */
   string host;
   const char *method;
   string script_uri;
@@ -1300,6 +1306,9 @@ typedef cls_rgw_obj_key rgw_obj_index_key;
 
 struct rgw_obj_key {
   string name;
+/** comment by hy 2020-03-19
+ * # 用于标识版本信息
+ */
   string instance;
   string ns;
 
@@ -1612,6 +1621,9 @@ class RGWSysObjectCtx;
 struct req_state : DoutPrefixProvider {
   CephContext *cct;
   rgw::io::BasicClient *cio{nullptr};
+/** comment by hy 2020-02-28
+ * # 对应一个枚举类型
+ */
   http_op op{OP_UNKNOWN};
   RGWOpType op_type{};
   bool content_started{false};

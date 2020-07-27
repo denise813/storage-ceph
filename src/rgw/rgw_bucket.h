@@ -608,6 +608,9 @@ class RGWBucketCtl
 
   struct Svc {
     RGWSI_Zone *zone{nullptr};
+/** comment by hy 2020-03-08
+ * # RGWSI_Bucket_SObj
+ */
     RGWSI_Bucket *bucket{nullptr};
     RGWSI_Bucket_Sync *bucket_sync{nullptr};
     RGWSI_BucketIndex *bi{nullptr};

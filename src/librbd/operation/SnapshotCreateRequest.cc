@@ -46,6 +46,9 @@ void SnapshotCreateRequest<I>::send_op() {
     return;
   }
 
+/** comment by hy 2020-02-22
+ * # 
+ */
   send_suspend_requests();
 }
 
@@ -56,6 +59,9 @@ void SnapshotCreateRequest<I>::send_suspend_requests() {
   ldout(cct, 5) << this << " " << __func__ << dendl;
 
   // TODO suspend (shrink) resize to ensure consistent RBD mirror
+/** comment by hy 2020-02-22
+ * # 用来阻塞RBD的写操作
+ */
   send_suspend_aio();
 }
 
@@ -78,6 +84,9 @@ void SnapshotCreateRequest<I>::send_suspend_aio() {
   CephContext *cct = image_ctx.cct;
   ldout(cct, 5) << this << " " << __func__ << dendl;
 
+/** comment by hy 2020-02-22
+ * # 阻塞RBD的写操作
+ */
   image_ctx.io_work_queue->block_writes(create_context_callback<
     SnapshotCreateRequest<I>,
     &SnapshotCreateRequest<I>::handle_suspend_aio>(this));
@@ -105,6 +114,9 @@ void SnapshotCreateRequest<I>::send_append_op_event() {
   if (!this->template append_op_event<
         SnapshotCreateRequest<I>,
         &SnapshotCreateRequest<I>::handle_append_op_event>(this)) {
+/** comment by hy 2020-02-22
+ * # 向mon申请一个snap_seq
+ */
     send_allocate_snap_id();
     return;
   }
@@ -158,6 +170,9 @@ Context *SnapshotCreateRequest<I>::handle_allocate_snap_id(int *result) {
     return this->create_context_finisher(*result);
   }
 
+/** comment by hy 2020-02-22
+ * # 添加 snapshot 到 rbd的元数据 head_obj
+ */
   send_create_snap();
   return nullptr;
 }
@@ -180,6 +195,9 @@ void SnapshotCreateRequest<I>::send_create_snap() {
   m_parent_info = image_ctx.parent_md;
 
   librados::ObjectWriteOperation op;
+/** comment by hy 2020-02-22
+ * # 做快照ObjectMap 相关处理
+ */
   if (image_ctx.old_format) {
     cls_client::old_snapshot_add(&op, m_snap_id, m_snap_name);
   } else {

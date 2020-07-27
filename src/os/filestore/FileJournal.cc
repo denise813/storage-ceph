@@ -807,10 +807,16 @@ int FileJournal::prepare_multi_write(bufferlist& bl, uint64_t& orig_ops, uint64_
 
   while (!writeq_empty()) {
     list<write_item> items;
+/** comment by hy 2020-02-22
+ * # 从队列中取出所有条目
+ */
     batch_pop_write(items);
     list<write_item>::iterator it = items.begin();
     while (it != items.end()) {
       uint64_t bytes = it->bl.length();
+/** comment by hy 2020-02-22
+ * # 将单个条目合转化为磁盘日志格式
+ */
       int r = prepare_single_write(*it, bl, queue_pos, orig_ops, orig_bytes);
       if (r == 0) { // prepare ok, delete it
 	items.erase(it++);
@@ -903,9 +909,14 @@ void FileJournal::queue_completions_thru(uint64_t seq)
   list<completion_item> items;
   batch_pop_completions(items);
   list<completion_item>::iterator it = items.begin();
+/** comment by hy 2020-04-23
+ * # journal的一次写可以同时写入多个op请求日志，
+     所以这里是循环理所有已经完成的op
+     将回调全部放入finisher线程的队列
+ */
   while (it != items.end()) {
     completion_item& next = *it;
-    if (next.seq > seq)
+    if (next.seq > seq) //sequence判断是否已经写入完成
       break;
     utime_t lat = now;
     lat -= next.start;
@@ -916,7 +927,13 @@ void FileJournal::queue_completions_thru(uint64_t seq)
     if (logger) {
       logger->tinc(l_filestore_journal_latency, lat);
     }
+/** comment by hy 2020-04-23
+ * # 放入finisher队列，等待回调
+ */
     if (next.finish)
+/** comment by hy 2020-04-23
+ * # finisher线程实际上是JournalingObjectStore中的finisher
+ */
       finisher->queue(next.finish);
     if (next.tracked_op) {
       next.tracked_op->mark_event("journaled_completion_queued");
@@ -936,6 +953,9 @@ int FileJournal::prepare_single_write(write_item &next_write, bufferlist& bl, of
   bufferlist &ebl = next_write.bl;
   off64_t size = ebl.length();
 
+/** comment by hy 2020-02-22
+ * # 检查磁盘空间
+ */
   int r = check_for_full(seq, queue_pos, size);
   if (r < 0)
     return r;   // ENOSPC or EAGAIN
@@ -952,6 +972,9 @@ int FileJournal::prepare_single_write(write_item &next_write, bufferlist& bl, of
   unsigned magic1_offset = offsetof(entry_header_t, magic1);
   unsigned magic2_offset = offsetof(entry_header_t, magic2);
 
+/** comment by hy 2020-02-22
+ * # 头端 entry_header_t 封装
+ */
   bufferptr headerptr = ebl.buffers().front();
   uint64_t _seq = seq;
   uint64_t _queue_pos = queue_pos;
@@ -960,6 +983,9 @@ int FileJournal::prepare_single_write(write_item &next_write, bufferlist& bl, of
   headerptr.copy_in(magic1_offset, sizeof(uint64_t), (char *)&_queue_pos);
   headerptr.copy_in(magic2_offset, sizeof(uint64_t), (char *)&magic2);
 
+/** comment by hy 2020-02-22
+ * # 尾端 entry_header_t 封装
+ */
   bufferptr footerptr = ebl.buffers().back();
   unsigned post_offset  = footerptr.length() - sizeof(entry_header_t);
   footerptr.copy_in(post_offset + seq_offset, sizeof(uint64_t), (char *)&_seq);
@@ -972,9 +998,18 @@ int FileJournal::prepare_single_write(write_item &next_write, bufferlist& bl, of
     next_write.tracked_op->journal_trace.event("prepare_single_write");
   }
 
+/** comment by hy 2020-02-22
+ * # 记录日志在日志文件中的结束偏移
+ */
   journalq.push_back(pair<uint64_t,off64_t>(seq, queue_pos));
+/** comment by hy 2020-02-22
+ * # 更新当前日志的序号
+ */
   writing_seq = seq;
 
+/** comment by hy 2020-02-22
+ * # 当日志达到最大时,从日志头开始处理
+ */
   queue_pos += size;
   if (queue_pos >= header.max_size)
     queue_pos = queue_pos + get_top() - header.max_size;
@@ -1020,6 +1055,9 @@ void FileJournal::do_write(bufferlist& bl)
     return;
 
   buffer::ptr hbp;
+/** comment by hy 2020-02-22
+ * # 按照指定间隔条日志后必须插入一条head
+ */
   if (cct->_conf->journal_write_header_frequency &&
       (((++journaled_since_start) %
 	cct->_conf->journal_write_header_frequency) == 0)) {
@@ -1041,6 +1079,9 @@ void FileJournal::do_write(bufferlist& bl)
   off64_t pos = write_pos;
 
   // Adjust write_pos
+/** comment by hy 2020-02-22
+ * # 该日志数据超过日志文件最大长度就需要分两段,尾部写完写头部
+ */
   write_pos += bl.length();
   if (write_pos >= header.max_size)
     write_pos = write_pos - header.max_size + get_top();
@@ -1109,6 +1150,9 @@ void FileJournal::do_write(bufferlist& bl)
     }
   }
 
+/** comment by hy 2020-02-22
+ * # 不是直接写,就需要日志数据刷盘
+ */
   if (!directio) {
     dout(20) << "do_write fsync" << dendl;
 
@@ -1151,6 +1195,9 @@ void FileJournal::do_write(bufferlist& bl)
   ceph_assert(write_pos == pos);
   ceph_assert(write_pos % header.alignment == 0);
 
+/** comment by hy 2020-02-22
+ * # 更新提交完成的日志序号
+ */
   {
     std::lock_guard locker{finisher_lock};
     journaled_seq = writing_seq;
@@ -1165,6 +1212,9 @@ void FileJournal::do_write(bufferlist& bl)
 	dout(20) << "do_write NOT queueing finishers through seq " << journaled_seq
 		 << " due to completion plug" << dendl;
       } else {
+/** comment by hy 2020-02-22
+ * # 日志没满，将completion_item放入完成队列,等待trim
+ */
 	dout(20) << "do_write queueing finishers through seq " << journaled_seq << dendl;
 	queue_completions_thru(journaled_seq);
       }
@@ -1238,6 +1288,10 @@ void FileJournal::write_thread_entry()
     uint64_t orig_bytes = 0;
 
     bufferlist bl;
+/** comment by hy 2020-02-22
+ * # 去除所有数据,合并打包的一个bufferlist中,
+     异常合并的日志条目数最大数由配置文件指定
+ */
     int r = prepare_multi_write(bl, orig_ops, orig_bytes);
     // Don't care about journal full if stoppping, so drop queue and
     // possibly let header get written and loop above to notice stop
@@ -1264,11 +1318,16 @@ void FileJournal::write_thread_entry()
       logger->inc(l_filestore_journal_wr_bytes, bl.length());
     }
 
+/** comment by hy 2020-02-22
+ * # 开始写磁盘数据
+      do_write 同步 io
+      do_aio_write 异步io 必须直写
+ */
 #ifdef HAVE_LIBAIO
     if (aio)
-      do_aio_write(bl);
+      do_aio_write(bl); //异步的方式
     else
-      do_write(bl);
+      do_write(bl); //同步的方式
 #else
     do_write(bl);
 #endif
@@ -1315,6 +1374,9 @@ void FileJournal::do_aio_write(bufferlist& bl)
     ceph_assert(first.length() + second.length() == bl.length());
     dout(10) << "do_aio_write wrapping, first bit at " << pos << "~" << first.length() << dendl;
 
+/** comment by hy 2020-02-23
+ * # 写入操作
+ */
     if (write_aio_bl(pos, first, 0)) {
       derr << "FileJournal::do_aio_write: write_aio_bl(pos=" << pos
 	   << ") failed" << dendl;
@@ -1372,6 +1434,9 @@ int FileJournal::write_aio_bl(off64_t& pos, bufferlist& bl, uint64_t seq)
 
   while (bl.length() > 0) {
     int max = std::min<int>(bl.get_num_buffers(), IOV_MAX-1);
+/** comment by hy 2020-02-23
+ * # 转化为iovec
+ */
     iovec *iov = new iovec[max];
     int n = 0;
     unsigned len = 0;
@@ -1392,6 +1457,9 @@ int FileJournal::write_aio_bl(off64_t& pos, bufferlist& bl, uint64_t seq)
     aio_info& aio = aio_queue.back();
     aio.iov = iov;
 
+/** comment by hy 2020-02-23
+ * # 异步提交
+ */
     io_prep_pwritev(&aio.iocb, fd, aio.iov, n, pos);
 
     dout(20) << "write_aio_bl .. " << aio.off << "~" << aio.len
@@ -1412,6 +1480,9 @@ int FileJournal::write_aio_bl(off64_t& pos, bufferlist& bl, uint64_t seq)
     int attempts = 16;
     int delay = 125;
     do {
+/** comment by hy 2020-02-23
+ * # 开始提交
+ */
       int r = io_submit(aio_ctx, 1, &piocb);
       dout(20) << "write_aio_bl io_submit return value: " << r << dendl;
       if (r < 0) {
@@ -1431,6 +1502,9 @@ int FileJournal::write_aio_bl(off64_t& pos, bufferlist& bl, uint64_t seq)
     pos += cur_len;
   }
   aio_lock.lock();
+/** comment by hy 2020-02-23
+ * # 唤醒检查完成线程
+ */
   write_finish_cond.notify_all();
   aio_lock.unlock();
   return 0;
@@ -1455,6 +1529,9 @@ void FileJournal::write_finish_thread_entry()
 
     dout(20) << __func__ << " waiting for aio(s)" << dendl;
     io_event event[16];
+/** comment by hy 2020-02-23
+ * # 检查事件的完成
+ */
     int r = io_getevents(aio_ctx, 1, 16, event, NULL);
     if (r < 0) {
       if (r == -EINTR) {
@@ -1469,6 +1546,10 @@ void FileJournal::write_finish_thread_entry()
     }
 
     {
+/** comment by hy 2020-02-23
+ * # 对每个完成的事件获取相应的aio_info结构
+     检查写入的数据是否是aio的数据长度
+ */
       std::lock_guard locker{aio_lock};
       for (int i=0; i<r; i++) {
 	aio_info *ai = (aio_info *)event[i].obj;
@@ -1479,8 +1560,15 @@ void FileJournal::write_finish_thread_entry()
 	}
 	dout(10) << __func__ << " aio " << ai->off
 		 << "~" << ai->len << " done" << dendl;
+/** comment by hy 2020-02-23
+ * # 标记aio完成
+ */
 	ai->done = true;
       }
+/** comment by hy 2020-02-23
+ * # 检查aio_queue完成情况，多条日志可能并发完成
+     为了保证顺序完成
+ */
       check_aio_completion();
     }
   }
@@ -1544,6 +1632,9 @@ int FileJournal::prepare_entry(vector<ObjectStore::Transaction>& tls, bufferlist
   int data_len = cct->_conf->journal_align_min_size - 1;
   int data_align = -1; // -1 indicates that we don't care about the alignment
   bufferlist bl;
+/** comment by hy 2020-02-07
+ * # ObjectStore::Transaction = ceph::os::Transaction
+ */
   for (vector<ObjectStore::Transaction>::iterator p = tls.begin();
       p != tls.end(); ++p) {
    if ((int)(*p).get_data_length() > data_len) {
@@ -1605,7 +1696,9 @@ void FileJournal::submit_entry(uint64_t seq, bufferlist& e, uint32_t orig_len,
     logger->inc(l_filestore_journal_queue_bytes, orig_len);
     logger->inc(l_filestore_journal_queue_ops, 1);
   }
-
+/** comment by hy 2020-02-27
+ * # 日志限流
+ */
   throttle.register_throttle_seq(seq, e.length());
   if (logger) {
     logger->inc(l_filestore_journal_ops, 1);
@@ -1621,6 +1714,9 @@ void FileJournal::submit_entry(uint64_t seq, bufferlist& e, uint32_t orig_len,
     }
   }
   {
+/** comment by hy 2020-04-23
+ * # 注意锁的顺序
+ */
     std::lock_guard l1{writeq_lock};
 #ifdef HAVE_LIBAIO
     std::lock_guard l2{aio_lock};
@@ -1633,11 +1729,27 @@ void FileJournal::submit_entry(uint64_t seq, bufferlist& e, uint32_t orig_len,
     aio_cond.notify_all();
 #endif
 
+/** comment by hy 2020-02-06
+ * # write线程执行完成后，会处理这里的completion
+     oncommit = ondisk
+     构造 completion_item 条目 
+ */
     completions.push_back(
       completion_item(
 	seq, oncommit, ceph_clock_now(), osd_op));
+/** comment by hy 2020-02-22
+ * # 构造 write_item 条目
+ */
     if (writeq.empty())
+/** comment by hy 2020-02-22
+ * # 唤醒写线程 write_thread 入口函数 write_thread_entry
+     write_thread_entry 将日志数据写入日志磁盘
+     触发上一次的写?
+ */
       writeq_cond.notify_all();
+/** comment by hy 2020-04-23
+ * # 放入队列，等待write线程执行
+ */
     writeq.push_back(write_item(seq, e, orig_len, osd_op));
     if (osd_op)
       osd_op->journal_trace.keyval("queue depth", writeq.size());
@@ -1758,6 +1870,9 @@ void FileJournal::committed_thru(uint64_t seq)
     logger->dec(l_filestore_journal_bytes, released.second);
   }
 
+/** comment by hy 2020-02-23
+ * # 确保当前同步的seq比上次大
+ */
   if (seq < last_committed_seq) {
     dout(5) << "committed_thru " << seq << " < last_committed_seq " << last_committed_seq << dendl;
     ceph_assert(seq >= last_committed_seq);
@@ -1768,6 +1883,9 @@ void FileJournal::committed_thru(uint64_t seq)
     return;
   }
 
+/** comment by hy 2020-02-23
+ * # 更新
+ */
   dout(5) << "committed_thru " << seq << " (last_committed_seq " << last_committed_seq << ")" << dendl;
   last_committed_seq = seq;
 
@@ -1806,6 +1924,9 @@ void FileJournal::committed_thru(uint64_t seq)
     }
   }
 
+/** comment by hy 2020-02-23
+ * # 由于head更新,日志必须把head写入磁盘
+ */
   must_write_header = true;
   print_header(header);
 
@@ -1818,6 +1939,9 @@ void FileJournal::committed_thru(uint64_t seq)
     pop_write();
   }
 
+/** comment by hy 2020-02-23
+ * # 日志可能写满,唤醒写线程释放更多空间
+ */
   commit_cond.notify_all();
 
   dout(10) << "committed_thru done" << dendl;

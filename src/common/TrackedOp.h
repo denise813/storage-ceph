@@ -53,12 +53,31 @@ public:
 
 
 class OpHistory {
+/** comment by hy 2020-04-24
+ * # 按到达时间排序
+ */
   std::set<std::pair<utime_t, TrackedOpRef> > arrived;
+/** comment by hy 2020-04-24
+ * # 按停留时间排序
+ */
   std::set<std::pair<double, TrackedOpRef> > duration;
   std::set<std::pair<utime_t, TrackedOpRef> > slow_op;
+/** comment by hy 2020-04-24
+ * # 锁保护上面两个集合
+ */
   ceph::mutex ops_history_lock = ceph::make_mutex("OpHistory::ops_history_lock");
+/** comment by hy 2020-04-24
+ * # 删除不满足条件的op
+ */
   void cleanup(utime_t now);
+/** comment by hy 2020-04-24
+ * # 不能是无限制的全部记录op，需要按照如下两个条件清理
+     op总个数
+ */
   std::atomic_size_t history_size{0};
+/** comment by hy 2020-04-24
+ * # op最长停留时间
+ */
   std::atomic_uint32_t history_duration{0};
   std::atomic_size_t history_slow_op_size{0};
   std::atomic_uint32_t history_slow_op_threshold{0};
@@ -75,6 +94,9 @@ public:
     ceph_assert(duration.empty());
     ceph_assert(slow_op.empty());
   }
+/** comment by hy 2020-04-24
+ * # 插入新的op，会调用cleanup清理多余的
+ */
   void insert(const utime_t& now, TrackedOpRef op)
   {
     if (shutdown)
@@ -184,6 +206,10 @@ public:
   template <typename T, typename U>
   typename T::Ref create_request(U params)
   {
+/** comment by hy 2020-04-24
+ * # 第一个参数是new OpRequest(Message*, OpTracker*)
+     第二个参数给智能指针设置一个删除器对象，销毁时调用这个对象的operator()
+ */
     typename T::Ref retval(new T(params, this));
     retval->tracking_start();
     if (is_tracking()) {

@@ -78,6 +78,21 @@ void DispatchQueue::fast_preprocess(const ref_t<Message>& m)
   msgr->ms_fast_preprocess(m);
 }
 
+/*****************************************************************************
+ * 函 数 名  : DispatchQueue.enqueue
+ * 负 责 人  : hy
+ * 创建日期  : 2020年4月7日
+ * 函数功能  : 分发请求
+ * 输入参数  : const ref_t<Message>& m  消息
+               int priority             优先级
+               uint64_t id              请求id?
+                                        默认为0
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void DispatchQueue::enqueue(const ref_t<Message>& m, int priority, uint64_t id)
 {
   std::lock_guard l{lock};
@@ -86,11 +101,26 @@ void DispatchQueue::enqueue(const ref_t<Message>& m, int priority, uint64_t id)
   }
   ldout(cct,20) << "queue " << m << " prio " << priority << dendl;
   add_arrival(m);
+/** comment by hy 2020-04-07
+ * # 优先级固定的值
+ */
   if (priority >= CEPH_MSG_PRIO_LOW) {
+/** comment by hy 2020-04-07
+ * # 放入高优先级队列组 high_queue 中
+     组中队列元素 按照优先级表示
+ */
     mqueue.enqueue_strict(id, priority, QueueItem(m));
   } else {
+/** comment by hy 2020-04-07
+ * # 放入普通队列组中
+     组中队列元素 按照优先级表示
+ */
     mqueue.enqueue(id, priority, m->get_cost(), QueueItem(m));
   }
+/** comment by hy 2020-04-07
+ * # all 好吗?
+     cond.notify_one();
+ */
   cond.notify_all();
 }
 
@@ -113,6 +143,9 @@ void DispatchQueue::run_local_delivery()
   while (true) {
     if (stop_local_delivery)
       break;
+/** comment by hy 2020-04-07
+ * # 从 local_delivery 中获取数据
+ */
     if (local_messages.empty()) {
       local_delivery_cond.wait(l);
       continue;
@@ -122,10 +155,30 @@ void DispatchQueue::run_local_delivery()
     l.unlock();
     const ref_t<Message>& m = p.first;
     int priority = p.second;
+/** comment by hy 2020-04-07
+ * # 调用前期准备
+ */
     fast_preprocess(m);
+/** comment by hy 2020-04-07
+ * # 开始分流
+     分流条件 ms_can_fast_dispatch2
+     操作 ms_can_fast_dispatch 判断
+ */
     if (can_fast_dispatch(m)) {
+/** comment by hy 2020-04-07
+ * # DispatchQueue::fast_dispatch =
+     Messenger::ms_fast_dispatch =
+     Dispatcher::ms_fast_dispatch2 =
+     Dispatcher::ms_fast_dispatch =
+     OSD::ms_fast_dispatch
+     这里是操作消息
+ */
       fast_dispatch(m);
     } else {
+/** comment by hy 2020-04-07
+ * # 如果不是fast 放到 mqueue 里面
+     由 entry 负责拉下来
+ */
       enqueue(m, priority, 0);
     }
     l.lock();
@@ -157,11 +210,20 @@ void DispatchQueue::entry()
   while (true) {
     while (!mqueue.empty()) {
       QueueItem qitem = mqueue.dequeue();
+/** comment by hy 2020-04-06
+ * # 有操作码,即数据事件,区事件
+ */
       if (!qitem.is_code())
 	remove_arrival(qitem.get_message());
+/** comment by hy 2020-04-06
+ * # 解锁准备
+ */
       l.unlock();
 
       if (qitem.is_code()) {
+/** comment by hy 2020-04-06
+ * # 注入处理延迟
+ */
 	if (cct->_conf->ms_inject_internal_delays &&
 	    cct->_conf->ms_inject_delay_probability &&
 	    (rand() % 10000)/10000.0 < cct->_conf->ms_inject_delay_probability) {
@@ -171,20 +233,49 @@ void DispatchQueue::entry()
 			<< dendl;
 	  t.sleep();
 	}
+/** comment by hy 2020-04-06
+ * # 连接处理
+ */
 	switch (qitem.get_code()) {
 	case D_BAD_REMOTE_RESET:
+/** comment by hy 2020-04-06
+ * # 远端连接 重置, 全部都要来一次
+     Messenger::ms_deliver_handle_remote_reset =
+     Dispather::ms_handle_remote_reset
+ */
 	  msgr->ms_deliver_handle_remote_reset(qitem.get_connection());
 	  break;
 	case D_CONNECT:
+/** comment by hy 2020-04-06
+ * # 连接 处理, 全部都要来一次
+     Messenger::ms_deliver_handle_connect =
+     Dispather::ms_handle_connect
+ */
 	  msgr->ms_deliver_handle_connect(qitem.get_connection());
 	  break;
 	case D_ACCEPT:
+/** comment by hy 2020-04-06
+ * # accept 处理,全部都要来一次
+     Messenger::ms_deliver_handle_accept
+     Dispather::ms_handle_accept
+ */
 	  msgr->ms_deliver_handle_accept(qitem.get_connection());
 	  break;
 	case D_BAD_RESET:
+/** comment by hy 2020-04-06
+ * # 连接 重置 里面有一个处理了 也就处理完了
+      Messenger::ms_deliver_handle_reset
+      Dispather::sms_handle_reset
+ */
 	  msgr->ms_deliver_handle_reset(qitem.get_connection());
 	  break;
 	case D_CONN_REFUSED:
+/** comment by hy 2020-04-06
+ * # 连接 拒绝 里面有一个处理了 也就处理完了
+     Messenger::ms_deliver_handle_refused
+     Dispather::ms_handle_refused
+     处理为发送失败
+ */
 	  msgr->ms_deliver_handle_refused(qitem.get_connection());
 	  break;
 	default:
@@ -195,8 +286,23 @@ void DispatchQueue::entry()
 	if (stop) {
 	  ldout(cct,10) << " stop flag set, discarding " << m << " " << *m << dendl;
 	} else {
+/** comment by hy 2020-04-06
+ * # 有定义的操作码, 处理事件
+ */
+/** comment by hy 2020-04-06
+ * # 限流操作
+ */
 	  uint64_t msize = pre_dispatch(m);
+/** comment by hy 2020-04-06
+ * # Dispatcher::ms_dispatch2
+     调用里面的 ms_dispatch2 = ms_dispatch
+     里面有一个处理了 也就处理完了
+     这里处理 pg create 消息 巡检消息 osdmap 消息等等
+ */
 	  msgr->ms_deliver_dispatch(m);
+/** comment by hy 2020-04-06
+ * # 更新限流
+ */
 	  post_dispatch(m, msize);
 	}
       }
@@ -211,6 +317,18 @@ void DispatchQueue::entry()
   }
 }
 
+/*****************************************************************************
+ * 函 数 名  : DispatchQueue.discard_queue
+ * 负 责 人  : hy
+ * 创建日期  : 2020年4月6日
+ * 函数功能  : 重置连接或停止连接时丢弃消息
+ * 输入参数  : uint64_t id   
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void DispatchQueue::discard_queue(uint64_t id) {
   std::lock_guard l{lock};
   list<QueueItem> removed;
@@ -229,7 +347,14 @@ void DispatchQueue::start()
 {
   ceph_assert(!stop);
   ceph_assert(!dispatch_thread.is_started());
+/** comment by hy 2020-04-06
+ * # DispatchThread::entry
+     DispatchQueue::entry
+ */
   dispatch_thread.create("ms_dispatch");
+/** comment by hy 2020-04-06
+ * #  LocalDeliveryThread::run_local_delivery
+ */
   local_delivery_thread.create("ms_local");
 }
 

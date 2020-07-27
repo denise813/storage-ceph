@@ -12,9 +12,18 @@ void gc_log_init2(librados::ObjectWriteOperation& op,
                   uint64_t max_size, uint64_t max_deferred)
 {
   obj_version objv; // objv.ver = 0
+/** comment by hy 2020-03-06
+ * # 远端负责版本
+ */
   cls_version_check(op, objv, VER_COND_EQ);
+/** comment by hy 2020-03-06
+ * # 远端初始化队列
+ */
   cls_rgw_gc_queue_init(op, max_size, max_deferred);
   objv.ver = 1;
+/** comment by hy 2020-03-06
+ * # 设置启动版本号
+ */
   cls_version_set(op, objv);
 }
 

@@ -12,6 +12,9 @@ struct mg_connection;
 
 class RGWCivetWeb : public rgw::io::RestfulClient,
                     public rgw::io::BuffererSink {
+/** comment by hy 2020-03-07
+ * # 保存 http 元数据信息以及消息头
+ */
   RGWEnv env;
   mg_connection *conn;
 

@@ -127,17 +127,29 @@ private:
 
 
 struct Session : public RefCountedObject {
+/** comment by hy 2020-02-22
+ * # peer 实例名称
+ */
   EntityName entity_name;
   OSDCap caps;
+/** comment by hy 2020-02-22
+ * # 相关的connect
+ */
   ConnectionRef con;
   entity_addr_t socket_addr;
   WatchConState wstate;
 
   ceph::mutex session_dispatch_lock =
     ceph::make_mutex("Session::session_dispatch_lock");
+/** comment by hy 2020-02-22
+ * # 所有的op 都先添加到该队列中
+ */
   boost::intrusive::list<OpRequest> waiting_on_map;
 
   ceph::spinlock sent_epoch_lock;
+/** comment by hy 2020-02-22
+ * # 通过消息向外发送的epoch
+ */
   epoch_t last_sent_epoch = 0;
 
   /// protects backoffs; orders inside Backoff::lock *and* PG::backoff_lock
@@ -172,6 +184,9 @@ struct Session : public RefCountedObject {
     if (i == backoffs.end()) {
       return nullptr;
     }
+/** comment by hy 2020-04-08
+ * # 查找
+ */
     auto p = i->second.lower_bound(oid);
     if (p != i->second.begin() &&
 	(p == i->second.end() || p->first > oid)) {

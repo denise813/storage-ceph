@@ -263,6 +263,9 @@ public:
     obc_map[obc->obs.oi.soid] = obc;
   }
   /// Sets up state for new object
+/** comment by hy 2020-02-27
+ * # 创建新对象
+ */
   void create(
     const hobject_t &hoid
     ) {
@@ -272,6 +275,9 @@ public:
   }
 
   /// Sets up state for target cloned from source
+/** comment by hy 2020-02-27
+ * # 克隆对象
+ */
   void clone(
     const hobject_t &target,       ///< [in] obj to clone to
     const hobject_t &source        ///< [in] obj to clone from
@@ -282,6 +288,9 @@ public:
   }
 
   /// Sets up state for target renamed from source
+/** comment by hy 2020-02-27
+ * # 对原始对象进行重命名
+ */
   void rename(
     const hobject_t &target,       ///< [in] to, must not exist, be non-temp
     const hobject_t &source        ///< [in] source (must be a temp object)
@@ -303,6 +312,9 @@ public:
   }
 
   /// Remove -- must not be called on rename target
+/** comment by hy 2020-02-27
+ * # 删除对象
+ */
   void remove(
     const hobject_t &hoid          ///< [in] obj to remove
     ) {
@@ -340,6 +352,9 @@ public:
     op.omap_updates.clear();
     op.omap_header = std::nullopt;
   }
+/** comment by hy 2020-02-27
+ * # 截止对象
+ */
   void truncate(
     const hobject_t &hoid,         ///< [in] object
     uint64_t off                   ///< [in] offset to truncate to
@@ -368,6 +383,9 @@ public:
       d->rebuild();
     }
   }
+/** comment by hy 2020-02-27
+ * # 设置单个属性
+ */
   void setattr(
     const hobject_t &hoid,         ///< [in] object to write
     const string &attrname,        ///< [in] attr to write
@@ -378,6 +396,9 @@ public:
     d = bl;
     d->rebuild();
   }
+/** comment by hy 2020-02-27
+ * # 删除单个属性
+ */
   void rmattr(
     const hobject_t &hoid,         ///< [in] object to write
     const string &attrname         ///< [in] attr to remove
@@ -387,6 +408,9 @@ public:
   }
 
   /// set alloc hint
+/** comment by hy 2020-02-27
+ * # 可设置的属性包括
+ */
   void set_alloc_hint(
     const hobject_t &hoid,         ///< [in] object (must exist)
     uint64_t expected_object_size, ///< [in]
@@ -399,6 +423,9 @@ public:
   }
 
   /// Buffer updates
+/** comment by hy 2020-02-27
+ * # 写
+ */
   void write(
     const hobject_t &hoid,         ///< [in] object to write
     uint64_t off,                  ///< [in] off at which to write
@@ -429,6 +456,9 @@ public:
       len,
       ObjectOperation::BufferUpdate::CloneRange{from, fromoff, len});
   }
+/** comment by hy 2020-02-27
+ * # 擦除对象指定范围内的数据,使用全0填充
+ */
   void zero(
     const hobject_t &hoid,         ///< [in] object
     uint64_t off,                  ///< [in] offset to start zeroing at
@@ -443,6 +473,9 @@ public:
   }
 
   /// Omap updates
+/** comment by hy 2020-02-27
+ * # 批量添加omap条目
+ */
   void omap_setkeys(
     const hobject_t &hoid,         ///< [in] object to write
     bufferlist &keys_bl            ///< [in] encoded map<string, bufferlist>
@@ -461,6 +494,9 @@ public:
     encode(keys, bl);
     omap_setkeys(hoid, bl);
   }
+/** comment by hy 2020-02-27
+ * # 批量删除omap条目
+ */
   void omap_rmkeys(
     const hobject_t &hoid,         ///< [in] object to write
     bufferlist &keys_bl            ///< [in] encode set<string>
@@ -521,6 +557,9 @@ public:
     return ret;
   }
 
+/** comment by hy 2020-02-27
+ * # 空操作,用于强制对象内的数据存盘
+ */
   void nop(
     const hobject_t &hoid ///< [in] obj to which we are doing nothing
     ) {
@@ -552,6 +591,10 @@ public:
     list<hobject_t> stack;
 
     // Populate stack with roots, dgraph with edges
+/** comment by hy 2020-06-26
+ * # op_map 里面是 prepare_transaction 写
+     准备的操作
+ */
     for (auto &&opair: op_map) {
       hobject_t source;
       if (opair.second.has_source(&source)) {
@@ -574,6 +617,9 @@ public:
      * depth-first traversal here to ensure we call f on children
      * before parents.
      */
+/** comment by hy 2020-06-26
+ * # 将包装成 Object::Transaction 事务
+ */
     while (!stack.empty()) {
       hobject_t &cur = stack.front();
       auto diter = dgraph.find(cur);

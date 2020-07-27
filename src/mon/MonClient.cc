@@ -81,10 +81,26 @@ MonClient::~MonClient()
 {
 }
 
+/*****************************************************************************
+ * 函 数 名  : MonClient.build_initial_monmap
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 从配置文件中检查是否有初始化的monitor服务
+                端地址信息
+ * 输入参数  : 无
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int MonClient::build_initial_monmap()
 {
   ldout(cct, 10) << __func__ << dendl;
   int r = monmap.build_initial(cct, false, std::cerr);
+/** comment by hy 2020-01-15
+ * # 打印调试信息,按照指定格式打印信息
+ */
   ldout(cct,10) << "monmap:\n";
   monmap.print(*_dout);
   *_dout << dendl;
@@ -95,7 +111,7 @@ int MonClient::get_monmap()
 {
   ldout(cct, 10) << __func__ << dendl;
   std::unique_lock l(monc_lock);
-  
+
   sub.want("monmap", 0, 0);
   if (!_opened())
     _reopen_session();
@@ -106,27 +122,47 @@ int MonClient::get_monmap()
 
 int MonClient::get_monmap_and_config()
 {
+/** comment by hy 2020-01-15
+ * # 调试信息
+ */
   ldout(cct, 10) << __func__ << dendl;
   ceph_assert(!messenger);
 
   int tries = 10;
 
   cct->init_crypto();
+/** comment by hy 2020-01-15
+ * # librados的环境,初始化阶段就不认证？
+ */
   auto shutdown_crypto = make_scope_guard([this] {
     cct->shutdown_crypto();
   });
-
+/** comment by hy 2020-01-15
+ * # 从配置文件中构建monmap信息
+ */
   int r = build_initial_monmap();
   if (r < 0) {
     lderr(cct) << __func__ << " cannot identify monitors to contact" << dendl;
     return r;
   }
 
+/** comment by hy 2020-01-15
+ * # 创建一个临时通路
+ */
   messenger = Messenger::create_client_messenger(
     cct, "temp_mon_client");
   ceph_assert(messenger);
+/** comment by hy 2020-01-15
+ * # 往dispatcher的头部加入分发者,分发则用来调用消息处理函数
+ */
   messenger->add_dispatcher_head(this);
+/** comment by hy 2020-01-15
+ * # 启动通路
+ */
   messenger->start();
+/** comment by hy 2020-01-15
+ * # 已经取得mmonmap信息,就关闭临时的通路
+ */
   auto shutdown_msgr = make_scope_guard([this] {
     messenger->shutdown();
     messenger->wait();
@@ -138,20 +174,33 @@ int MonClient::get_monmap_and_config()
   });
 
   while (tries-- > 0) {
+/** comment by hy 2020-01-15
+ * # 执行初始化,这里调用了 ready 开始监控网络
+ */
     r = init();
     if (r < 0) {
       return r;
     }
+/** comment by hy 2020-01-16
+ * # 开始进行证书认证,认证失败就重连
+ */
     r = authenticate(cct->_conf->client_mount_timeout);
     if (r == -ETIMEDOUT) {
       shutdown();
       continue;
     }
+/** comment by hy 2020-01-16
+ * # 失败了也就不重试了
+         这里是不是没有考虑网络不通,没有调用 shutdown
+ */
     if (r < 0) {
       break;
     }
     {
       std::unique_lock l(monc_lock);
+/** comment by hy 2020-01-17
+ * # 在 mimic 版本特性
+ */
       if (monmap.get_epoch() &&
 	  !monmap.persistent_features.contains_all(
 	    ceph::features::mon::FEATURE_MIMIC)) {
@@ -160,22 +209,34 @@ int MonClient::get_monmap_and_config()
 	r = 0;
 	break;
       }
+/** comment by hy 2020-01-17
+ * # 等待monmap 推送过来,有超时时间
+ */
       while ((!got_config || monmap.get_epoch() == 0) && r == 0) {
 	ldout(cct,20) << __func__ << " waiting for monmap|config" << dendl;
 	map_cond.wait_for(l, ceph::make_timespan(
           cct->_conf->mon_client_hunt_interval));
       }
+/** comment by hy 2020-01-17
+ * # 超时时间到达后检查config得到更新
+ */
       if (got_config) {
 	ldout(cct,10) << __func__ << " success" << dendl;
 	r = 0;
 	break;
       }
     }
+/** comment by hy 2020-01-17
+ * # 还没更新,就关闭网络进行重试
+ */
     lderr(cct) << __func__ << " failed to get config" << dendl;
     shutdown();
     continue;
   }
 
+/** comment by hy 2020-01-17
+ * # 成功后关闭临时通路
+ */
   shutdown();
   return r;
 }
@@ -363,10 +424,23 @@ bool MonClient::ms_dispatch(Message *m)
 
 void MonClient::send_log(bool flush)
 {
+/** comment by hy 2020-01-16
+ * # 默认参数 flush = false
+      只要不是退出状态 log_client 就不为空
+ */
   if (log_client) {
+/** comment by hy 2020-01-16
+ * # 封装推送log信息的消息
+ */
     auto lm = log_client->get_mon_log_message(flush);
     if (lm)
+/** comment by hy 2020-01-16
+ * # 发送成功
+ */
       _send_mon_message(std::move(lm));
+/** comment by hy 2020-01-16
+ * # 设置是否还有log信息还没被推送标识
+ */
     more_log_pending = log_client->are_pending();
   }
 }
@@ -451,13 +525,25 @@ int MonClient::init()
 
   entity_name = cct->_conf->name;
 
+/** comment by hy 2020-01-16
+ * # 根据配置文件更新被认证的权限
+ */
   auth_registry.refresh_config();
 
+/** comment by hy 2020-01-16
+ * # 获取证书
+ */
   std::lock_guard l(monc_lock);
   keyring.reset(new KeyRing);
+/** comment by hy 2020-01-16
+ * # 使用的是默认的ceph认证
+ */
   if (auth_registry.is_supported_method(messenger->get_mytype(),
 					CEPH_AUTH_CEPHX)) {
     // this should succeed, because auth_registry just checked!
+/** comment by hy 2020-01-16
+ * # KeyRing()->from_ceph_context() 是从配置文件制定的位置读取秘钥文件
+ */
     int r = keyring->from_ceph_context(cct);
     if (r != 0) {
       // but be somewhat graceful in case there was a race condition
@@ -465,20 +551,41 @@ int MonClient::init()
       return r;
     }
   }
+/** comment by hy 2020-01-16
+ * # 如果没有获取到改模块对应认证,即没有被认证
+ */
   if (!auth_registry.any_supported_methods(messenger->get_mytype())) {
     return -ENOENT;
   }
 
+/** comment by hy 2020-01-16
+ * # 将模块秘钥设置到秘钥认证指针数组中
+ */
   rotating_secrets.reset(
     new RotatingKeyRing(cct, cct->get_module_type(), keyring.get()));
 
   initialized = true;
 
+/** comment by hy 2020-01-16
+ * # 使能认证相关接口
+ */
   messenger->set_auth_client(this);
+/** comment by hy 2020-04-07
+ * # 将分发放入接收处理中
+ */
   messenger->add_dispatcher_head(this);
 
+/** comment by hy 2020-01-16
+ * # 准备定时任务的定时器
+ */
   timer.init();
+/** comment by hy 2020-01-16
+ * # 准备异步回调
+ */
   finisher.start();
+/** comment by hy 2020-01-16
+ * # 启动定时任务
+ */
   schedule_tick();
 
   return 0;
@@ -486,9 +593,18 @@ int MonClient::init()
 
 void MonClient::shutdown()
 {
+/** comment by hy 2020-01-17
+ * # 调试信息
+ */
   ldout(cct, 10) << __func__ << dendl;
   monc_lock.lock();
+/** comment by hy 2020-01-17
+ * # 设置停止中标志位
+ */
   stopping = true;
+/** comment by hy 2020-01-17
+ * # 取消等候版本信息完成
+ */
   while (!version_requests.empty()) {
     version_requests.begin()->second->context->complete(-ECANCELED);
     ldout(cct, 20) << __func__ << " canceling and discarding version request "
@@ -496,11 +612,17 @@ void MonClient::shutdown()
     delete version_requests.begin()->second;
     version_requests.erase(version_requests.begin());
   }
+/** comment by hy 2020-01-17
+ * # 取消等候命令行
+ */
   while (!mon_commands.empty()) {
     auto tid = mon_commands.begin()->first;
     _cancel_mon_command(tid);
   }
   ldout(cct, 20) << __func__ << " discarding " << waiting_for_session.size()
+/** comment by hy 2020-01-17
+ * # 取消等候 session
+ */
 		 << " pending message(s)" << dendl;
   waiting_for_session.clear();
 
@@ -515,6 +637,9 @@ void MonClient::shutdown()
     finisher.stop();
     initialized = false;
   }
+/** comment by hy 2020-01-17
+ * # 设置停止结束
+ */
   monc_lock.lock();
   timer.shutdown();
   stopping = false;
@@ -525,12 +650,28 @@ int MonClient::authenticate(double timeout)
 {
   std::unique_lock lock{monc_lock};
 
+/** comment by hy 2020-01-16
+ * # 如果有已经稳定并认证确保具有权限的连接,那么久不用继续认证
+         返回成功
+         初始化过程是不会存在的
+ */
   if (active_con) {
     ldout(cct, 5) << "already authenticated" << dendl;
     return 0;
   }
+/** comment by hy 2020-01-16
+ * # 向mon定于比当前还要新一个版本的mon拓扑结构
+         如果初始化极端没有mon的版本信息,就从0号版本开始吧
+ */
   sub.want("monmap", monmap.get_epoch() ? monmap.get_epoch() + 1 : 0, 0);
+/** comment by hy 2020-01-16
+ * # 要配置文件
+ */
   sub.want("config", 0, 0);
+/** comment by hy 2020-01-16
+ * # 检查是不是已经建立连接,如果没有就新建立连接 session
+         在建立会话中
+ */
   if (!_opened())
     _reopen_session();
 
@@ -540,6 +681,9 @@ int MonClient::authenticate(double timeout)
     ldout(cct, 10) << "authenticate will time out at " << until << dendl;
   authenticate_err = 1;  // == in progress
   while (!active_con && authenticate_err >= 0) {
+/** comment by hy 2020-01-16
+ * # 如果设置了超时时间,则超过指定超时时间则认为认证失败
+ */
     if (timeout > 0.0) {
       auto r = auth_cond.wait_until(lock, until);
       if (r == cv_status::timeout && !active_con) {
@@ -547,10 +691,17 @@ int MonClient::authenticate(double timeout)
 	authenticate_err = -ETIMEDOUT;
       }
     } else {
+/** comment by hy 2020-01-16
+ * # 等待接受认证应答消息,唤醒继续
+ */
       auth_cond.wait(lock);
     }
   }
 
+/** comment by hy 2020-01-16
+ * # 以下是异步等待唤醒后执行,该状态一定已经认证完成
+         设置以及认证标识
+ */
   if (active_con) {
     ldout(cct, 5) << __func__ << " success, global_id "
 		  << active_con->get_global_id() << dendl;
@@ -559,6 +710,9 @@ int MonClient::authenticate(double timeout)
     authenticated = true;
   }
 
+/** comment by hy 2020-01-16
+ * # 如果没认证成功, 或者认证没关闭,但是没key
+ */
   if (authenticate_err < 0 && auth_registry.no_keyring_disabled_cephx()) {
     lderr(cct) << __func__ << " NOTE: no keyring found; disabled cephx authentication" << dendl;
   }
@@ -611,6 +765,9 @@ void MonClient::handle_auth(MAuthReply *m)
     return;
   }
   if (auth_err) {
+/** comment by hy 2019-12-30
+ * # 认证失败
+ */
     pending_cons.erase(found);
     if (!pending_cons.empty()) {
       // keep trying with pending connections
@@ -620,6 +777,9 @@ void MonClient::handle_auth(MAuthReply *m)
   } else {
     auto& mc = found->second;
     ceph_assert(mc.have_session());
+/** comment by hy 2019-12-30
+ * # 更新连接
+ */
     active_con.reset(new MonConnection(std::move(mc)));
     pending_cons.clear();
   }
@@ -664,6 +824,9 @@ void MonClient::send_mon_message(MessageRef m)
 void MonClient::_send_mon_message(MessageRef m)
 {
   ceph_assert(ceph_mutex_is_locked(monc_lock));
+/** comment by hy 2020-01-16
+ * # 有链接就用连接发送
+ */
   if (active_con) {
     auto cur_con = active_con->get_con();
     ldout(cct, 10) << "_send_mon_message to mon."
@@ -671,40 +834,94 @@ void MonClient::_send_mon_message(MessageRef m)
 		   << " at " << cur_con->get_peer_addr() << dendl;
     cur_con->send_message2(std::move(m));
   } else {
+/** comment by hy 2019-12-30
+ * # 与 reopen_session 相关
+ */
     waiting_for_session.push_back(std::move(m));
   }
 }
 
 void MonClient::_reopen_session(int rank)
 {
+/** comment by hy 2020-01-16
+ * # 调试信息
+ */
   ceph_assert(ceph_mutex_is_locked(monc_lock));
   ldout(cct, 10) << __func__ << " rank " << rank << dendl;
 
+/** comment by hy 2020-01-16
+ * # 连接重置
+ */
   active_con.reset();
   pending_cons.clear();
 
+/** comment by hy 2020-01-16
+ * # 设置探测mon状态的间隔
+ */
   _start_hunting();
 
+/** comment by hy 2020-01-16
+ * # 改函数具有默认参数 为-1      
+ */
   if (rank >= 0) {
+/** comment by hy 2020-01-16
+ * # 与指定mon建立连接
+ */
     _add_conn(rank, global_id);
   } else {
+/** comment by hy 2020-01-16
+ * # 
+ */
     _add_conns(global_id);
   }
 
   // throw out old queued messages
+/** comment by hy 2020-01-16
+ * # 由于发送消息时，没有一个有效的连接,
+         所有因为上述原因而不合适进行发送的连接将放在 
+     waiting_for_session 容器中
+     由于这是新打开一个会话,所有上一个会话的消息都将丢弃
+     实际结果不过是定时建立会话,建立一次就丢弃请求
+     现阶段是丢弃,这样与以前的版本逻辑相同,只管发送不管埋一个逻辑
+     是不是这里想憋什么招式
+ */
   waiting_for_session.clear();
 
   // throw out version check requests
+/** comment by hy 2020-01-16
+ * # 只有后续向 mon发送想要版本请求的消息,
+         这里的版本信息说的是 osdmap, fsmap等集群拓扑 的版本信息
+         才这个容器 version_requests 添加实例
+         该实例是异步等待版本应答消息后执行器回调
+ */
   while (!version_requests.empty()) {
+/** comment by hy 2020-01-16
+ * # 放入回调管理器中
+         为什么不先摘除后放入队列?有问题？
+ */
     finisher.queue(version_requests.begin()->second->context, -EAGAIN);
+/** comment by hy 2020-01-16
+ * # 清理资源
+ */
     delete version_requests.begin()->second;
     version_requests.erase(version_requests.begin());
   }
 
+/** comment by hy 2020-01-16
+ * # 连接还为得到认证
+ */
   for (auto& c : pending_cons) {
+/** comment by hy 2020-01-16
+ * # MonConnection::start() ,获取monmap 信息,并且试着再次发送认证消息
+     发送 keepalive and auth 消息
+ */
     c.second.start(monmap.get_epoch(), entity_name);
   }
 
+/** comment by hy 2020-01-16
+ * # 保持原有的定于信息,并添加新的订阅信息
+         发送订阅消息,并进行订阅
+ */
   if (sub.reload()) {
     _renew_subs();
   }
@@ -712,14 +929,30 @@ void MonClient::_reopen_session(int rank)
 
 MonConnection& MonClient::_add_conn(unsigned rank, uint64_t global_id)
 {
+/** comment by hy 2020-01-16
+ * # 获取与指定mon地址,因为与mon进行连接,所以相对于该客户端mon就是peer
+ */
   auto peer = monmap.get_addrs(rank);
+/** comment by hy 2020-01-16
+ * # 建立连接
+ */
   auto conn = messenger->connect_to_mon(peer);
+/** comment by hy 2020-01-16
+ * # 将连接组装成mon连接对象
+ */
   MonConnection mc(cct, conn, global_id, &auth_registry);
+/** comment by hy 2020-01-16
+ * # 将<地址, mc>放入等待认证确认队列中
+     建立连接后将连接放入检查表中
+ */
   auto inserted = pending_cons.insert(std::make_pair(peer, std::move(mc)));
   ldout(cct, 10) << "picked mon." << monmap.get_name(rank)
                  << " con " << conn
                  << " addr " << peer
                  << dendl;
+/** comment by hy 2020-01-16
+ * # 返回对应的连接对象
+ */
   return inserted.first->second;
 }
 
@@ -727,15 +960,29 @@ void MonClient::_add_conns(uint64_t global_id)
 {
   // collect the next batch of candidates who are listed right next to the ones
   // already tried
+/** comment by hy 2020-01-16
+ * # 注册函数 get_next_batch
+         获取rank连接信息,并转化好对应格式,最终插入到优先级容器中
+         如果失败将返回空字典
+ */
   auto get_next_batch = [this]() -> std::vector<unsigned> {
     std::multimap<uint16_t, unsigned> ranks_by_priority;
     boost::copy(
       monmap.mon_info | boost::adaptors::filtered(
+/** comment by hy 2020-01-16
+ * # 过滤规则使用匿名函数,
+         该函数获取mon对应的rank信息
+         并返回成功获得信息的bool标志位
+     如果已经与某mon建立连接,对应的tried将不为空
+ */
         [this](auto& info) {
           auto rank = monmap.get_rank(info.first);
           return tried.count(rank) == 0;
         }) | boost::adaptors::transformed(
           [this](auto& info) {
+/** comment by hy 2020-01-16
+ * # 转化成对应的键值对形式
+ */
             auto rank = monmap.get_rank(info.first);
             return std::make_pair(info.second.priority, rank);
           }), std::inserter(ranks_by_priority, end(ranks_by_priority)));
@@ -750,6 +997,9 @@ void MonClient::_add_conns(uint64_t global_id)
 		       std::back_inserter(ranks));
     return ranks;
   };
+/** comment by hy 2020-01-16
+ * # 调用注册的匿名函数,获得不成功,再获得一次
+ */
   auto ranks = get_next_batch();
   if (ranks.empty()) {
     tried.clear();  // start over
@@ -757,25 +1007,45 @@ void MonClient::_add_conns(uint64_t global_id)
   }
   ceph_assert(!ranks.empty());
   if (ranks.size() > 1) {
+/** comment by hy 2020-01-16
+ * # 获取mon对应的权重
+ */
     std::vector<uint16_t> weights;
     for (auto i : ranks) {
       auto rank_name = monmap.get_name(i);
       weights.push_back(monmap.get_weight(rank_name));
     }
     std::random_device rd;
+/** comment by hy 2020-01-16
+ * # 如果随机排列ranks
+ */
     if (std::accumulate(begin(weights), end(weights), 0u) == 0) {
+/** comment by hy 2020-01-16
+ * # 如果mon列表所有权重和等于0
+         按照rank为key进行随机排列
+ */
       std::shuffle(begin(ranks), end(ranks), std::mt19937{rd()});
     } else {
+/** comment by hy 2020-01-16
+ * # 如果有权重 按照权重作为key进行rank随机排列
+ */
       weighted_shuffle(begin(ranks), end(ranks), begin(weights), end(weights),
 		       std::mt19937{rd()});
     }
   }
   ldout(cct, 10) << __func__ << " ranks=" << ranks << dendl;
+/** comment by hy 2020-01-16
+ * # 当 hunting 住 试着向多个 mon 进行试探连接
+ */
   unsigned n = cct->_conf->mon_client_hunt_parallel;
   if (n == 0 || n > ranks.size()) {
     n = ranks.size();
   }
   for (unsigned i = 0; i < n; i++) {
+/** comment by hy 2020-01-16
+ * # 向每个rank建立连接,尝试过的rank保存在临时容器中
+         只有收到monmap信息才清除这种尝试
+ */
     _add_conn(ranks[i], global_id);
     tried.insert(ranks[i]);
   }
@@ -841,6 +1111,12 @@ void MonClient::_start_hunting()
   // adjust timeouts if necessary
   if (!had_a_connection)
     return;
+/** comment by hy 2020-01-16
+ * # 没有连接不应该是缩小,这个不应该是放在 finish_hunting中?
+         这是一个初始执行的过程,
+         如果是我,我会使用一个初始值这个值等于mon
+         这个理解有待检验
+ */
   reopen_interval_multiplier *= cct->_conf->mon_client_hunt_interval_backoff;
   if (reopen_interval_multiplier >
       cct->_conf->mon_client_hunt_interval_max_multiple) {
@@ -891,25 +1167,39 @@ void MonClient::tick()
   ldout(cct, 10) << __func__ << dendl;
 
   utime_t now = ceph_clock_now();
-
+/** comment by hy 2020-01-16
+ * # 形成回环,达到不间断地调用
+ */
   auto reschedule_tick = make_scope_guard([this] {
       schedule_tick();
     });
 
+/** comment by hy 2020-01-16
+ * # 如果使用令牌认证,则按照令牌认证方式进行认证
+     定时 check
+ */
   _check_auth_tickets();
   _check_tell_commands();
-  
+/** comment by hy 2020-01-16
+ * # 如果还是没有通过认证,重新建立连接吧
+ */
   if (_hunting()) {
     ldout(cct, 1) << "continuing hunt" << dendl;
     return _reopen_session();
   } else if (active_con) {
     // just renew as needed
+/** comment by hy 2020-01-16
+ * # 如果有新订阅信息,更新订阅
+ */
     auto cur_con = active_con->get_con();
     if (!cur_con->has_feature(CEPH_FEATURE_MON_STATEFUL_SUB)) {
       const bool maybe_renew = sub.need_renew();
       ldout(cct, 10) << "renew subs? -- " << (maybe_renew ? "yes" : "no")
 		     << dendl;
       if (maybe_renew) {
+/** comment by hy 2020-01-16
+ * # 进行推送新信息
+ */
 	_renew_subs();
       }
     }
@@ -917,7 +1207,9 @@ void MonClient::tick()
     if (now > last_keepalive + cct->_conf->mon_client_ping_interval) {
       cur_con->send_keepalive();
       last_keepalive = now;
-
+/** comment by hy 2020-01-16
+ * # 使用keepalive来检查 ping mon 
+ */
       if (cct->_conf->mon_client_ping_timeout > 0 &&
 	  cur_con->has_feature(CEPH_FEATURE_MSGR_KEEPALIVE2)) {
 	utime_t lk = cur_con->get_last_keepalive_ack();
@@ -928,11 +1220,17 @@ void MonClient::tick()
 	  return _reopen_session();
 	}
       }
-
+/** comment by hy 2020-01-16
+ * # 更新 探测间隔 正常通路就不断加大间隔,异常时就不断缩小间隔
+         现在处于异常中
+ */
       _un_backoff();
     }
 
     if (now > last_send_log + cct->_conf->mon_client_log_interval) {
+/** comment by hy 2020-01-16
+ * # 推送 log信息
+ */
       send_log();
       last_send_log = now;
     }
@@ -952,7 +1250,15 @@ void MonClient::_un_backoff()
 
 void MonClient::schedule_tick()
 {
+/** comment by hy 2020-01-16
+ * # 执行定时任务
+ */
   auto do_tick = make_lambda_context([this](int) { tick(); });
+/** comment by hy 2020-01-16
+ * # 处于hunting状态进行定时连接 mon
+     否则ping一下mon,
+     tick() 包罗了上面两个流程
+ */
   if (_hunting()) {
     const auto hunt_interval = (cct->_conf->mon_client_hunt_interval *
 				reopen_interval_multiplier);
@@ -969,19 +1275,31 @@ void MonClient::schedule_tick()
 void MonClient::_renew_subs()
 {
   ceph_assert(ceph_mutex_is_locked(monc_lock));
+/** comment by hy 2020-01-16
+ * # 没有新东西了
+ */
   if (!sub.have_new()) {
     ldout(cct, 10) << __func__ << " - empty" << dendl;
     return;
   }
 
   ldout(cct, 10) << __func__ << dendl;
+/** comment by hy 2020-01-16
+ * # 更新订阅前,看看连接状态
+ */
   if (!_opened())
     _reopen_session();
   else {
+/** comment by hy 2020-01-16
+ * # 发送订阅消息
+ */
     auto m = ceph::make_message<MMonSubscribe>();
     m->what = sub.get_subs();
     m->hostname = ceph_get_short_hostname();
     _send_mon_message(std::move(m));
+/** comment by hy 2020-01-16
+ * # 清除新订阅,并把新订阅的东西放在 sub_sent 容器中
+ */
     sub.renewed();
   }
 }
@@ -996,6 +1314,9 @@ int MonClient::_check_auth_tickets()
 {
   ceph_assert(ceph_mutex_is_locked(monc_lock));
   if (active_con && auth) {
+/** comment by hy 2020-01-16
+ * # 如果使用令牌认证,则按照令牌认证的方式包装消息并发送
+ */
     if (auth->need_tickets()) {
       ldout(cct, 10) << __func__ << " getting new tickets!" << dendl;
       auto m = ceph::make_message<MAuth>();
@@ -1005,20 +1326,41 @@ int MonClient::_check_auth_tickets()
       _send_mon_message(m);
     }
 
+/** comment by hy 2020-01-16
+ * # 循环更新证书,到了时间就使用新证书进行认证
+ */
     _check_auth_rotating();
   }
   return 0;
 }
 
+/*****************************************************************************
+ * 函 数 名  : MonClient._check_auth_rotating
+ * 负 责 人  : hy
+ * 创建日期  : 2020年1月16日
+ * 函数功能  : 使用证书环进行认证
+ * 输入参数  : 无
+ * 输出参数  : 无
+ * 返 回 值  : int  返回值在该函数中不进行参考
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int MonClient::_check_auth_rotating()
 {
   ceph_assert(ceph_mutex_is_locked(monc_lock));
+/** comment by hy 2020-01-16
+ * # 如果没有证书,或者不使用证书环返回成功
+ */
   if (!rotating_secrets ||
       !auth_principal_needs_rotating_keys(entity_name)) {
     ldout(cct, 20) << "_check_auth_rotating not needed by " << entity_name << dendl;
     return 0;
   }
 
+/** comment by hy 2020-01-16
+ * # 没有已经认证了的连接
+ */
   if (!active_con || !auth) {
     ldout(cct, 10) << "_check_auth_rotating waiting for auth session" << dendl;
     return 0;
@@ -1026,9 +1368,15 @@ int MonClient::_check_auth_rotating()
 
   utime_t now = ceph_clock_now();
   utime_t cutoff = now;
+/** comment by hy 2020-01-16
+ * # 至少30秒的间隔吧
+ */
   cutoff -= std::min(30.0, cct->_conf->auth_service_ticket_ttl / 4.0);
   utime_t issued_at_lower_bound = now;
   issued_at_lower_bound -= cct->_conf->auth_service_ticket_ttl;
+/** comment by hy 2020-01-16
+ * # 证书小于3个,证书使用超过30秒了,就算都已经超时,需要更新证书
+ */
   if (!rotating_secrets->need_new_secrets(cutoff)) {
     ldout(cct, 10) << "_check_auth_rotating have uptodate secrets (they expire after " << cutoff << ")" << dendl;
     rotating_secrets->dump_rotating();
@@ -1036,12 +1384,18 @@ int MonClient::_check_auth_rotating()
   }
 
   ldout(cct, 10) << "_check_auth_rotating renewing rotating keys (they expired before " << cutoff << ")" << dendl;
+/** comment by hy 2020-01-16
+ * # 证书小于3个,且间隔时间已经超时需要更新证书
+ */
   if (!rotating_secrets->need_new_secrets() &&
       rotating_secrets->need_new_secrets(issued_at_lower_bound)) {
     // the key has expired before it has been issued?
     lderr(cct) << __func__ << " possible clock skew, rotating keys expired way too early"
                << " (before " << issued_at_lower_bound << ")" << dendl;
   }
+/** comment by hy 2020-01-16
+ * # 间隔一秒以内就休息一下,别继续探测证书了
+ */
   if ((now > last_rotating_renew_sent) &&
       double(now - last_rotating_renew_sent) < 1) {
     ldout(cct, 10) << __func__ << " called too often (last: "
@@ -1049,6 +1403,10 @@ int MonClient::_check_auth_rotating()
     return 0;
   }
   auto m = ceph::make_message<MAuth>();
+/** comment by hy 2020-01-16
+ * # 开始发送认证,这里暂时build_rotating_request 暂时不会失败
+        也许是为以后保留失败处理流程
+ */
   m->protocol = auth->get_protocol();
   if (auth->build_rotating_request(m->auth_payload)) {
     last_rotating_renew_sent = now;
@@ -1313,6 +1671,12 @@ void MonClient::start_mon_command(const std::vector<string>& cmd,
     }
     return;
   }
+/** comment by hy 2020-03-20
+ * # 数据包装
+     最后通过 操作码 MSG_MON_COMMAND 发送消息
+     由 Monitor::handle_tell_command 来处理
+     Monitor::handle_command
+ */
   MonCommand *r = new MonCommand(++last_mon_command_tid);
   r->cmd = cmd;
   r->inbl = inbl;
@@ -1334,6 +1698,9 @@ void MonClient::start_mon_command(const std::vector<string>& cmd,
     timer.add_event_after(cct->_conf->rados_mon_op_timeout, r->ontimeout);
   }
   mon_commands[r->tid] = r;
+/** comment by hy 2020-03-20
+ * # 发送命令
+ */
   _send_command(r);
 }
 
@@ -1741,6 +2108,9 @@ void MonConnection::start(epoch_t epoch,
   using ceph::encode;
   auth_start = ceph_clock_now();
 
+/** comment by hy 2020-01-16
+ * # 如果本peer是管理,那么使用该连接发送获取monmap消息
+ */
   if (con->get_peer_addr().is_msgr2()) {
     ldout(cct, 10) << __func__ << " opening mon connection" << dendl;
     state = State::AUTHENTICATING;
@@ -1754,18 +2124,27 @@ void MonConnection::start(epoch_t epoch,
   // send an initial keepalive to ensure our timestamp is valid by the
   // time we are in an OPENED state (by sequencing this before
   // authentication).
+/** comment by hy 2020-01-16
+ * # 保持连接的keepalive
+ */
   con->send_keepalive();
 
   auto m = new MAuth;
   m->protocol = CEPH_AUTH_UNKNOWN;
   m->monmap_epoch = epoch;
   __u8 struct_v = 1;
+/** comment by hy 2020-01-16
+ * # 消息加密组装,因为是想 public 网段发送所以加入安全考虑
+ */
   encode(struct_v, m->auth_payload);
   std::vector<uint32_t> auth_supported;
   auth_registry->get_supported_methods(con->get_peer_type(), &auth_supported);
   encode(auth_supported, m->auth_payload);
   encode(entity_name, m->auth_payload);
   encode(global_id, m->auth_payload);
+/** comment by hy 2020-01-16
+ * # 发送认证消息
+ */
   con->send_message(m);
 }
 

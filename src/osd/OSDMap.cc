@@ -1304,6 +1304,18 @@ void OSDMap::set_epoch(epoch_t e)
     pool.second.last_change = e;
 }
 
+/*****************************************************************************
+ * 函 数 名  : OSDMap.is_blacklisted
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月20日
+ * 函数功能  : 拥有黑名单
+ * 输入参数  : const entity_addr_t& orig   
+ * 输出参数  : 无
+ * 返 回 值  : bool
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 bool OSDMap::is_blacklisted(const entity_addr_t& orig) const
 {
   if (blacklist.empty()) {
@@ -2353,6 +2365,9 @@ int OSDMap::object_locator_to_pg(
     pg = pg_t(loc.hash, loc.get_pool());
     return 0;
   }
+/** comment by hy 2020-03-12
+ * # map 到 pg 上
+ */
   return map_to_pg(loc.get_pool(), oid.name, loc.key, loc.nspace, &pg);
 }
 
@@ -4207,6 +4222,9 @@ int OSDMap::get_erasure_code_profile_default(CephContext *cct,
 					     map<string,string> &profile_map,
 					     ostream *ss)
 {
+/** comment by hy 2020-01-20
+ * # 默认值为 "plugin=jerasure technique=reed_sol_van k=2 m=1"
+ */
   int r = get_json_str_map(cct->_conf.get_val<string>("osd_pool_default_erasure_code_profile"),
 		      *ss,
 		      &profile_map);

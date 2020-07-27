@@ -30,7 +30,9 @@ int64_t BitmapAllocator::allocate(
 		 << "/" << alloc_unit << "," << max_alloc_size << "," << hint
 		 << std::dec << dendl;
     
-    
+/** comment by hy 2020-04-22
+ * # 根据L2的last_pos 定位最后空闲的bit位置
+ */
   _allocate_l2(want_size, alloc_unit, max_alloc_size, hint,
     &allocated, extents);
   if (!allocated) {

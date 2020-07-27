@@ -4383,6 +4383,9 @@ RGWOp *RGWHandler_REST_Bucket_S3::op_put()
   if (s->info.args.sub_resource_exists("logging"))
     return NULL;
   if (s->info.args.sub_resource_exists("versioning"))
+/** comment by hy 2020-03-15
+ * # 多版本处理?
+ */
     return new RGWSetBucketVersioning_ObjStore_S3;
   if (s->info.args.sub_resource_exists("website")) {
     if (!s->cct->_conf->rgw_enable_static_website) {
@@ -4417,6 +4420,9 @@ RGWOp *RGWHandler_REST_Bucket_S3::op_put()
   } else if (is_block_public_access_op()) {
     return new RGWPutBucketPublicAccessBlock_ObjStore_S3;
   }
+/** comment by hy 2020-03-15
+ * # 创建 bucket 处理者
+ */
   return new RGWCreateBucket_ObjStore_S3;
 }
 
@@ -4480,18 +4486,40 @@ RGWOp *RGWHandler_REST_Obj_S3::get_obj_op(bool get_data)
 RGWOp *RGWHandler_REST_Obj_S3::op_get()
 {
   if (is_acl_op()) {
+/** comment by hy 2020-03-16
+ * # ACL
+ */
     return new RGWGetACLs_ObjStore_S3;
   } else if (s->info.args.exists("uploadId")) {
+/** comment by hy 2020-03-16
+ * # 多段
+ */
     return new RGWListMultipart_ObjStore_S3;
   } else if (s->info.args.exists("layout")) {
+/** comment by hy 2020-03-16
+ * # 布局
+ */
     return new RGWGetObjLayout_ObjStore_S3;
   } else if (is_tagging_op()) {
+/** comment by hy 2020-03-16
+ * # 打tag
+ */
     return new RGWGetObjTags_ObjStore_S3;
   } else if (is_obj_retention_op()) {
+/** comment by hy 2020-03-16
+ * # 监控
+ */
     return new RGWGetObjRetention_ObjStore_S3;
   } else if (is_obj_legal_hold_op()) {
+/** comment by hy 2020-03-16
+ * # 
+ */
     return new RGWGetObjLegalHold_ObjStore_S3;
   }
+/** comment by hy 2020-03-16
+ * # 对象数据操作
+      RGWGetObj_ObjStore_S3
+ */
   return get_obj_op(true);
 }
 
@@ -4508,12 +4536,24 @@ RGWOp *RGWHandler_REST_Obj_S3::op_head()
 RGWOp *RGWHandler_REST_Obj_S3::op_put()
 {
   if (is_acl_op()) {
+/** comment by hy 2020-03-16
+ * # ACL
+ */
     return new RGWPutACLs_ObjStore_S3;
   } else if (is_tagging_op()) {
+/** comment by hy 2020-03-16
+ * # TAG
+ */
     return new RGWPutObjTags_ObjStore_S3;
   } else if (is_obj_retention_op()) {
+/** comment by hy 2020-03-16
+ * # 
+ */
     return new RGWPutObjRetention_ObjStore_S3;
   } else if (is_obj_legal_hold_op()) {
+/** comment by hy 2020-03-16
+ * # 
+ */
     return new RGWPutObjLegalHold_ObjStore_S3;
   }
 
@@ -4562,16 +4602,28 @@ int RGWHandler_REST_S3::init_from_header(struct req_state* s,
   const char *req_name = s->relative_uri.c_str();
   const char *p;
 
+/** comment by hy 2020-03-15
+ * # 从uri 中解析参数名称
+ */
   if (*req_name == '?') {
     p = req_name;
   } else {
     p = s->info.request_params.c_str();
   }
 
+/** comment by hy 2020-03-15
+ * # 设置参数名称
+ */
   s->info.args.set(p);
+/** comment by hy 2020-03-15
+ * # 设置参数名称和变量
+ */
   s->info.args.parse();
 
   /* must be called after the args parsing */
+/** comment by hy 2020-03-15
+ * # 配置参数格式
+ */
   int ret = allocate_formatter(s, default_formatter, configurable_format);
   if (ret < 0)
     return ret;
@@ -4602,6 +4654,9 @@ int RGWHandler_REST_S3::init_from_header(struct req_state* s,
    * the bucket (and its tenant) from DNS and Host: header (HTTP_HOST)
    * into req_status.bucket_name directly.
    */
+/** comment by hy 2020-03-15
+ * # 
+ */
   if (s->init_state.url_bucket.empty()) {
     // Save bucket to tide us over until token is parsed.
     s->init_state.url_bucket = first;
@@ -4634,6 +4689,9 @@ static int verify_mfa(rgw::sal::RGWRadosStore *store, RGWUserInfo *user, const s
     return -EACCES;
   }
 
+/** comment by hy 2020-03-07
+ * # 
+ */
   int ret = store->svc()->cls->mfa.check_mfa(user->user_id, serial, pin, null_yield);
   if (ret < 0) {
     ldpp_dout(dpp, 20) << "NOTICE: failed to check MFA, serial=" << serial << dendl;
@@ -4649,6 +4707,9 @@ int RGWHandler_REST_S3::postauth_init()
 {
   struct req_init_state *t = &s->init_state;
 
+/** comment by hy 2020-03-07
+ * # 解析
+ */
   rgw_parse_url_bucket(t->url_bucket, s->user->get_tenant(),
 		      s->bucket_tenant, s->bucket_name);
 
@@ -4656,23 +4717,41 @@ int RGWHandler_REST_S3::postauth_init()
            << " s->bucket=" << rgw_make_bucket_entry_name(s->bucket_tenant, s->bucket_name) << dendl;
 
   int ret;
+/** comment by hy 2020-03-07
+ * # 验证请求的bucket的合法性
+ */
   ret = rgw_validate_tenant_name(s->bucket_tenant);
   if (ret)
     return ret;
+/** comment by hy 2020-03-07
+ * # 
+ */
   if (!s->bucket_name.empty()) {
     ret = validate_object_name(s->object.name);
     if (ret)
       return ret;
   }
 
+/** comment by hy 2020-03-07
+ * # 源端目标
+ */
   if (!t->src_bucket.empty()) {
+/** comment by hy 2020-03-07
+ * # 解析出bucket名称以及账户名称
+ */
     rgw_parse_url_bucket(t->src_bucket, s->user->get_tenant(),
 			s->src_tenant_name, s->src_bucket_name);
+/** comment by hy 2020-03-07
+ * # 鉴定名称合法性
+ */
     ret = rgw_validate_tenant_name(s->src_tenant_name);
     if (ret)
       return ret;
   }
 
+/** comment by hy 2020-03-07
+ * # MFA 支持
+ */
   const char *mfa = s->info.env->get("HTTP_X_AMZ_MFA");
   if (mfa) {
     ret = verify_mfa(store, &s->user->get_info(), string(mfa), &s->mfa_verified, s);
@@ -4801,6 +4880,9 @@ int RGW_Auth_S3::authorize(const DoutPrefixProvider *dpp,
     return -EPERM;
   }
 
+/** comment by hy 2020-03-07
+ * # 认证成功
+ */
   const auto ret = rgw::auth::Strategy::apply(dpp, auth_registry.get_s3_main(), s);
   if (ret == 0) {
     /* Populate the owner info. */
@@ -4825,7 +4907,14 @@ RGWHandler_REST* RGWRESTMgr_S3::get_handler(struct req_state* const s,
                                             const rgw::auth::StrategyRegistry& auth_registry,
                                             const std::string& frontend_prefix)
 {
+/** comment by hy 2020-03-15
+ * # 获取是不是以托管
+ */
   bool is_s3website = enable_s3website && (s->prot_flags & RGW_REST_WEBSITE);
+/** comment by hy 2020-03-15
+ * # 获取头信息, s3托管 使用 HTML
+     否则 就是 XML
+ */
   int ret =
     RGWHandler_REST_S3::init_from_header(s,
 					is_s3website ? RGW_FORMAT_HTML :
@@ -4845,6 +4934,9 @@ RGWHandler_REST* RGWRESTMgr_S3::get_handler(struct req_state* const s,
     }
   } else {
     if (s->init_state.url_bucket.empty()) {
+/** comment by hy 2020-03-15
+ * # 开始 设置 s3 服务
+ */
       handler = new RGWHandler_REST_Service_S3(auth_registry, enable_sts, enable_iam, enable_pubsub);
     } else if (s->object.empty()) {
       handler = new RGWHandler_REST_Bucket_S3(auth_registry, enable_pubsub);
@@ -4924,6 +5016,9 @@ int RGWHandler_REST_S3Website::retarget(RGWOp* op, RGWOp** new_op) {
   ldpp_dout(s, 10) << "retarget get_effective_key " << s->object << " -> "
 		    << new_obj << dendl;
 
+/** comment by hy 2020-03-08
+ * # 
+ */
   RGWBWRoutingRule rrule;
   bool should_redirect =
     s->bucket_info.website_conf.should_redirect(new_obj.name, 0, &rrule);

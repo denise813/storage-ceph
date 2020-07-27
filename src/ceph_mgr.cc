@@ -68,12 +68,18 @@ int main(int argc, const char **argv)
   common_init_finish(g_ceph_context);
 
   MgrStandby mgr(argc, argv);
+/** comment by hy 2020-04-22
+ * # 初始化
+ */
   int rc = mgr.init();
   if (rc != 0) {
       std::cerr << "Error in initialization: " << cpp_strerror(rc) << std::endl;
       return rc;
   }
 
+/** comment by hy 2020-04-22
+ * # 等待退出
+ */
   return mgr.main(args);
 }
 

@@ -102,6 +102,9 @@ public:
   class Put;
 
 protected:
+/** comment by hy 2020-03-19
+ * # RGWSI_Bucket_BE_Handler
+ */
   RGWSI_MetaBackend_Handler *be_handler;
 
   virtual int do_get(RGWSI_MetaBackend_Handler::Op *op, string& entry, RGWMetadataObject **obj, optional_yield y) = 0;

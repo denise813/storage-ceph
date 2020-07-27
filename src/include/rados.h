@@ -450,7 +450,15 @@ enum {
 	CEPH_OSD_FLAG_WRITE =          0x0020,  /* op may write */
 	CEPH_OSD_FLAG_ORDERSNAP =      0x0040,  /* EOLDSNAP if snapc is out of order */
 	CEPH_OSD_FLAG_PEERSTAT_OLD =   0x0080,  /* DEPRECATED msg includes osd_peer_stat */
+/** comment by hy 2020-02-27
+ * # 指示 op 可以被 Prima可／Replica 执行
+     但是当前处理 op 的 PG 既不是 Primary 也不是 Replica
+     例如 Stray
+ */
 	CEPH_OSD_FLAG_BALANCE_READS =  0x0100,
+/** comment by hy 2020-02-27
+ * # 指示 op 之间可以并发执行
+ */
 	CEPH_OSD_FLAG_PARALLELEXEC =   0x0200,  /* execute op in parallel */
 	CEPH_OSD_FLAG_PGOP =           0x0400,  /* pg op, no object */
 	CEPH_OSD_FLAG_EXEC =           0x0800,  /* op may exec */
@@ -468,6 +476,10 @@ enum {
 	CEPH_OSD_FLAG_REDIRECTED   = 0x200000,  /* op has been redirected */
 	CEPH_OSD_FLAG_KNOWN_REDIR = 0x400000,  /* redirect bit is authoritative */
 	CEPH_OSD_FLAG_FULL_TRY =    0x800000,  /* try op despite full flag */
+/** comment by hy 2020-02-27
+ * # op 在集群被标记为 Full 之前发送
+     PG 通过比对 op 携带的 Epoch 和集群标记为 Full 时的 Epoch 感知
+ */
 	CEPH_OSD_FLAG_FULL_FORCE = 0x1000000,  /* force op despite full flag */
 	CEPH_OSD_FLAG_IGNORE_REDIRECT = 0x2000000,  /* ignore redirection */
 	CEPH_OSD_FLAG_RETURNVEC = 0x4000000, /* allow overall result >= 0, and return >= 0 and buffer for each op in opvec */

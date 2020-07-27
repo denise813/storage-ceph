@@ -37,6 +37,9 @@ int aio_queue_t::submit_batch(aio_iter begin, aio_iter end,
   int done = 0;
   while (left > 0) {
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-04-22
+ * # 调用libaio相关的api提交io
+ */
     r = io_submit(ctx, std::min(left, max_iodepth), (struct iocb**)(piocb + done));
 #elif defined(HAVE_POSIXAIO)
     if (piocb[done]->n_aiocb == 1) {
@@ -85,6 +88,9 @@ int aio_queue_t::get_next_completed(int timeout_ms, aio_t **paio, int max)
 
   int r = 0;
   do {
+/** comment by hy 2020-04-24
+ * # 调用libaio相关的api，获取已经完成aio请求
+ */
 #if defined(HAVE_LIBAIO)
     r = io_getevents(ctx, 1, max, events, &t);
 #elif defined(HAVE_POSIXAIO)

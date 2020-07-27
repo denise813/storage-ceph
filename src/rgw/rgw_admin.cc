@@ -476,6 +476,9 @@ public:
 
   SimpleCmd(std::optional<Commands> cmds,
             std::optional<Aliases> aliases) {
+/** comment by hy 2020-03-10
+ * # 别名处理
+ */
     if (aliases) {
       add_aliases(*aliases);
     }
@@ -490,6 +493,9 @@ public:
   }
 
   void add_commands(std::vector<Def>& cmds) {
+/** comment by hy 2020-03-10
+ * # 
+ */
     for (auto& cmd : cmds) {
       vector<string> words;
       get_str_vec(cmd.cmd, " ", words);
@@ -519,6 +525,14 @@ public:
                     vector<string> *extra_args,
                     string *error,
                     vector<string> *expected) {
+/** comment by hy 2020-03-11
+ * # cc文件定义的类 
+     内部的方法
+     加载了所支持的命令
+     看看匹配字符否
+     匹配后就开始整理参数
+       如找到选项
+ */
     auto node = &cmd_root;
 
     std::optional<std::any> found_opt;
@@ -754,6 +768,10 @@ enum class OPT {
 
 using namespace rgw_admin;
 
+/** comment by hy 2020-03-10
+ * # 户命令行转化操作码表
+     这里的操作码是该进程范围有效
+ */
 static SimpleCmd::Commands all_cmds = {
   { "user create", OPT::USER_CREATE },
   { "user info", OPT::USER_INFO },
@@ -1630,8 +1648,14 @@ static int send_to_remote_or_url(RGWRESTConn *conn, const string& url,
                                  JSONParser& parser)
 {
   if (url.empty()) {
+/** comment by hy 2020-03-15
+ * # 
+ */
     return send_to_remote_gateway(conn, info, in_data, parser);
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   return send_to_url(url, access, secret, info, in_data, parser);
 }
 
@@ -1656,6 +1680,9 @@ static int commit_period(RGWRealm& realm, RGWPeriod& period,
       return ret;
     }
     // the master zone can commit locally
+/** comment by hy 2020-03-15
+ * # 
+ */
     ret = period.commit(store, realm, current_period, cerr, force);
     if (ret < 0) {
       cerr << "failed to commit period: " << cpp_strerror(-ret) << std::endl;
@@ -1731,11 +1758,17 @@ static int commit_period(RGWRealm& realm, RGWPeriod& period,
     cerr << "Error updating period epoch: " << cpp_strerror(ret) << std::endl;
     return ret;
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   ret = period.reflect();
   if (ret < 0) {
     cerr << "Error updating local objects: " << cpp_strerror(ret) << std::endl;
     return ret;
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   realm.notify_new_period(period);
   return ret;
 }
@@ -1762,6 +1795,9 @@ static int update_period(const string& realm_id, const string& realm_name,
     cerr << "period init failed: " << cpp_strerror(-ret) << std::endl;
     return ret;
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   period.fork();
   ret = period.update();
   if(ret < 0) {
@@ -1769,12 +1805,18 @@ static int update_period(const string& realm_id, const string& realm_name,
     // period.update()
     return ret;
   }
+/** comment by hy 2020-03-15
+ * # 
+ */
   ret = period.store_info(false);
   if (ret < 0) {
     cerr << "failed to store period: " << cpp_strerror(-ret) << std::endl;
     return ret;
   }
   if (commit) {
+/** comment by hy 2020-03-15
+ * # 
+ */
     ret = commit_period(realm, period, remote, url, access, secret, force);
     if (ret < 0) {
       cerr << "failed to commit period: " << cpp_strerror(-ret) << std::endl;
@@ -3037,6 +3079,9 @@ int main(int argc, const char **argv)
     exit(1);
   }
   if (ceph_argparse_need_usage(args)) {
+/** comment by hy 2020-03-10
+ * # 打印帮助
+ */
     usage();
     exit(0);
   }
@@ -3247,9 +3292,18 @@ int main(int argc, const char **argv)
 
   rgw::notify::EventTypeList event_types;
 
+/** comment by hy 2020-03-11
+ * # 加载支持的操作
+ */
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
+/** comment by hy 2020-03-11
+ * # 解析输入的操作,通过各个变量进行保存其值
+ */
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
+/** comment by hy 2020-03-10
+ * # 去掉 --
+ */
     if (ceph_argparse_double_dash(args, i)) {
       break;
     } else if (ceph_argparse_witharg(args, i, &val, "-i", "--uid", (char*)NULL)) {
@@ -3680,12 +3734,18 @@ int main(int argc, const char **argv)
     usage();
     exit(1);
   }
+/** comment by hy 2020-03-11
+ * # 这个否则去掉不好吗?
+ */
   else {
     std::vector<string> extra_args;
     std::vector<string> expected;
 
     std::any _opt_cmd;
 
+/** comment by hy 2020-03-11
+ * # 找命名整理参数
+ */
     if (!cmd.find_command(args, &_opt_cmd, &extra_args, &err, &expected)) {
       if (!expected.empty()) {
         cerr << err << std::endl;
@@ -3706,9 +3766,15 @@ int main(int argc, const char **argv)
       exit(1);
     }
 
+/** comment by hy 2020-03-11
+ * # 得到对应的op 编码
+ */
     opt_cmd = std::any_cast<OPT>(_opt_cmd);
 
     /* some commands may have an optional extra param */
+/** comment by hy 2020-03-11
+ * # 开始整理参数
+ */
     if (!extra_args.empty()) {
       switch (opt_cmd) {
         case OPT::METADATA_GET:
@@ -3722,6 +3788,9 @@ int main(int argc, const char **argv)
       }
     }
 
+/** comment by hy 2020-03-11
+ * # 如果是对bucket 进行操作 并指定操作
+ */
     init_optional_bucket(opt_bucket, opt_tenant,
                          opt_bucket_name, opt_bucket_id);
     init_optional_bucket(opt_source_bucket, opt_source_tenant,
@@ -3729,6 +3798,10 @@ int main(int argc, const char **argv)
     init_optional_bucket(opt_dest_bucket, opt_dest_tenant,
                          opt_dest_bucket_name, opt_dest_bucket_id);
 
+/** comment by hy 2020-02-09
+ * # 用户相关操作
+     关于用户的设置
+ */
     if (tenant.empty()) {
       tenant = user_id.tenant;
     } else {
@@ -3766,6 +3839,9 @@ int main(int argc, const char **argv)
   }
 
   // default to pretty json
+/** comment by hy 2020-03-11
+ * # 格式输出参数
+ */
   if (format.empty()) {
     format = "json";
     pretty_format = true;
@@ -3780,6 +3856,9 @@ int main(int argc, const char **argv)
     exit(1);
   }
 
+/** comment by hy 2020-03-11
+ * # 隔离域相关设置配置文件中读取
+ */
   zone_formatter = new JSONFormatter_PrettyZone(pretty_format);
 
   realm_name = g_conf()->rgw_realm;
@@ -3789,6 +3868,9 @@ int main(int argc, const char **argv)
   RGWStreamFlusher f(formatter, cout);
 
   // not a raw op if 'period update' needs to commit to master
+/** comment by hy 2020-03-11
+ * # 将操作分级,只读操作,从向主有更新的操作,设置最新信息的操作
+ */
   bool raw_period_update = opt_cmd == OPT::PERIOD_UPDATE && !commit;
   std::set<OPT> raw_storage_ops_list = {OPT::ZONEGROUP_ADD, OPT::ZONEGROUP_CREATE, OPT::ZONEGROUP_DELETE,
 			 OPT::ZONEGROUP_GET, OPT::ZONEGROUP_LIST,
@@ -3876,12 +3958,17 @@ int main(int argc, const char **argv)
 			 OPT::RESHARD_STATUS,
   };
 
-
+/** comment by hy 2020-02-09
+ * # 接入是写操作
+ */
   bool raw_storage_op = (raw_storage_ops_list.find(opt_cmd) != raw_storage_ops_list.end() ||
                          raw_period_update);
   bool need_cache = readonly_ops_list.find(opt_cmd) == readonly_ops_list.end();
 
   if (raw_storage_op) {
+/** comment by hy 2020-02-09
+ * # 创建rados客户端,并设置隔离域ID
+ */
     store = RGWStoreManager::get_raw_storage(g_ceph_context);
   } else {
     store = RGWStoreManager::get_storage(g_ceph_context, false, false, false, false, false,
@@ -5420,6 +5507,9 @@ int main(int argc, const char **argv)
   resolve_zone_ids_opt(opt_dest_zone_names, opt_dest_zone_ids);
 
   bool non_master_cmd = (!store->svc()->zone->is_meta_master() && !yes_i_really_mean_it);
+/** comment by hy 2020-03-14
+ * # 
+ */
   std::set<OPT> non_master_ops_list = {OPT::USER_CREATE, OPT::USER_RM, 
                                         OPT::USER_MODIFY, OPT::USER_ENABLE,
                                         OPT::USER_SUSPEND, OPT::SUBUSER_CREATE,
@@ -5441,6 +5531,9 @@ int main(int argc, const char **argv)
       return EINVAL;
   }
 
+/** comment by hy 2020-03-14
+ * # 对象实体参数设置
+ */
   if (!user_id.empty()) {
     user_op.set_user_id(user_id);
     bucket_op.set_user_id(user_id);
@@ -5482,6 +5575,9 @@ int main(int argc, const char **argv)
   if (max_buckets_specified)
     user_op.set_max_buckets(max_buckets);
 
+/** comment by hy 2020-03-14
+ * # 角色
+ */
   if (admin_specified)
      user_op.set_admin(admin);
 
@@ -5491,6 +5587,9 @@ int main(int argc, const char **argv)
   if (set_perm)
     user_op.set_perm(perm_mask);
 
+/** comment by hy 2020-02-10
+ * # 临时秘钥
+ */
   if (set_temp_url_key) {
     map<int, string>::iterator iter = temp_url_keys.begin();
     for (; iter != temp_url_keys.end(); ++iter) {
@@ -5498,6 +5597,9 @@ int main(int argc, const char **argv)
     }
   }
 
+/** comment by hy 2020-03-14
+ * # 用户操作
+ */
   if (!op_mask_str.empty()) {
     uint32_t op_mask;
     int ret = rgw_parse_op_type_list(op_mask_str, &op_mask);
@@ -5509,10 +5611,16 @@ int main(int argc, const char **argv)
     user_op.set_op_mask(op_mask);
   }
 
+/** comment by hy 2020-02-10
+ * # 秘钥处理
+ */
   if (key_type != KEY_TYPE_UNDEFINED)
     user_op.set_key_type(key_type);
 
   // set suspension operation parameters
+/** comment by hy 2020-03-14
+ * # 用户暂停标志
+ */
   if (opt_cmd == OPT::USER_ENABLE)
     user_op.set_suspension(false);
   else if (opt_cmd == OPT::USER_SUSPEND)
@@ -5538,6 +5646,10 @@ int main(int argc, const char **argv)
   RGWUser user;
   int ret = 0;
   if (!(user_id.empty() && access_key.empty()) || !subuser.empty()) {
+/** comment by hy 2020-02-10
+ * # 初始化用户
+     生成的处理者,用户数据
+ */
     ret = user.init(store, user_op);
     if (ret < 0) {
       cerr << "user.init failed: " << cpp_strerror(-ret) << std::endl;
@@ -5546,6 +5658,9 @@ int main(int argc, const char **argv)
   }
 
   /* populate bucket operation */
+/** comment by hy 2020-02-10
+ * # 桶数据
+ */
   bucket_op.set_bucket_name(bucket_name);
   bucket_op.set_object(object);
   bucket_op.set_check_objects(check_objects);
@@ -5566,9 +5681,18 @@ int main(int argc, const char **argv)
     }
     break;
   case OPT::USER_CREATE:
+/** comment by hy 2020-03-14
+ * # 创建对象
+ */
     if (!user_op.has_existing_user()) {
+/** comment by hy 2020-03-14
+ * # 设置创建秘钥
+ */
       user_op.set_generate_key(); // generate a new key by default
     }
+/** comment by hy 2020-03-15
+ * # 创建对象
+ */
     ret = user.add(user_op, &err_msg);
     if (ret < 0) {
       cerr << "could not create user: " << err_msg << std::endl;
@@ -5692,6 +5816,9 @@ int main(int argc, const char **argv)
 
       // load the period
       RGWPeriod period(period_id);
+/** comment by hy 2020-03-15
+ * # 读取 period 对象
+ */
       int ret = period.init(g_ceph_context, store->svc()->sysobj);
       if (ret < 0) {
         cerr << "period init failed: " << cpp_strerror(-ret) << std::endl;
@@ -5704,6 +5831,9 @@ int main(int argc, const char **argv)
       jf.flush(bl);
 
       JSONParser p;
+/** comment by hy 2020-03-15
+ * # 
+ */
       ret = send_to_remote_or_url(nullptr, url, access_key, secret_key,
                                   info, bl, p);
       if (ret < 0) {

@@ -130,7 +130,6 @@ void client_flush_set_callback(void *p, ObjectCacher::ObjectSet *oset)
   client->flush_set_callback(oset);
 }
 
-
 // -------------
 
 Client::CommandHook::CommandHook(Client *client) :
@@ -2490,6 +2489,9 @@ void Client::_handle_full_flag(int64_t pool)
 
 void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
 {
+/** comment by hy 2020-03-20
+ * #
+ */
   std::set<entity_addr_t> new_blacklists;
   objecter->consume_blacklist_events(&new_blacklists);
 
@@ -2499,6 +2501,9 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
     [&](const OSDMap& o) {
       return o.require_osd_release < ceph_release_t::nautilus;
     });
+/** comment by hy 2020-03-20
+ * #
+ */
   if (!blacklisted) {
     for (auto a : myaddrs.v) {
       // blacklist entries are always TYPE_ANY for nautilus+
@@ -2507,6 +2512,9 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
 	new_blacklist = true;
 	break;
       }
+/** comment by hy 2020-03-20
+ * # 之前的版本兼容
+ */
       if (prenautilus) {
 	// ...except pre-nautilus, they were TYPE_LEGACY
 	a.set_type(entity_addr_t::TYPE_LEGACY);
@@ -2517,11 +2525,17 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
       }
     }
   }
+/** comment by hy 2020-03-20
+ * # 新的黑名单
+ */
   if (new_blacklist) {
     auto epoch = objecter->with_osdmap([](const OSDMap &o){
         return o.get_epoch();
         });
     lderr(cct) << "I was blacklisted at osd epoch " << epoch << dendl;
+/** comment by hy 2020-03-20
+ * # 本客户端在黑名单里
+ */
     blacklisted = true;
 
     _abort_mds_sessions(-EBLACKLISTED);
@@ -2551,6 +2565,9 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
     // cancel_writes
     std::vector<int64_t> full_pools;
 
+/** comment by hy 2020-03-20
+ * # 从osdmap 中获取对应pool信息
+ */
     objecter->with_osdmap([&full_pools](const OSDMap &o) {
 	for (const auto& kv : o.get_pools()) {
 	  if (kv.second.has_flag(pg_pool_t::FLAG_FULL)) {
@@ -2559,6 +2576,9 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
 	}
       });
 
+/** comment by hy 2020-03-20
+ * # 订阅对应的full pool信息
+ */
     for (auto p : full_pools)
       _handle_full_flag(p);
 
@@ -2566,6 +2586,9 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
     // away.  For the global full flag objecter does this for us, but
     // it pays no attention to the per-pool full flag so in this branch
     // we do it ourselves.
+/** comment by hy 2020-03-20
+ * # 向mon注册osdmap订阅
+ */
     if (!full_pools.empty()) {
       objecter->maybe_request_map();
     }

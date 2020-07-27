@@ -22,7 +22,14 @@ static void init_bucket(rgw_bucket *b, const char *t, const char *n, const char 
   b->name = n;
   b->marker = m;
   b->bucket_id = id;
+/** comment by hy 2020-02-10
+ * # 根据隔离域中初始化
+        rgw.buckets.data
+ */
   b->explicit_placement.data_pool = rgw_pool(dp);
+/** comment by hy 2020-02-10
+ * # rgw.buckets.index
+ */
   b->explicit_placement.index_pool = rgw_pool(ip);
 }
 
@@ -167,6 +174,22 @@ void RGWObjManifest::generate_test_instances(std::list<RGWObjManifest*>& o)
   o.push_back(new RGWObjManifest);
 }
 
+/*****************************************************************************
+ * 函 数 名  : RGWObjManifest.get_implicit_location
+ * 负 责 人  : hy
+ * 创建日期  : 2020年3月22日
+ * 函数功能  : 获取分片所对应的位置
+ * 输入参数  : uint64_t cur_part_id      分段号
+               uint64_t cur_stripe       条带大小
+               uint64_t ofs              偏移
+               string *override_prefix   新定义的前缀
+               rgw_obj_select *location  位置信息
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void RGWObjManifest::get_implicit_location(uint64_t cur_part_id, uint64_t cur_stripe, uint64_t ofs, string *override_prefix, rgw_obj_select *location)
 {
   rgw_obj loc;
@@ -175,6 +198,9 @@ void RGWObjManifest::get_implicit_location(uint64_t cur_part_id, uint64_t cur_st
   string& ns = loc.key.ns;
 
   if (!override_prefix || override_prefix->empty()) {
+/** comment by hy 2020-03-22
+ * # 使用前缀
+ */
     oid = prefix;
   } else {
     oid = *override_prefix;
@@ -192,12 +218,21 @@ void RGWObjManifest::get_implicit_location(uint64_t cur_part_id, uint64_t cur_st
       ns = shadow_ns;
     }
   } else {
+/** comment by hy 2020-03-22
+ * # 无分片号
+ */
     char buf[32];
     if (cur_stripe == 0) {
+/** comment by hy 2020-03-22
+ * # 分段没有设置条带大小
+ */
       snprintf(buf, sizeof(buf), ".%d", (int)cur_part_id);
       oid += buf;
       ns= RGW_OBJ_NS_MULTIPART;
     } else {
+/** comment by hy 2020-03-22
+ * # 普通的条带
+ */
       snprintf(buf, sizeof(buf), ".%d_%d", (int)cur_part_id, (int)cur_stripe);
       oid += buf;
       ns = shadow_ns;

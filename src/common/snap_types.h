@@ -41,7 +41,13 @@ WRITE_CLASS_ENCODER(SnapRealmInfo)
 
 
 struct SnapContext {
+/** comment by hy 2020-02-23
+ * # 最新的快照序号
+ */
   snapid_t seq;            // 'time' stamp
+/** comment by hy 2020-02-23
+ * # 当前存在的快照序号,降序
+ */
   std::vector<snapid_t> snaps;  // existent snaps, in descending order
 
   SnapContext() {}

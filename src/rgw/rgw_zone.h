@@ -228,14 +228,26 @@ public:
 
   void set_storage_class(const string& sc, const rgw_pool *data_pool, const string *compression_type) {
     const string *psc = &sc;
+/** comment by hy 2020-03-15
+ * # 
+ */
     if (sc.empty()) {
       psc = &RGW_STORAGE_CLASS_STANDARD;
     }
+/** comment by hy 2020-03-15
+ * # 
+ */
     RGWZoneStorageClass& storage_class = m[*psc];
     if (data_pool) {
+/** comment by hy 2020-03-15
+ * # 
+ */
       storage_class.data_pool = *data_pool;
     }
     if (compression_type) {
+/** comment by hy 2020-03-15
+ * # 
+ */
       storage_class.compression_type = *compression_type;
     }
   }
@@ -357,24 +369,115 @@ struct RGWZonePlacementInfo {
 WRITE_CLASS_ENCODER(RGWZonePlacementInfo)
 
 struct RGWZoneParams : RGWSystemMetaObj {
-  rgw_pool domain_root;
-  rgw_pool control_pool;
-  rgw_pool gc_pool;
-  rgw_pool lc_pool;
-  rgw_pool log_pool;
-  rgw_pool intent_log_pool;
-  rgw_pool usage_log_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta:root
+     包含reaml, zone, zonegroup信息
+     zone 分为主从
+     一个 zonegroup 是用来处理桶和用户信息创建
+     一个zonegroup 可以跨集群
+     realm 包含1到多个zonegroup 分为主从
+     一个系统分为多个 realm
+     多个之间进行隔离
 
+     包含bucket和bucket元数据
+     bucket创建创建了两个对象
+     将管理结构RGWBucketInfo保存在该对象的内容中
+     KV条目保存到对象的扩展属性中
+     创建一个名为<user_id>.buckets对象
+     保存在该对象的OMAP中
+     OMAP头部保存用户使用空间统计信息 cls_user_header
+     OMAP的KV条目保存一个存储桶使用空间统计信息 cls_user_bucket_entry
+
+     更新user_id.buckets对象
+
+     一个是bucket_name
+     一个是bucket.meta.<bucketname>.<marker>
+     同时创建
+     一个是在rgw.bucket.index对应一个object
+     .dir<marker>
+ */
+  rgw_pool domain_root;
+/** comment by hy 2020-03-12
+ * # .rgw.control
+     watch-notify 对象
+     1.用于作为一个zone对应多个RGW
+     2.用于cache
+     通知变化
+ */
+  rgw_pool control_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.log.gc
+     中大文件后台删除,记录那些待删除的对象
+ */
+  rgw_pool gc_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.log.lc 保存对象生命周期执行状态
+ */
+  rgw_pool lc_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.log op log、数据同步log、过期对象等
+     各种log信息
+ */
+  rgw_pool log_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.log.intent 暂时未使用,估计以后作为临时存放点
+ */
+  rgw_pool intent_log_pool;
+/** comment by hy 2020-03-12
+ * # rgw.log.usage 存储计量数据统计
+   # 比如上传文件多少次，下载多少次，遍历bucket多少次之类
+ */
+  rgw_pool usage_log_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta.users.key
+     存储用户AK和uid的对应关系，
+     方便通过用户restful请求的ak找到用户id
+ */
   rgw_pool user_keys_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta.users.email
+   # 存储用户email和uid的对应关系
+ */
   rgw_pool user_email_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta.user.swift
+     存储swift key和uid的对应关系
+ */
   rgw_pool user_swift_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta.user.uid
+     保存用户信息,和用户下的bucket信息
+ */
   rgw_pool user_uid_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.meta.roles
+ */
   rgw_pool roles_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.log.reshard
+ */
   rgw_pool reshard_pool;
+/** comment by hy 2020-03-12
+ * # .rgw.opt
+      过期数据
+ */
   rgw_pool otp_pool;
 
   RGWAccessKey system_key;
 
+/** comment by hy 2020-03-14
+ * # rgw.data.root
+
+     bucket.reshard_pool
+     包含桶信息,和 rgw.data.root对应
+     
+     创建桶时,生成一个或多个index对象
+     用于保存该存储桶下的对象列表
+     用于列举,和上传,删除 更新索引用
+ 
+     bucket.data pool
+     包含每个bucket目录下对象     
+ */
   map<std::string, RGWZonePlacementInfo> placement_pools;
 
   std::string realm_id;

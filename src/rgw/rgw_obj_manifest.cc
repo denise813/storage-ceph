@@ -32,9 +32,13 @@ int RGWObjManifest::generator::create_next(uint64_t ofs)
 
   last_ofs = ofs;
   manifest->set_obj_size(ofs);
-
+/** comment by hy 2020-03-22
+ * # 继续遍历对象
+ */
   manifest->get_implicit_location(cur_part_id, cur_stripe, ofs, NULL, &cur_obj);
-
+/** comment by hy 2020-03-22
+ * # 
+ */
   manifest->update_iterators();
 
   return 0;
@@ -211,6 +215,9 @@ bool RGWObjManifest::get_rule(uint64_t ofs, RGWObjManifestRule *rule)
     return false;
   }
 
+/** comment by hy 2020-03-22
+ * # 找到第一个规满足条件偏移
+ */
   map<uint64_t, RGWObjManifestRule>::iterator iter = rules.upper_bound(ofs);
   if (iter != rules.begin()) {
     --iter;
@@ -315,9 +322,15 @@ int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m
   manifest = _m;
 
   if (!tail_placement_rule) {
+/** comment by hy 2020-03-16
+ * # 
+ */
     manifest->set_tail_placement(head_placement_rule, _b);
   } else {
     rgw_placement_rule new_tail_rule = *tail_placement_rule;
+/** comment by hy 2020-03-22
+ * # 
+ */
     new_tail_rule.inherit_from(head_placement_rule);
     manifest->set_tail_placement(new_tail_rule, _b);
   }
@@ -327,15 +340,24 @@ int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m
 
   if (manifest->get_prefix().empty()) {
     char buf[33];
+/** comment by hy 2020-03-16
+ * # 得到一个随机数，作为前缀
+ */
     gen_rand_alphanumeric(cct, buf, sizeof(buf) - 1);
 
     string oid_prefix = ".";
     oid_prefix.append(buf);
     oid_prefix.append("_");
 
+/** comment by hy 2020-03-16
+ * # .randnum_
+ */
     manifest->set_prefix(oid_prefix);
   }
 
+/** comment by hy 2020-03-22
+ * # 找到第一个规则
+ */
   bool found = manifest->get_rule(0, &rule);
   if (!found) {
     derr << "ERROR: manifest->get_rule() could not find rule" << dendl;
@@ -349,14 +371,22 @@ int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m
   } else {
     cur_stripe_size = rule.stripe_max_size;
   }
-  
+/** comment by hy 2020-03-22
+ * # 获取多段段号
+ */
   cur_part_id = rule.start_part_num;
 
+/** comment by hy 2020-03-22
+ * # 获取当前对象的存储
+ */
   manifest->get_implicit_location(cur_part_id, cur_stripe, 0, NULL, &cur_obj);
 
   // Normal object which not generated through copy operation 
   manifest->set_tail_instance(_obj.key.instance);
 
+/** comment by hy 2020-03-22
+ * # 更新对应的偏移
+ */
   manifest->update_iterators();
 
   return 0;

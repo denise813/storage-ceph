@@ -408,6 +408,9 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 			(const struct crush_bucket_straw *)in,
 			x, r);
 	case CRUSH_BUCKET_STRAW2:
+/** comment by hy 2020-04-02
+ * # 对所有待选元素计算值
+ */
 		return bucket_straw2_choose(
 			(const struct crush_bucket_straw2 *)in,
 			x, r, arg, position);
@@ -523,6 +526,10 @@ parent_r %d stable %d\n",
 						in, work->work[-1-in->id],
 						x, r);
 				else
+/** comment by hy 2020-04-02
+ * # 选择出其中一个权重最大的,r用来标识第几个副本,作为随机因子参与所有
+     元素的随机值计算,这里是一个伪随机算法
+ */
 					item = crush_bucket_choose(
 						in, work->work[-1-in->id],
 						x, r,
@@ -554,6 +561,9 @@ parent_r %d stable %d\n",
 					continue;
 				}
 
+/** comment by hy 2020-04-02
+ * # 选重复了
+ */
 				/* collision? */
 				for (i = 0; i < outpos; i++) {
 					if (out[i] == item) {
@@ -562,6 +572,9 @@ parent_r %d stable %d\n",
 					}
 				}
 
+/** comment by hy 2020-04-02
+ * # 权重一样就会,冲突了
+ */
 				reject = 0;
 				if (!collide && recurse_to_leaf) {
 					if (item < 0) {
@@ -886,16 +899,33 @@ void crush_init_workspace(const struct crush_map *m, void *v) {
 	BUG_ON((char *)point - (char *)w != m->working_size);
 }
 
-/**
+/** comment by hy 2020-02-18
  * crush_do_rule - calculate a mapping with the given input and rule
- * @map: the crush_map
- * @ruleno: the rule id
- * @x: hash input
- * @result: pointer to result vector
- * @result_max: maximum result size
- * @weight: weight vector (for map leaves)
- * @weight_max: size of weight vector
+ * 完成crush算法的选择过程
+ * @map: the crush_map crush map结构
+ * @ruleno: the rule id 规则id
+ * @x: hash input 输入参数一般是 pgid
+ * @result: pointer to result vector 输出的osd列表
+ * @result_max: maximum result size 书册的osd的数量
+ * @weight: weight vector (for map leaves) 所有osd权重,通过他来判断osd是否out
+ * @weight_max: size of weight vector 所以osd的数量
  * @cwin: Pointer to at least map->working_size bytes of memory or NULL.
+
+  执行流程
+    ruleset 0
+    type replicated
+    min_size 1
+    max_size 10
+    step take default #定义pg查找副本的入口点
+    # 容灾模式 chooseleaf(容灾) choose(非容灾)
+    # 冗余算法 firstn(副本) indep
+    # 输出的副本数 0(表示 不同的pool使用同一个pool,可以有不同的副本数)
+    # type 对应容灾模式时表示叶子节点,对弈非容灾表示类型
+    step chooseleaf firstn 0 type host #选叶子节点、深度优先、隔离host
+    step emit #结束
+  测试范例
+    crushtool -i mycrushmap --test --min-x 0 --max-x 9 --num-rep 3 --ruleset 0 \
+      --show_mappings
  */
 int crush_do_rule(const struct crush_map *map,
 		  int ruleno, int x, int *result, int result_max,
@@ -907,6 +937,9 @@ int crush_do_rule(const struct crush_map *map,
 	int *a = (int *)((char *)cw + map->working_size);
 	int *b = a + result_max;
 	int *c = b + result_max;
+/** comment by hy 2020-04-02
+ * # 选择 的 bucket
+ */
 	int *w = a;
 	int *o = b;
 	int recurse_to_leaf;
@@ -942,17 +975,30 @@ int crush_do_rule(const struct crush_map *map,
 	rule = map->rules[ruleno];
 	result_len = 0;
 
+/** comment by hy 2020-04-02
+ * # 按照规则执行
+ */
 	for (step = 0; step < rule->len; step++) {
 		int firstn = 0;
 		const struct crush_rule_step *curstep = &rule->steps[step];
 
 		switch (curstep->op) {
+/** comment by hy 2020-03-12
+ * # 开始起点
+ */
 		case CRUSH_RULE_TAKE:
+/** comment by hy 2020-03-12
+ * # arg1 = 选择的bucket的id号
+     参数合法就记录入点
+ */
 			if ((curstep->arg1 >= 0 &&
 			     curstep->arg1 < map->max_devices) ||
 			    (-1-curstep->arg1 >= 0 &&
 			     -1-curstep->arg1 < map->max_buckets &&
 			     map->buckets[-1-curstep->arg1])) {
+/** comment by hy 2020-03-12
+ * # 记录一个bucket id,作为后续输入
+ */
 				w[0] = curstep->arg1;
 				wsize = 1;
 			} else {
@@ -992,13 +1038,22 @@ int crush_do_rule(const struct crush_map *map,
 
 		case CRUSH_RULE_CHOOSELEAF_FIRSTN:
 		case CRUSH_RULE_CHOOSE_FIRSTN:
+/** comment by hy 2020-04-02
+ * # 副本处理
+ */
 			firstn = 1;
 			/* fall through */
 		case CRUSH_RULE_CHOOSELEAF_INDEP:
 		case CRUSH_RULE_CHOOSE_INDEP:
+/** comment by hy 2020-04-02
+ * # 纠删码处理
+ */
 			if (wsize == 0)
 				break;
 
+/** comment by hy 2020-04-02
+ * # 副本纠删码分支
+ */
 			recurse_to_leaf =
 				curstep->op ==
 				 CRUSH_RULE_CHOOSELEAF_FIRSTN ||
@@ -1009,6 +1064,9 @@ int crush_do_rule(const struct crush_map *map,
 			osize = 0;
 
 			for (i = 0; i < wsize; i++) {
+/** comment by hy 2020-04-02
+ * # 数组号
+ */
 				int bno;
 				numrep = curstep->arg1;
 				if (numrep <= 0) {
@@ -1025,6 +1083,9 @@ int crush_do_rule(const struct crush_map *map,
 					continue;
 				}
 				if (firstn) {
+/** comment by hy 2020-03-13
+ * # 副本选择
+ */
 					int recurse_tries;
 					if (choose_leaf_tries)
 						recurse_tries =
@@ -1033,6 +1094,9 @@ int crush_do_rule(const struct crush_map *map,
 						recurse_tries = 1;
 					else
 						recurse_tries = choose_tries;
+/** comment by hy 2020-04-02
+ * # 开始选择
+ */
 					osize += crush_choose_firstn(
 						map,
 						cw,
@@ -1053,6 +1117,9 @@ int crush_do_rule(const struct crush_map *map,
 						0,
 						choose_args);
 				} else {
+/** comment by hy 2020-03-13
+ * # 纠删码
+ */
 					out_size = ((numrep < (result_max-osize)) ?
 						    numrep : (result_max-osize));
 					crush_choose_indep(
@@ -1087,6 +1154,9 @@ int crush_do_rule(const struct crush_map *map,
 
 
 		case CRUSH_RULE_EMIT:
+/** comment by hy 2020-03-13
+ * # 最终选择结果给上级调用者
+ */
 			for (i = 0; i < wsize && result_len < result_max; i++) {
 				result[result_len] = w[i];
 				result_len++;

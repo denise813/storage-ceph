@@ -26,6 +26,10 @@
 
 class RGWSI_Zone;
 
+/** comment by hy 2020-03-12
+ * # 根据虚拟或硬件Multi-Factor Authentication 设备，
+     基于已经时间同步的otp 算法生成一个密码
+ */
 class RGWSI_OTP : public RGWServiceInstance
 {
   RGWSI_OTP_BE_Handler be_handler;
@@ -38,6 +42,9 @@ public:
     RGWSI_OTP *otp{nullptr};
     RGWSI_Zone *zone{nullptr};
     RGWSI_Meta *meta{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWSI_MetaBackend_OTP
+ */
     RGWSI_MetaBackend *meta_be{nullptr};
   } svc;
 

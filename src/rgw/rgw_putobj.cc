@@ -35,6 +35,9 @@ int ChunkProcessor::process(bufferlist&& data, uint64_t offset)
   chunk.claim_append(data);
 
   // write each full chunk
+/** comment by hy 2020-03-19
+ * # 分割数据
+ */
   while (chunk.length() >= chunk_size) {
     bufferlist bl;
     chunk.splice(0, chunk_size, &bl);
@@ -78,6 +81,9 @@ int StripeProcessor::process(bufferlist&& data, uint64_t offset)
     }
     // generate the next stripe
     uint64_t stripe_size;
+/** comment by hy 2020-03-19
+ * # 生成下一个条带
+ */
     r = gen->next(offset, &stripe_size);
     if (r < 0) {
       return r;

@@ -54,13 +54,25 @@ protected:
     Finisher &finisher;
 
     ceph::mutex apply_lock = ceph::make_mutex("JOS::ApplyManager::apply_lock");
+/** comment by hy 2020-02-23
+ * # 日志应用阻塞
+ */
     bool blocked;
     ceph::condition_variable blocked_cond;
+/** comment by hy 2020-02-23
+ * # 进行日志apply的ops数量
+ */
     int open_ops;
+/** comment by hy 2020-02-23
+ * # 日志应用完成的最大seq
+ */
     uint64_t max_applied_seq;
 
     ceph::mutex com_lock = ceph::make_mutex("JOS::ApplyManager::com_lock");
     map<version_t, vector<Context*> > commit_waiters;
+/** comment by hy 2020-02-23
+ * # 正在应用的日志,已经应用的日志
+ */
     uint64_t committing_seq, committed_seq;
 
   public:

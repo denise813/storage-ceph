@@ -65,12 +65,20 @@ bool HeartbeatMap::_check(const heartbeat_handle_d *h, const char *who,
 			  ceph::coarse_mono_clock::rep now)
 {
   bool healthy = true;
+/** comment by hy 2020-06-30
+ * # 检查 timeout
+ */
   auto was = h->timeout.load();
   if (was && was < now) {
     ldout(m_cct, 1) << who << " '" << h->name << "'"
 		    << " had timed out after " << h->grace << dendl;
     healthy = false;
   }
+/** comment by hy 2020-06-30
+ * # 定时自杀, 是程序中的各个注册
+     自杀了就不启动了,为什么自杀还健康呢?
+     虽然自杀后进程会退出
+ */
   was = h->suicide_timeout;
   if (was && was < now) {
     ldout(m_cct, 1) << who << " '" << h->name << "'"
@@ -137,6 +145,9 @@ bool HeartbeatMap::is_healthy()
        ++p) {
     heartbeat_handle_d *h = *p;
     auto epoch = chrono::duration_cast<chrono::seconds>(now.time_since_epoch()).count();
+/** comment by hy 2020-06-30
+ * # 检查网络
+ */
     if (!_check(h, "is_healthy", epoch)) {
       healthy = false;
       unhealthy++;
@@ -167,6 +178,9 @@ void HeartbeatMap::check_touch_file()
 {
   string path = m_cct->_conf->heartbeat_file;
   if (path.length() && is_healthy()) {
+/** comment by hy 2020-06-30
+ * # 检查磁盘, 默认由于 path 为空所以不检查
+ */
     int fd = ::open(path.c_str(), O_WRONLY|O_CREAT|O_CLOEXEC, 0644);
     if (fd >= 0) {
       ::utimes(path.c_str(), NULL);

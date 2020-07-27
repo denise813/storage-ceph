@@ -304,6 +304,20 @@ void ClassHandler::ClassFilter::unregister()
   cls->unregister_filter(this);
 }
 
+/*****************************************************************************
+ * 函 数 名  : ClassHandler.ClassMethod.exec
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  : 执行扩展模块的方法
+ * 输入参数  : cls_method_context_t ctx   
+               bufferlist& indata         
+               bufferlist& outdata        
+ * 输出参数  : 无
+ * 返 回 值  : int
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 int ClassHandler::ClassMethod::exec(cls_method_context_t ctx, bufferlist& indata, bufferlist& outdata)
 {
   int ret = 0;

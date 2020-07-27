@@ -50,6 +50,9 @@ std::function<void ()> NetworkStack::add_thread(unsigned worker_id)
         ldout(cct, 30) << __func__ << " calling event process" << dendl;
 
         ceph::timespan dur;
+/** comment by hy 2020-04-23
+ * # 处理事件
+ */
         int r = w->center.process_events(EventMaxWaitUs, &dur);
         if (r < 0) {
           ldout(cct, 20) << __func__ << " process events failed: "
@@ -116,7 +119,13 @@ NetworkStack::NetworkStack(CephContext *c, const string &t): type(t), started(fa
   }
 
   for (unsigned worker_id = 0; worker_id < num_workers; ++worker_id) {
+/** comment by hy 2020-04-23
+ * # 创建worker
+ */
     Worker *w = create_worker(cct, type, worker_id);
+/** comment by hy 2020-04-23
+ * # 初始化事件处理器
+ */
     w->center.init(InitEventNumber, worker_id, type);
     workers.push_back(w);
   }
@@ -133,7 +142,14 @@ void NetworkStack::start()
   for (unsigned i = 0; i < num_workers; ++i) {
     if (workers[i]->is_init())
       continue;
+/** comment by hy 2020-04-23
+ * # 获取线程入口的匿名函数
+ */
     std::function<void ()> thread = add_thread(i);
+/** comment by hy 2020-04-23
+ * # 启动线程
+     PosixNetworkStack::spawn_worker
+ */
     spawn_worker(i, std::move(thread));
   }
   started = true;

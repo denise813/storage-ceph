@@ -562,6 +562,9 @@ int Operations<I>::rename(const char *dstname) {
     }
   }
 
+/** comment by hy 2020-02-25
+ * # 更新缓存名称
+ */
   m_image_ctx.set_image_name(dstname);
   return 0;
 }
@@ -599,6 +602,9 @@ void Operations<I>::execute_rename(const std::string &dest_name,
         if (m_image_ctx.old_format) {
           m_image_ctx.image_watcher->set_oid(m_image_ctx.header_oid);
         }
+/** comment by hy 2020-04-24
+ * # 将客户端自己注册为watcher
+ */
 	m_image_ctx.image_watcher->register_watch(on_finish);
       });
     on_finish = new LambdaContext([this, dest_name, on_finish](int r) {
@@ -730,6 +736,14 @@ void Operations<I>::snap_create(const cls::rbd::SnapshotNamespace &snap_namespac
   }
   m_image_ctx.image_lock.unlock_shared();
 
+/** comment by hy 2020-02-22
+ * #
+     先调用 send 获取更新image 并获得锁
+     然后 execute_snap_create 发送创建
+     SnapshotCreateRequest 消息
+     发送消息完成后
+     notify_snap_create 通知锁的所有者 SnapCreatePayload 事件
+ */
   C_InvokeAsyncRequest<I> *req = new C_InvokeAsyncRequest<I>(
     m_image_ctx, "snap_create", exclusive_lock::OPERATION_REQUEST_TYPE_GENERAL,
     true,
@@ -768,6 +782,9 @@ void Operations<I>::execute_snap_create(const cls::rbd::SnapshotNamespace &snap_
   }
   m_image_ctx.image_lock.unlock_shared();
 
+/** comment by hy 2020-02-22
+ * # 开始状态机轮转
+ */
   operation::SnapshotCreateRequest<I> *req =
     new operation::SnapshotCreateRequest<I>(
       m_image_ctx, new C_NotifyUpdate<I>(m_image_ctx, on_finish),

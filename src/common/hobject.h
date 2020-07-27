@@ -50,18 +50,37 @@ public:
   }
 
 public:
+/** comment by hy 2020-01-13
+ * # 原始对象
+ */
   object_t oid;
+/** comment by hy 2020-01-13
+ * # 快照对象的对应的快照序号
+ */
   snapid_t snap;
 private:
+/** comment by hy 2020-01-13
+ * # hash与key不能同时设置
+     hash一般设置为pg的id
+ */
   uint32_t hash;
   bool max;
   uint32_t nibblewise_key_cache;
   uint32_t hash_reverse_bits;
 public:
+/** comment by hy 2020-01-13
+ * # 所在 pool的 poolid
+ */
   int64_t pool;
+/** comment by hy 2020-01-13
+ * # 一般为空,用于标识特殊对象
+ */
   std::string nspace;
 
 private:
+/** comment by hy 2020-01-13
+ * # 特殊标记
+ */
   std::string key;
 
   class hobject_t_max {};
@@ -372,8 +391,19 @@ static inline int cmp(const T&, const hobject_t&r) {
 typedef version_t gen_t;
 
 struct ghobject_t {
+/** comment by hy 2020-01-13
+ * # hash object
+ */
   hobject_t hobj;
+/** comment by hy 2020-01-13
+ * # 记录对象的版本号,PG中的序号,
+        写操作保存对象的上一个版本,写失败时, 可以rollback到上一个版本
+ */
   gen_t generation;
+/** comment by hy 2020-01-13
+ * # PG中的序号,在ec pool 下有效
+        osd在PG中的序号在数据恢复时非常关键
+ */
   shard_id_t shard_id;
   bool max;
 

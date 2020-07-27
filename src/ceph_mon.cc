@@ -299,6 +299,9 @@ int main(int argc, const char **argv)
 			 flags, "mon_data");
   ceph_heap_profiler_init();
 
+/** comment by hy 2020-02-29
+ * # 获取参数
+ */
   std::string val;
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
     if (ceph_argparse_double_dash(args, i)) {
@@ -687,6 +690,9 @@ int main(int argc, const char **argv)
   {
     // note that even if we don't find a viable monmap, we should go ahead
     // and try to build it up in the next if-else block.
+/** comment by hy 2020-04-23
+ * # 获取monitor map信息
+ */
     bufferlist mapbl;
     int err = obtain_monmap(*store, mapbl);
     if (err >= 0) {
@@ -719,7 +725,10 @@ int main(int argc, const char **argv)
 
   // this is what i will bind to
   entity_addrvec_t ipaddrs;
-
+/** comment by hy 2020-04-23
+ * # 以后直接从map里获取，所以如果第一次配置错误，
+     修改配置文件，重启monitor进程是没有用的
+ */
   if (monmap.contains(g_conf()->name.get_id())) {
     ipaddrs = monmap.get_addrs(g_conf()->name.get_id());
 
@@ -776,6 +785,9 @@ int main(int argc, const char **argv)
   // bind
   int rank = monmap.get_rank(g_conf()->name.get_id());
   std::string public_msgr_type = g_conf()->ms_public_type.empty() ? g_conf().get_val<std::string>("ms_type") : g_conf()->ms_public_type;
+/** comment by hy 2020-04-23
+ * # 创建用于消息通信的messenger
+ */
   Messenger *msgr = Messenger::create(g_ceph_context, public_msgr_type,
 				      entity_name_t::MON(rank), "mon",
 				      0,  // zero nonce
@@ -885,7 +897,9 @@ int main(int argc, const char **argv)
 
   msgr->start();
   mgr_msgr->start();
-
+/** comment by hy 2020-04-23
+ * # 
+ */
   mon->init();
 
   register_async_signal_handler_oneshot(SIGINT, handle_mon_signal);

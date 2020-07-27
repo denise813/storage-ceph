@@ -421,6 +421,9 @@ bool PG::requeue_scrub(bool high_priority)
   } else {
     dout(10) << __func__ << ": queueing" << dendl;
     scrub_queued = true;
+/** comment by hy 2020-04-24
+ * # 放入队列
+ */
     osd->queue_for_scrub(this, high_priority);
     return true;
   }
@@ -443,6 +446,9 @@ void PG::queue_recovery()
 bool PG::queue_scrub()
 {
   ceph_assert(ceph_mutex_is_locked(_lock));
+/** comment by hy 2020-04-24
+ * # 已经在做scrub，返回
+ */
   if (is_scrubbing()) {
     return false;
   }
@@ -466,6 +472,9 @@ bool PG::queue_scrub()
     state_set(PG_STATE_REPAIR);
     scrubber.must_repair = false;
   }
+/** comment by hy 2020-04-24
+ * # 放入队列
+ */
   requeue_scrub();
   return true;
 }
@@ -810,11 +819,17 @@ void PG::update_heartbeat_peers(set<int> new_peers)
   } else {
     dout(10) << "update_heartbeat_peers " << heartbeat_peers << " -> " << new_peers << dendl;
     heartbeat_peers.swap(new_peers);
+/** comment by hy 2020-04-24
+ * # 需要update
+ */
     need_update = true;
   }
   heartbeat_peer_lock.unlock();
 
   if (need_update)
+/** comment by hy 2020-04-24
+ * # 更新
+ */
     osd->need_heartbeat_peer_update();
 }
 
@@ -957,6 +972,9 @@ void PG::prepare_write(
   map<string,bufferlist> km;
   string key_to_remove;
   if (dirty_big_info || dirty_info) {
+/** comment by hy 2020-07-13
+ * # 信息放入 info
+ */
     int ret = prepare_info_keymap(
       cct,
       &km,
@@ -972,6 +990,9 @@ void PG::prepare_write(
       this);
     ceph_assert(ret == 0);
   }
+/** comment by hy 2020-07-13
+ * # 设置 pg info 数据库对象, 将 log 信息放入 pg 元数据中?
+ */
   pglog.write_log_and_missing(
     t, &km, coll, pgmeta_oid, pool.info.require_rollback());
   if (!km.empty())
@@ -1358,6 +1379,9 @@ bool PG::sched_scrub()
 {
   ceph_assert(ceph_mutex_is_locked(_lock));
   ceph_assert(!is_scrubbing());
+/** comment by hy 2020-04-24
+ * # 注意条件，如果pg不是primary，直接返回了，说明只有primary pg才可以发起scrub
+ */
   if (!(is_primary() && is_active() && is_clean())) {
     return false;
   }
@@ -2654,13 +2678,18 @@ void PG::chunky_scrub(ThreadPool::TPHandle &handle)
       case PG::Scrubber::INACTIVE:
         dout(10) << "scrub start" << dendl;
 	ceph_assert(is_primary());
-
+/** comment by hy 2020-07-13
+ * # 设置 pg 的状态
+ */
         publish_stats_to_osd();
         scrubber.epoch_start = info.history.same_interval_since;
         scrubber.active = true;
 
 	{
 	  ObjectStore::Transaction t;
+/** comment by hy 2020-07-13
+ * # 注册 完成函数,覆盖掉原来的函数,什么也不执行
+ */
 	  scrubber.cleanup_store(&t);
 	  scrubber.store.reset(Scrub::Store::create(osd->store, &t,
 						    info.pgid, coll));

@@ -630,10 +630,15 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
              bool skip_mirror_enable)
   {
     std::string id(image_id);
+/** comment by hy 2020-02-18
+ * # 产生id
+ */
     if (id.empty()) {
       id = util::generate_image_id(io_ctx);
     }
-
+/** comment by hy 2020-02-18
+ * # pool上下文
+ */
     CephContext *cct = (CephContext *)io_ctx.cct();
     uint64_t option;
     if (opts.get(RBD_IMAGE_OPTION_FLATTEN, &option) == 0) {
@@ -671,6 +676,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
     if (opts.get(RBD_IMAGE_OPTION_ORDER, &order) != 0 || order == 0) {
       order = cct->_conf.get_val<uint64_t>("rbd_default_order");
     }
+/** comment by hy 2020-02-18
+ * # 验证底层对象大小,[12, 25] = 4K 32M之间
+ */
     r = image::CreateRequest<>::validate_order(cct, order);
     if (r < 0) {
       return r;
@@ -684,6 +692,12 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
       lderr(cct) << "Forced V1 image creation. " << dendl;
       r = create_v1(io_ctx, image_name.c_str(), size, order);
     } else {
+/** comment by hy 2020-02-18
+ * # 创建工作队列,名一个rbd一个单例
+     后续的数据操作将在该工作队列中完成
+     如写,读,zero 等等
+     后续在创建完成,内存生成rbd实例缓存中将与 io_work_queue 进行绑定
+ */
       ThreadPool *thread_pool;
       ContextWQ *op_work_queue;
       ImageCtx::get_thread_pool_instance(cct, &thread_pool, &op_work_queue);
@@ -701,12 +715,28 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
       }
 
       C_SaferCond cond;
+/** comment by hy 2020-02-18
+ * # 创建请求,请求开始在里面转状态了
+     cls_client表示注册模块的客户端操作
+     在osd服务端通过远程调用操作码解析模块注册对应的操作
+     1: set_id设置卷id
+     2: dir_add_image 把创建的id加入到 rbd_directory
+            也就是在对象rbd_directory的omap属性中
+            加入该RBD的名字和id的键值对
+     3: 获取head_obj的名字,也就是rbd_head.<id>的格式
+     4：调用 create_image 在head中设置元数据
+     5：设置条带
+     6: 如果有ObjectMap 就设置map
+     7: 如果有 mirror 就完成journal相关设置
+ */
       image::CreateRequest<> *req = image::CreateRequest<>::create(
         config, io_ctx, image_name, id, size, opts, create_flags,
         static_cast<cls::rbd::MirrorImageMode>(mirror_image_mode),
         non_primary_global_image_id, primary_mirror_uuid, op_work_queue, &cond);
       req->send();
-
+/** comment by hy 2020-02-18
+ * # 等待接收到对应的消息返回
+ */
       r = cond.wait();
     }
 
@@ -816,6 +846,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
     ldout(cct, 20) << "rename " << &io_ctx << " " << srcname << " -> "
 		   << dstname << dendl;
 
+/** comment by hy 2020-02-25
+ * # rename发生在同一个pool下?
+ */
     ImageCtx *ictx = new ImageCtx(srcname, "", "", io_ctx, false);
     int r = ictx->state->open(0);
     if (r < 0) {
@@ -1385,6 +1418,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
 			 << " cookie='" << cookie << "' tag='" << tag << "'"
 			 << dendl;
 
+/** comment by hy 2020-02-22
+ * # 请求更新
+ */
     int r = ictx->state->refresh_if_required();
     if (r < 0)
       return r;
@@ -1396,6 +1432,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
      */
     {
       std::shared_lock locker{ictx->image_lock};
+/** comment by hy 2020-02-22
+ * # 通过rpc调用 lock
+ */
       r = rados::cls::lock::lock(&ictx->md_ctx, ictx->header_oid, RBD_LOCK_NAME,
 			         exclusive ? LOCK_EXCLUSIVE : LOCK_SHARED,
 			         cookie, tag, "", utime_t(), 0);
@@ -1475,6 +1514,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
       }
 
       librados::Rados rados(ictx->md_ctx);
+/** comment by hy 2020-02-22
+ * # 向mon发送 osd blacklist add addr
+ */
       r = rados.blacklist_add(
         client_address,
         ictx->config.get_val<uint64_t>("rbd_blacklist_expire_seconds"));
@@ -1485,10 +1527,16 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
       }
     }
 
+/** comment by hy 2020-02-22
+ * # 产生一个远程调用 break_lock
+ */
     r = rados::cls::lock::break_lock(&ictx->md_ctx, ictx->header_oid,
 				     RBD_LOCK_NAME, cookie, lock_client);
     if (r < 0)
       return r;
+/** comment by hy 2020-02-22
+ * # 等待更新
+ */
     ictx->notify_update();
     return 0;
   }
@@ -1517,6 +1565,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
 
     uint64_t mylen = len;
     ictx->image_lock.lock_shared();
+/** comment by hy 2020-02-22
+ * # 合法性验证
+ */
     r = clip_io(ictx, off, &mylen);
     ictx->image_lock.unlock_shared();
     if (r < 0)
@@ -1585,6 +1636,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
     if (off >= image_size)
       return -EINVAL;
 
+/** comment by hy 2020-02-20
+ * # 检查长度,我认为这个检查长度不合适,应该直接返回参数错误
+ */
     // clip requests that extend past end to just end
     if ((off + *len) > image_size)
       *len = (size_t)(image_size - off);
@@ -1671,6 +1725,9 @@ int validate_pool(IoCtx &io_ctx, CephContext *cct) {
       header_oid = util::header_name(ictx->id);
     }
 
+/** comment by hy 2020-01-20
+ * # librados::IoCtx::list_watchers
+ */
     r = ictx->md_ctx.list_watchers(header_oid, &obj_watchers);
     if (r < 0) {
       return r;

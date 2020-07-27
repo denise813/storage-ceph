@@ -86,6 +86,9 @@ protected:
   /// std::set to true once the Messenger has started, and std::set to false on shutdown
   bool started;
   uint32_t magic;
+/** comment by hy 2020-03-23
+ * # 默认情况为-1
+ */
   int socket_priority;
 
 public:
@@ -111,6 +114,9 @@ public:
   CephContext *cct;
   int crcflags;
 
+/** comment by hy 2020-02-18
+ * # 定义的策略
+ */
   using Policy = ceph::net::Policy<Throttle>;
 
 public:
@@ -381,11 +387,20 @@ public:
    *
    * @param d The Dispatcher to insert into the list.
    */
+/** comment by hy 2020-02-18
+ * # 注册一个分发器
+ */
   void add_dispatcher_head(Dispatcher *d) {
     bool first = dispatchers.empty();
     dispatchers.push_front(d);
+/** comment by hy 2020-01-16
+ * # 如果该分发器是最高优先级,将放在高优先级的最前面
+ */
     if (d->ms_can_fast_dispatch_any())
       fast_dispatchers.push_front(d);
+/** comment by hy 2020-01-16
+ * # 如果是第一个准备好,那么就开始收发消息吧
+ */
     if (first)
       ready();
   }

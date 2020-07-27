@@ -76,8 +76,17 @@ private:
 
   /// Encodes current subdir state for determining when to split/merge.
   struct subdir_info_s {
+/** comment by hy 2020-02-23
+ * # 该目录下的对象数
+ */
     uint64_t objs;       ///< Objects in subdir.
+/** comment by hy 2020-02-23
+ * # 该目录下的子目录数
+ */
     uint32_t subdirs;    ///< Subdirs in subdir.
+/** comment by hy 2020-02-23
+ * # 该目录下的hash层级数
+ */
     uint32_t hash_level; ///< Hashlevel of subdir.
 
     subdir_info_s() : objs(0), subdirs(0), hash_level(0) {}

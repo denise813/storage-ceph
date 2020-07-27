@@ -2273,17 +2273,32 @@ int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id)
   }
 
   if (observer) {
+/** comment by hy 2020-03-15
+ * # 如果是从 就监控bucket 变化
+ */
     observer->on_bucket_changed(bucket.get_key());
   }
 
+/** comment by hy 2020-03-15
+ * # 分片信息
+ */
   rgw_bucket_shard bs(bucket, shard_id);
 
+/** comment by hy 2020-03-15
+ * # 分片 index
+ */
   int index = choose_oid(bs);
+/** comment by hy 2020-03-15
+ * # 对分片进行修改
+ */
   mark_modified(index, bs);
 
   lock.lock();
 
   ChangeStatusPtr status;
+/** comment by hy 2020-03-15
+ * # 发现的变化
+ */
   _get_change(bs, status);
 
   lock.unlock();
@@ -2297,7 +2312,9 @@ int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id)
   if (now < status->cur_expiration) {
     /* no need to send, recently completed */
     status->lock.unlock();
-
+/** comment by hy 2020-03-15
+ * # 注册分片周期
+ */
     register_renew(bs);
     return 0;
   }
@@ -2332,6 +2349,9 @@ int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id)
     status->cur_sent = now;
 
     expiration = now;
+/** comment by hy 2020-03-15
+ * # log 窗口
+ */
     expiration += ceph::make_timespan(cct->_conf->rgw_data_log_window);
 
     status->lock.unlock();
@@ -3219,6 +3239,10 @@ int RGWBucketCtl::store_bucket_entrypoint_info(const rgw_bucket& bucket,
                                                const Bucket::PutParams& params)
 {
   return bm_handler->call([&](RGWSI_Bucket_EP_Ctx& ctx) {
+/** comment by hy 2020-03-08
+ * # 将bucket 数据放入 domain_root pool 中
+      RGWSI_Bucket = RGWSI_Bucket_SObj
+ */
     return svc.bucket->store_bucket_entrypoint_info(ctx,
                                                     RGWSI_Bucket::get_entrypoint_meta_key(bucket),
                                                     info,
@@ -3324,6 +3348,10 @@ int RGWBucketCtl::do_store_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
     info.objv_tracker = *params.objv_tracker;
   }
 
+/** comment by hy 2020-03-15
+ * # 写 instance
+     RGWSI_Bucket_SObj::store_bucket_instance_info
+ */
   return svc.bucket->store_bucket_instance_info(ctx,
                                                 RGWSI_Bucket::get_bi_meta_key(bucket),
                                                 info,
@@ -3458,11 +3486,17 @@ int RGWBucketCtl::set_bucket_instance_attrs(RGWBucketInfo& bucket_info,
                                             RGWObjVersionTracker *objv_tracker,
                                             optional_yield y)
 {
+/** comment by hy 2020-03-19
+ * # RGWBucketCtl::call
+ */
   return call([&](RGWSI_Bucket_X_Ctx& ctx) {
     rgw_bucket& bucket = bucket_info.bucket;
 
     if (!bucket_info.has_instance_obj) {
       /* an old bucket object, need to convert it */
+/** comment by hy 2020-03-19
+ * # 老版本
+ */
         int ret = convert_old_bucket_info(ctx, bucket, y);
         if (ret < 0) {
           ldout(cct, 0) << "ERROR: failed converting old bucket info: " << ret << dendl;
@@ -3470,6 +3504,9 @@ int RGWBucketCtl::set_bucket_instance_attrs(RGWBucketInfo& bucket_info,
         }
     }
 
+/** comment by hy 2020-03-19
+ * # 写 bucket 元信息
+ */
     return do_store_bucket_instance_info(ctx.bi,
                                          bucket,
                                          bucket_info,
@@ -3511,11 +3548,17 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
   string meta_key;
 
   if (update_entrypoint) {
+/** comment by hy 2020-03-18
+ * # 不更新
+ */
     meta_key = RGWSI_Bucket::get_entrypoint_meta_key(bucket);
     if (pinfo) {
       ep = pinfo->ep;
       pattrs = &pinfo->attrs;
     } else {
+/** comment by hy 2020-03-08
+ * # 更新就需要读
+ */
       ret = svc.bucket->read_bucket_entrypoint_info(ctx,
                                                     meta_key,
                                                     &ep, &rot,
@@ -3529,6 +3572,9 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
     }
   }
 
+/** comment by hy 2020-03-08
+ * # RGWUserCtl::add_bucket
+ */
   ret = ctl.user->add_bucket(user_id, bucket, creation_time);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: error adding bucket to user directory:"
@@ -3545,6 +3591,9 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
   ep.linked = true;
   ep.owner = user_id;
   ep.bucket = bucket;
+/** comment by hy 2020-03-18
+ * # RGWSI_Bucket_SObj::store_bucket_entrypoint_info
+ */
   ret = svc.bucket->store_bucket_entrypoint_info(
     ctx, meta_key, ep, false, real_time(), pattrs, &rot, y);
   if (ret < 0)

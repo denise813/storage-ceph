@@ -36,6 +36,9 @@ void RewatchRequest::send() {
 void RewatchRequest::unwatch() {
   ceph_assert(ceph_mutex_is_wlocked(m_watch_lock));
   if (*m_watch_handle == 0) {
+/** comment by hy 2020-03-21
+ * # 没有就直接注册,有就解开
+ */
     rewatch();
     return;
   }
@@ -48,6 +51,9 @@ void RewatchRequest::unwatch() {
 
   librados::AioCompletion *aio_comp = create_rados_callback<
                         RewatchRequest, &RewatchRequest::handle_unwatch>(this);
+/** comment by hy 2020-03-21
+ * # 如果有黑名单,这里返回，就不可以不解开,不解开就不能再注册
+ */
   int r = m_ioctx.aio_unwatch(watch_handle, aio_comp);
   ceph_assert(r == 0);
   aio_comp->release();
@@ -71,6 +77,9 @@ void RewatchRequest::rewatch() {
   CephContext *cct = reinterpret_cast<CephContext *>(m_ioctx.cct());
   ldout(cct, 10) << dendl;
 
+/** comment by hy 2020-03-21
+ * # 在一次发送
+ */
   librados::AioCompletion *aio_comp = create_rados_callback<
                         RewatchRequest, &RewatchRequest::handle_rewatch>(this);
   int r = m_ioctx.aio_watch(m_oid, aio_comp, &m_rewatch_handle, m_watch_ctx);

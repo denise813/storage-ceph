@@ -157,6 +157,9 @@ bool entity_addr_t::parse(const char *s, const char **end, int default_type)
       p++;
   }
 
+/** comment by hy 2020-03-20
+ * # 尽然是nonce 这个是定位的依据
+ */
   if (*p == '/') {
     // parse nonce, too
     p++;

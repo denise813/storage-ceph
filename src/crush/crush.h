@@ -42,8 +42,18 @@
  * to generate the set of output devices.
  */
 struct crush_rule_step {
+/** comment by hy 2020-02-18
+ * # step操作的操作码
+ */
 	__u32 op;
+/** comment by hy 2020-02-18
+ * # 如果op是take 参数就是选择的bucket的id号
+     如果op是select 参数就是选择的bucket的数量
+ */
 	__s32 arg1;
+/** comment by hy 2020-02-18
+ * # 如果op是select 参数就是选择的类型
+ */
 	__s32 arg2;
 };
 
@@ -58,7 +68,13 @@ enum crush_opcodes {
 				      /* arg2 = type */
 	CRUSH_RULE_CHOOSE_INDEP = 3,  /* same */
 	CRUSH_RULE_EMIT = 4,          /* no args */
+/** comment by hy 2020-04-02
+ * # 副本
+ */
 	CRUSH_RULE_CHOOSELEAF_FIRSTN = 6,
+/** comment by hy 2020-04-02
+ * # 纠删
+ */
 	CRUSH_RULE_CHOOSELEAF_INDEP = 7,
 
 	CRUSH_RULE_SET_CHOOSE_TRIES = 8, /* override choose_total_tries */
@@ -82,15 +98,35 @@ enum crush_opcodes {
  * rule list for a matching rule_mask.
  */
 struct crush_rule_mask {
+/** comment by hy 2020-02-18
+ * # releset 的编号
+ */
 	__u8 ruleset;
+/** comment by hy 2020-02-18
+ * # 类型
+     replicated
+     erasure 
+ */
 	__u8 type;
+/** comment by hy 2020-03-13
+ * # 选择副本数的范围进行约束
+ */
 	__u8 min_size;
 	__u8 max_size;
 };
 
 struct crush_rule {
+/** comment by hy 2020-02-18
+ * # step的数组的长度
+ */
 	__u32 len;
+/** comment by hy 2020-02-18
+ * # releset 相关的配置参数
+ */
 	struct crush_rule_mask mask;
+/** comment by hy 2020-02-18
+ * # 操作步
+ */
 	struct crush_rule_step steps[0];
 };
 
@@ -227,14 +263,40 @@ extern const char *crush_bucket_alg_name(int alg);
  * to reference the bucket.
  */
 struct crush_bucket {
+/** comment by hy 2020-02-18
+ * # bucket的唯一标识
+ */
 	__s32 id;        /*!< bucket identifier, < 0 and unique within a crush_map */
+/** comment by hy 2020-02-18
+ * # 类型, 如果是0 就表示osd
+ */
 	__u16 type;      /*!< > 0 bucket type, defined by the caller */
+/** comment by hy 2020-02-18
+ * # 选择的算法
+ */
 	__u8 alg;        /*!< the item selection ::crush_algorithm */
+/** comment by hy 2020-02-18
+ * # bucket的hash函数
+ */
         /*! @cond INTERNAL */
 	__u8 hash;       /* which hash function to use, CRUSH_HASH_* */
 	/*! @endcond */
+/** comment by hy 2020-02-18
+ * # bucket的权重
+ */
 	__u32 weight;    /*!< 16.16 fixed point cumulated children weight */
+/** comment by hy 2020-01-11
+ * # bucket下的item的数量
+ */
 	__u32 size;      /*!< size of the __items__ array */
+/** comment by hy 2020-01-11
+ * # item的id数组
+      子bucket 在crush_bucket数组的下标这里特别要注意的是,
+      其子item 的crush_bucket结构数据都统一保存在crush_map中
+      的buckets数据中,这里只保存其在数组中的下标
+      负数:表示它包含的item都是bucket
+      自然数:表示它的item都是device
+ */
         __s32 *items;    /*!< array of children: < 0 are buckets, >= 0 items */
 };
 
@@ -357,12 +419,18 @@ struct crush_map {
          * crush_remove_bucket(). The buckets must be added with crush_add_bucket().
          * The bucket found at __buckets[i]__ must have a crush_bucket.id == -1-i.
          */
+/** comment by hy 2020-02-18
+ * # 保存所有bucket结构数据
+ */
 	struct crush_bucket **buckets;
         /*! An array of crush_rule pointers of size __max_rules__.
          * An element of the array may be NULL if the rule was removed (there is
          * no API to do so but there may be one in the future). The rules must be added
          * with crush_add_rule().
          */
+/** comment by hy 2020-03-13
+ * # 
+ */
 	struct crush_rule **rules;
         __s32 max_buckets; /*!< the size of __buckets__ */
 	__u32 max_rules; /*!< the size of __rules__ */
@@ -432,6 +500,9 @@ struct crush_map {
 
 	   Nothing stops the caller from allocating both in one swell
 	   foop and passing in two points, though. */
+/** comment by hy 2020-04-29
+ * # map 空间大小
+ */
 	size_t working_size;
 
 #ifndef __KERNEL__

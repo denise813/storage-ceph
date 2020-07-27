@@ -554,6 +554,9 @@ uint64_t AuthMonitor::_assign_global_id()
 
 uint64_t AuthMonitor::assign_global_id(bool should_increase_max)
 {
+/** comment by hy 2020-03-20
+ * # monitor 分配 唯一号
+ */
   uint64_t id;
   {
     std::lock_guard l(mon->auth_lock);

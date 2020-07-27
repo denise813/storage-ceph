@@ -40,6 +40,9 @@ CephContext *common_preinit(const CephInitParameters &iparams,
   // add config observers here
 
   // Set up our entity name.
+/** comment by hy 2020-01-21
+ * # 用户名称
+ */
   conf->name = iparams.name;
 
   // different default keyring locations for osd and mds.  this is
@@ -51,6 +54,9 @@ CephContext *common_preinit(const CephInitParameters &iparams,
     conf.set_val_default("keyring", "$osd_data/keyring");
   }
 
+/** comment by hy 2020-01-21
+ * # admin
+ */
   if ((flags & CINIT_FLAG_UNPRIVILEGED_DAEMON_DEFAULTS)) {
     // make this unique despite multiple instances by the same name.
     conf.set_val_default("admin_socket",
@@ -86,9 +92,15 @@ void complain_about_parse_error(CephContext *cct,
 void common_init_finish(CephContext *cct)
 {
   // only do this once per cct
+/** comment by hy 2020-01-17
+ * # 初始化完成过
+ */
   if (cct->_finished) {
     return;
   }
+/** comment by hy 2020-01-17
+ * # 下面的操作100%成果
+ */
   cct->_finished = true;
   cct->init_crypto();
   ZTracer::ztrace_init();
@@ -98,16 +110,28 @@ void common_init_finish(CephContext *cct)
   }
 
   int flags = cct->get_init_flags();
+/** comment by hy 2020-01-17
+ * # 如果守护进程化,就启动一个服务
+         日志切换功能
+         本地 admin 管理命令
+         监控配置文件
+         log文件准备
+ */
   if (!(flags & CINIT_FLAG_NO_DAEMON_ACTIONS))
     cct->start_service_thread();
 
+/** comment by hy 2020-01-19
+ * # 按照启动系统用户切换管理命令用户
+ */
   if ((flags & CINIT_FLAG_DEFER_DROP_PRIVILEGES) &&
       (cct->get_set_uid() || cct->get_set_gid())) {
     cct->get_admin_socket()->chown(cct->get_set_uid(), cct->get_set_gid());
   }
 
   const auto& conf = cct->_conf;
-
+/** comment by hy 2020-01-19
+ * # 切换进程启动系统用户的用户权限
+ */
   if (!conf->admin_socket.empty() && !conf->admin_socket_mode.empty()) {
     int ret = 0;
     std::string err;

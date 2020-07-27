@@ -34,8 +34,17 @@ constexpr static std::size_t ceph_subsys_get_num() {
 }
 
 struct ceph_subsys_item_t {
+/** comment by hy 2020-04-24
+ * # 子系统名称
+ */
   const char* name;
+/** comment by hy 2020-04-24
+ * # 日志级别
+ */
   uint8_t log_level;
+/** comment by hy 2020-04-24
+ * # gather级别，这个一般用的少
+ */
   uint8_t gather_level;
 };
 

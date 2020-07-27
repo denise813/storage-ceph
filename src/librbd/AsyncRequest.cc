@@ -59,6 +59,9 @@ void AsyncRequest<T>::finish_request() {
     }
   }
 
+/** comment by hy 2020-02-25
+ * # 先进先出,要是同一次
+ */
   for (auto ctx : waiters) {
     ctx->complete(0);
   }

@@ -222,6 +222,9 @@ int PosixWorker::listen(entity_addr_t &sa,
 			const SocketOptions &opt,
                         ServerSocket *sock)
 {
+/** comment by hy 2020-04-23
+ * # 创建套接字
+ */
   int listen_sd = net.create_socket(sa.get_family(), true);
   if (listen_sd < 0) {
     return -errno;
@@ -238,7 +241,9 @@ int PosixWorker::listen(entity_addr_t &sa,
     ::close(listen_sd);
     return -errno;
   }
-
+/** comment by hy 2020-04-23
+ * # 绑定地址
+ */
   r = ::bind(listen_sd, sa.get_sockaddr(), sa.get_sockaddr_len());
   if (r < 0) {
     r = -errno;
@@ -247,7 +252,9 @@ int PosixWorker::listen(entity_addr_t &sa,
     ::close(listen_sd);
     return r;
   }
-
+/** comment by hy 2020-04-23
+ * # 开始监听
+ */
   r = ::listen(listen_sd, cct->_conf->ms_tcp_listen_backlog);
   if (r < 0) {
     r = -errno;
@@ -256,6 +263,9 @@ int PosixWorker::listen(entity_addr_t &sa,
     return r;
   }
 
+/** comment by hy 2020-04-23
+ * # 创建serversocket，返回给用户，可以用此socket进行accept请求
+ */
   *sock = ServerSocket(
           std::unique_ptr<PosixServerSocketImpl>(
 	    new PosixServerSocketImpl(net, listen_sd, sa, addr_slot)));
@@ -265,6 +275,9 @@ int PosixWorker::listen(entity_addr_t &sa,
 int PosixWorker::connect(const entity_addr_t &addr, const SocketOptions &opts, ConnectedSocket *socket) {
   int sd;
 
+/** comment by hy 2020-04-23
+ * #发起连接 
+ */
   if (opts.nonblock) {
     sd = net.nonblock_connect(addr, opts.connect_bind_addr);
   } else {
@@ -276,6 +289,9 @@ int PosixWorker::connect(const entity_addr_t &addr, const SocketOptions &opts, C
   }
 
   net.set_priority(sd, opts.priority, addr.get_family());
+/** comment by hy 2020-04-23
+ * # 创建connectedsocket，返回给用户，可以用此socket进行send/read
+ */
   *socket = ConnectedSocket(
       std::unique_ptr<PosixConnectedSocketImpl>(new PosixConnectedSocketImpl(net, addr, sd, !opts.nonblock)));
   return 0;

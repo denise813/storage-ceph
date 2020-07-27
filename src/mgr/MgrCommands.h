@@ -107,6 +107,19 @@ COMMAND("osd pool cancel-force-backfill " \
         "name=who,type=CephPoolname,n=N", \
         "restore normal recovery priority of specified pool <who>", \
         "osd", "rw")
+/** comment by hy 2020-03-13
+ * # oload: 当且仅当某个 OSD 的空间利用率大于等于集群平均空间利用率的
+            overload/ 100 时 调整其reweight
+            默认值为 120
+     max_change: 每次调整 reweight 的最大幅度，即调整上限
+            取决于自身空间利用率与集群平均空间利用率的偏离程度
+     max_osds: 每次至多调整的 OSD 数目
+     no_increasing:
+            从不将 reweigh 进行上调（上调指将当前 underload 的 OSD 权重调大，
+            让其分担更多的 PG 如果不携带，至多将 OSD 的 reweight 调整至 1.0
+     可以通过测试模拟
+       ceph osd test-reweight-by-utilization 120 .95 1 --no-increasing
+ */
 COMMAND("osd reweight-by-utilization " \
 	"name=oload,type=CephInt,req=false " \
 	"name=max_change,type=CephFloat,req=false "			\

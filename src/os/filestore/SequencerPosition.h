@@ -15,8 +15,17 @@
  * transaction and op offset
  */
 struct SequencerPosition {
+/** comment by hy 2020-02-23
+ * # 日志的序号
+ */
   uint64_t seq;  ///< seq
+/** comment by hy 2020-02-23
+ * # 一个日志内多个事务的序号
+ */
   uint32_t trans; ///< transaction in that seq (0-based)
+/** comment by hy 2020-02-23
+ * # 一个事务内多个op序列
+ */
   uint32_t op;    ///< op in that transaction (0-based)
 
   SequencerPosition(uint64_t s=0, int32_t t=0, int32_t o=0) : seq(s), trans(t), op(o) {}

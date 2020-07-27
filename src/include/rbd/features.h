@@ -1,6 +1,9 @@
 #ifndef CEPH_RBD_FEATURES_H
 #define CEPH_RBD_FEATURES_H
 
+/** comment by hy 2020-02-24
+ * # 块设备分层,用于snap
+ */
 #define RBD_FEATURE_LAYERING		(1ULL<<0)
 #define RBD_FEATURE_STRIPINGV2		(1ULL<<1)
 #define RBD_FEATURE_EXCLUSIVE_LOCK	(1ULL<<2)

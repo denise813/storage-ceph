@@ -23,9 +23,24 @@ StupidAllocator::~StupidAllocator()
 {
 }
 
+/*****************************************************************************
+ * 函 数 名  : StupidAllocator._choose_bin
+ * 负 责 人  : hy
+ * 创建日期  : 2020年4月22日
+ * 函数功能  : 向free的区间树插入区间
+ * 输入参数  : uint64_t orig_len   
+ * 输出参数  : 无
+ * 返 回 值  : unsigned
+ * 调用关系  : 
+ * 其    它  :  根据区间的长度，选取将要存放的区间树，长度越大，bin值越大
+
+*****************************************************************************/
 unsigned StupidAllocator::_choose_bin(uint64_t orig_len)
 {
   uint64_t len = orig_len / cct->_conf->bdev_block_size;
+/** comment by hy 2020-04-22
+ * # 结果是最高位1的下标，len越大，值越大
+ */
   int bin = std::min((int)cbits(len), (int)free.size() - 1);
   ldout(cct, 30) << __func__ << " len 0x" << std::hex << orig_len
 		 << std::dec << " -> " << bin << dendl;
@@ -34,6 +49,9 @@ unsigned StupidAllocator::_choose_bin(uint64_t orig_len)
 
 void StupidAllocator::_insert_free(uint64_t off, uint64_t len)
 {
+/** comment by hy 2020-04-22
+ * # 计算区间树的id
+ */
   unsigned bin = _choose_bin(len);
   ldout(cct, 30) << __func__ << " 0x" << std::hex << off << "~" << len
 		 << std::dec << " in bin " << bin << dendl;
@@ -44,6 +62,10 @@ void StupidAllocator::_insert_free(uint64_t off, uint64_t len)
       break;
     ldout(cct, 30) << __func__ << " promoting 0x" << std::hex << off << "~" << len
 		   << std::dec << " to bin " << newbin << dendl;
+/** comment by hy 2020-04-22
+ * # 插入数据后，可能合并区间，导致区间长度增大，可能要调bin，
+     此时需要将旧的删除，然后插入新的bin
+ */
     free[bin].erase(off, len);
     bin = newbin;
   }
@@ -310,7 +332,13 @@ void StupidAllocator::init_add_free(uint64_t offset, uint64_t length)
   std::lock_guard l(lock);
   ldout(cct, 10) << __func__ << " 0x" << std::hex << offset << "~" << length
 		 << std::dec << dendl;
+/** comment by hy 2020-04-22
+ * # 向free中插入数据
+ */
   _insert_free(offset, length);
+/** comment by hy 2020-04-22
+ * # 更新可用空间
+ */
   num_free += length;
 }
 
@@ -323,8 +351,17 @@ void StupidAllocator::init_rm_free(uint64_t offset, uint64_t length)
   rm.insert(offset, length);
   for (unsigned i = 0; i < free.size() && !rm.empty(); ++i) {
     interval_set_t overlap;
+/** comment by hy 2020-04-22
+ * # 求交集
+ */
     overlap.intersection_of(rm, free[i]);
+/** comment by hy 2020-04-24
+ * # 删除相应空间
+ */
     if (!overlap.empty()) {
+/** comment by hy 2020-04-22
+ * # 删除
+ */
       ldout(cct, 20) << __func__ << " bin " << i << " rm 0x" << std::hex << overlap
 		     << std::dec << dendl;
       auto it = overlap.begin();
@@ -351,6 +388,9 @@ void StupidAllocator::init_rm_free(uint64_t offset, uint64_t length)
     }
   }
   ceph_assert(rm.empty());
+/** comment by hy 2020-04-22
+ * # 更新可用空间
+ */
   num_free -= length;
   ceph_assert(num_free >= 0);
 }

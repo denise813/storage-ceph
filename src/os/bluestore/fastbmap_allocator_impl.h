@@ -72,16 +72,44 @@ inline size_t find_next_set_bit(slot_t slot_val, size_t start_pos)
 class AllocatorLevel
 {
 protected:
-
+/** comment by hy 2020-04-22
+ * # 一个 slot 有多少个 children。slot 的大小是 64bit
+     L0、L2的 children 大小是1bit，所以含有64个
+     L1的 children 大小是2bit，所以含有32个
+ */
   virtual uint64_t _children_per_slot() const = 0;
+/** comment by hy 2020-04-22
+ * # 每个 children 之间的磁盘空间长度，也即每个 children 的大小
+     L0 的每个 children 间隔长度为：l0_granularity = alloc_unit
+     L1 的每个 children 间隔长度为：l1_granularity = 512 * l0_granularity
+     L2 的每个 children 间隔长度为：l2_granularity = (512/2) * l1_granularity
+ */
   virtual uint64_t _level_granularity() const = 0;
 
 public:
+/** comment by hy 2020-04-22
+ * # L0 分配的次数，调用_allocate_l0的次数
+ */
   static uint64_t l0_dives;
+/** comment by hy 2020-04-22
+ * # 遍历 L0 slot 的次数
+ */
   static uint64_t l0_iterations;
+/** comment by hy 2020-04-22
+ * # 遍历 L0 slot(部分占用，部分空闲)的次数
+ */
   static uint64_t l0_inner_iterations;
+/** comment by hy 2020-04-22
+ * # L0 分配 slot 的次数
+ */
   static uint64_t alloc_fragments;
+/** comment by hy 2020-04-22
+ * # L1 分配 slot(部分占用，部分空闲)的次数
+ */
   static uint64_t alloc_fragments_fast;
+/** comment by hy 2020-04-22
+ * # L2 分配的次数 ，调用 _allocate_l2的次数
+ */
   static uint64_t l2_allocs;
 
   virtual ~AllocatorLevel()
@@ -722,6 +750,9 @@ protected:
 	slot_t& slot_val = l2[pos];
 	size_t free_pos = 0;
 	bool all_set = false;
+/** comment by hy 2020-04-22
+ * # slot++ slot 状态
+ */
 	if (slot_val == all_slot_clear) {
 	  l2_pos += d;
 	  last_pos = l2_pos;
@@ -730,9 +761,16 @@ protected:
 	  free_pos = 0;
 	  all_set = true;
 	} else {
+/** comment by hy 2020-04-22
+ * # 传入L2选中的bit进入L1
+     _allocate_l1
+ */
 	  free_pos = find_next_set_bit(slot_val, 0);
 	  ceph_assert(free_pos < bits_per_slot);
 	}
+/** comment by hy 2020-04-22
+ * # 
+ */
 	do {
 	  ceph_assert(length > *allocated);
 	  bool empty = l1._allocate_l1(length,

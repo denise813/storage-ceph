@@ -246,8 +246,14 @@ ImageState<I>::~ImageState() {
 template <typename I>
 int ImageState<I>::open(uint64_t flags) {
   C_SaferCond ctx;
+/** comment by hy 2020-02-19
+ * # 执行异步打开
+ */
   open(flags, &ctx);
-
+/** comment by hy 2020-02-19
+ * # 等待唤醒,传回返回值,失败在此处释放内存
+     这是不良的书写
+ */
   int r = ctx.wait();
   if (r < 0) {
     delete m_image_ctx;
@@ -266,7 +272,19 @@ void ImageState<I>::open(uint64_t flags, Context *on_finish) {
 
   Action action(ACTION_TYPE_OPEN);
   action.refresh_seq = m_refresh_seq;
-
+/** comment by hy 2020-02-19
+ * # 开始执行远程调用,
+      使用open请求进行步骤轮转
+      在这里步骤轮转失败是没有回退机制,不是一个事务
+     这里比较特别的步骤
+     handle_v2_get_data_pool轮转里面的
+                          ImageCtx::init_layout
+     open 后还有 refresh 请求
+     如果有 parent 还将在 ParentCacheObjectDispatch 请求
+     然后 register_watch Watcher::register_watch
+     如果有 snapshot 执行 SetSnapRequest 请求
+     否则 finalize
+ */
   execute_action_unlock(action, on_finish);
 }
 
@@ -527,6 +545,9 @@ template <typename I>
 void ImageState<I>::execute_next_action_unlock() {
   ceph_assert(ceph_mutex_is_locked(m_lock));
   ceph_assert(!m_actions_contexts.empty());
+/** comment by hy 2020-02-19
+ * # 处理分发函数
+ */
   switch (m_actions_contexts.front().first.action_type) {
   case ACTION_TYPE_OPEN:
     send_open_unlock();
@@ -596,10 +617,16 @@ void ImageState<I>::send_open_unlock() {
   Context *ctx = create_async_context_callback(
     *m_image_ctx, create_context_callback<
       ImageState<I>, &ImageState<I>::handle_open>(this));
+/** comment by hy 2020-02-19
+ * # 包装打开请求,设置器特性标志位
+ */
   image::OpenRequest<I> *req = image::OpenRequest<I>::create(
     m_image_ctx, m_open_flags, ctx);
 
   m_lock.unlock();
+/** comment by hy 2020-02-19
+ * # 开始 请求状态机轮转,轮转后调用 handle_open
+ */
   req->send();
 }
 
@@ -613,6 +640,11 @@ void ImageState<I>::handle_open(int r) {
   }
 
   m_lock.lock();
+/** comment by hy 2020-02-19
+ * # 更加轮转完成后的情况设置下一个状态,并保留返回值
+     等待回调函数处理完成结束,
+     这里回调函数是线程死等.也是一个风险
+ */
   complete_action_unlock(r < 0 ? STATE_UNINITIALIZED : STATE_OPEN, r);
 }
 

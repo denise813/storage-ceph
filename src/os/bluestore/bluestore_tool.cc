@@ -203,6 +203,19 @@ void log_dump(
   delete fs;
 }
 
+/*****************************************************************************
+ * 函 数 名  : inferring_bluefs_devices
+ * 负 责 人  : hy
+ * 创建日期  : 2020年5月29日
+ * 函数功能  : 生产加载设备的列表
+ * 输入参数  : vector<string>& devs  设备表
+               std::string& path     设备路径
+ * 输出参数  : 无
+ * 返 回 值  : 
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void inferring_bluefs_devices(vector<string>& devs, std::string& path)
 {
   cout << "inferring bluefs devices from bluestore path" << std::endl;

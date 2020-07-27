@@ -74,6 +74,9 @@ bool RenameRequest<I>::should_complete(int r) {
     return true;
   }
 
+/** comment by hy 2020-02-25
+ * # send 之后的完成调用
+ */
   if (m_state == STATE_UPDATE_DIRECTORY) {
     // update in-memory name before removing source header
     apply();
@@ -81,6 +84,9 @@ bool RenameRequest<I>::should_complete(int r) {
     return true;
   }
 
+/** comment by hy 2020-02-25
+ * # 状态机切换
+ */
   std::shared_lock owner_lock{image_ctx.owner_lock};
   switch (m_state) {
   case STATE_READ_SOURCE_HEADER:
@@ -132,6 +138,9 @@ void RenameRequest<I>::send_read_source_header() {
 
   // TODO: old code read omap values but there are no omap values on the
   //       old format header nor the new format id object
+/** comment by hy 2020-02-25
+ * # 完成后将调用该 this 的 complete
+ */
   librados::AioCompletion *rados_completion = this->create_callback_completion();
   int r = image_ctx.md_ctx.aio_operate(m_source_oid, rados_completion, &op,
                                        &m_header_bl);

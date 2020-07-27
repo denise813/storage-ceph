@@ -111,11 +111,28 @@ void Watcher::register_watch(Context *on_finish) {
 
   librados::AioCompletion *aio_comp = create_rados_callback(
     new C_RegisterWatch(this, on_finish));
+/** comment by hy 2020-02-19
+ * # 准备 watch 消息发送, 等待发送完成后
+     Watcher::handle_register_watch
+ */
   int r = m_ioctx.aio_watch(m_oid, aio_comp, &m_watch_handle, &m_watch_ctx);
   ceph_assert(r == 0);
   aio_comp->release();
 }
 
+/*****************************************************************************
+ * 函 数 名  : Watcher.handle_register_watch
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月19日
+ * 函数功能  : 处理接收到watch 信息后的更新
+ * 输入参数  : int r               处理发送watch消息返回的返回值
+               Context *on_finish  注册watch 确定的回调
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void Watcher::handle_register_watch(int r, Context *on_finish) {
   ldout(m_cct, 10) << "r=" << r << dendl;
 
@@ -148,6 +165,9 @@ void Watcher::handle_register_watch(int r, Context *on_finish) {
   if (unregister_watch_ctx != nullptr) {
     unregister_watch_ctx->complete(0);
   } else if (watch_error) {
+/** comment by hy 2020-03-21
+ * # 这里
+ */
     rewatch();
   }
 }
@@ -258,6 +278,9 @@ void Watcher::rewatch() {
       std::swap(unregister_watch_ctx, m_unregister_watch_ctx);
     } else {
       m_watch_error = false;
+/** comment by hy 2020-03-21
+ * # 
+ */
       auto ctx = create_context_callback<
         Watcher, &Watcher::handle_rewatch>(this);
       auto req = RewatchRequest::create(m_ioctx, m_oid, m_watch_lock,

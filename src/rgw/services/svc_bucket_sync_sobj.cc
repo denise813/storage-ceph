@@ -514,6 +514,9 @@ int RGWSI_BS_SObj_HintIndexObj::update(const rgw_bucket& entity,
 
 #define MAX_RETRIES 25
 
+/** comment by hy 2020-03-19
+ * # 重试25次数
+ */
   for (int i = 0; i < MAX_RETRIES; ++i) {
     if (!has_data) {
       r = read(y);
@@ -817,6 +820,10 @@ int RGWSI_Bucket_Sync_SObj::handle_bi_update(RGWBucketInfo& bucket_info,
     return 0;
   }
 
+/** comment by hy 2020-03-19
+ * # RGWSI_Bucket_Sync_SObj_HintIndexManager::update_hints
+     这是更新分片信息?
+ */
   return hint_index_mgr->update_hints(bucket_info,
                                       dests, /* set all dests, not just the ones that were added */
                                       removed_dests,

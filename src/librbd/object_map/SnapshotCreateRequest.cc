@@ -86,6 +86,9 @@ void SnapshotCreateRequest::send_read_map() {
   librados::ObjectReadOperation op;
   op.read(0, 0, NULL, NULL);
 
+/** comment by hy 2020-02-22
+ * # 调用
+ */
   librados::AioCompletion *rados_completion = create_callback_completion();
   int r = m_image_ctx.md_ctx.aio_operate(oid, rados_completion, &op,
                                          &m_read_bl);

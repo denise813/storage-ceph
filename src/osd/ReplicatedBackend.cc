@@ -303,6 +303,9 @@ void generate_transaction(
   ceph_assert(added);
   ceph_assert(removed);
 
+/** comment by hy 2020-06-26
+ * # log 信息处理
+ */
   for (auto &&le: log_entries) {
     le.mark_unrollbackable();
     auto oiter = pgt->op_map.find(le.soid);
@@ -314,6 +317,10 @@ void generate_transaction(
     }
   }
 
+/** comment by hy 2020-01-31
+ * # 在 事务准备阶段 写了 transtion 即这个 pgt
+     safe_create_traverse 转化为 Object::Transaction
+ */
   pgt->safe_create_traverse(
     [&](pair<const hobject_t, PGTransaction::ObjectOperation> &obj_op) {
       const hobject_t &oid = obj_op.first;
@@ -333,12 +340,20 @@ void generate_transaction(
 	t->remove(coll, goid);
       }
 
+/** comment by hy 2020-06-26
+ * # 正则表达式, 函数表 事件与操作,类似 switch
+     处理创建,克隆,改名操作
+ */
       match(
 	op.init_type,
 	[&](const PGTransaction::ObjectOperation::Init::None &) {
 	},
 	[&](const PGTransaction::ObjectOperation::Init::Create &op) {
 	  if (require_osd_release >= ceph_release_t::octopus) {
+/** comment by hy 2020-06-26
+ * # 创建事务
+     t = os::Transaction::create
+ */
 	    t->create(coll, goid);
 	  } else {
 	    t->touch(coll, goid);
@@ -383,6 +398,9 @@ void generate_transaction(
       if (op.omap_header)
 	t->omap_setheader(coll, goid, *(op.omap_header));
 
+/** comment by hy 2020-07-13
+ * # 执行对应的操作
+ */
       for (auto &&up: op.omap_updates) {
 	using UpdateType = PGTransaction::ObjectOperation::OmapUpdateType;
 	switch (up.first) {
@@ -410,11 +428,17 @@ void generate_transaction(
 	  hint.flags);
       }
 
+/** comment by hy 2020-01-31
+ * # 写数据后不为空
+ */
       for (auto &&extent: op.buffer_updates) {
 	using BufferUpdate = PGTransaction::ObjectOperation::BufferUpdate;
 	match(
 	  extent.get_val(),
 	  [&](const BufferUpdate::Write &op) {
+/** comment by hy 2020-01-31
+ * # 放入后端存储事务的 data 缓冲中
+ */
 	    t->write(
 	      coll,
 	      goid,
@@ -458,6 +482,9 @@ void ReplicatedBackend::submit_transaction(
   osd_reqid_t reqid,
   OpRequestRef orig_op)
 {
+/** comment by hy 2020-06-26
+ * # 状态机更新
+ */
   parent->apply_stats(
     soid,
     delta_stats);
@@ -466,6 +493,9 @@ void ReplicatedBackend::submit_transaction(
   ObjectStore::Transaction op_t;
   PGTransactionUPtr t(std::move(_t));
   set<hobject_t> added, removed;
+/** comment by hy 2020-01-31
+ * # 放入后端存储引擎的data缓冲中
+ */
   generate_transaction(
     t,
     coll,
@@ -477,6 +507,9 @@ void ReplicatedBackend::submit_transaction(
   ceph_assert(added.size() <= 1);
   ceph_assert(removed.size() <= 1);
 
+/** comment by hy 2020-01-31
+ * # 构建in_progress_ops 请求记录
+ */
   auto insert_res = in_progress_ops.insert(
     make_pair(
       tid,
@@ -492,6 +525,9 @@ void ReplicatedBackend::submit_transaction(
     parent->get_acting_recovery_backfill_shards().begin(),
     parent->get_acting_recovery_backfill_shards().end());
 
+/** comment by hy 2020-01-31
+ * # 向副本发送数据
+ */
   issue_op(
     soid,
     at_version,
@@ -506,9 +542,17 @@ void ReplicatedBackend::submit_transaction(
     &op,
     op_t);
 
+/** comment by hy 2020-01-31
+ * # 放入对应的临时对象中
+ */
   add_temp_objs(added);
   clear_temp_objs(removed);
 
+/** comment by hy 2020-01-31
+ * # 准备log信息
+     将PGLog相关信息序列化到transaction里,即数据库中
+     PrimaryLogPG::log_operation
+ */
   parent->log_operation(
     log_entries,
     hset_history,
@@ -517,7 +561,11 @@ void ReplicatedBackend::submit_transaction(
     min_last_complete_ondisk,
     true,
     op_t);
-  
+/** comment by hy 2020-01-31
+ * # 生成一个 BlessedContext 最后调用 C_OSD_OnOpCommit.finish = (pg)this->op_commit
+     在this->op_commit 将继续调用器回调函数即 PrimaryLogPG::execute_ctx
+     中注册的 on_commit,这里是发送给客户端应答
+ */
   op_t.register_on_commit(
     parent->bless_context(
       new C_OSD_OnOpCommit(this, &op)));
@@ -525,8 +573,21 @@ void ReplicatedBackend::submit_transaction(
   vector<ObjectStore::Transaction> tls;
   tls.push_back(std::move(op_t));
 
+/** comment by hy 2020-01-31
+ * # 用来完成自己
+     也就是主PG的osd上的本地对象的数据修改
+     内部包装 后端存储引擎 store的queue_transactions
+     PrimaryLogPG::queue_transactions =
+     ObjectStore::queue_transactions =
+
+     BlueStore::queue_transactions
+     FileStore::queue_transactions
+ */
   parent->queue_transactions(tls, op.op);
   if (at_version != eversion_t()) {
+/** comment by hy 2020-01-31
+ * # 如果有待巡检对象,激活巡检
+ */
     parent->op_applied(at_version);
   }
 }
@@ -941,6 +1002,9 @@ Message * ReplicatedBackend::generate_subop(
     tid, at_version);
 
   // ship resulting transaction, log entries, and pg_stats
+/** comment by hy 2020-06-27
+ * # 消息
+ */
   if (!parent->should_send_op(peer, soid)) {
     ObjectStore::Transaction t;
     encode(t, wr->get_data());
@@ -1005,6 +1069,9 @@ void ReplicatedBackend::issue_op(
       const pg_info_t &pinfo = parent->get_shard_info().find(shard)->second;
 
       Message *wr;
+/** comment by hy 2020-06-26
+ * # 副本消息, 发送 log 与 transaction pg stat信息.
+ */
       wr = generate_subop(
 	  soid,
 	  at_version,
@@ -1021,6 +1088,9 @@ void ReplicatedBackend::issue_op(
 	  pinfo);
       if (op->op && op->op->pg_trace)
 	wr->trace.init("replicated op", nullptr, &op->op->pg_trace);
+/** comment by hy 2020-06-26
+ * # 发送给从OSD
+ */
       get_parent()->send_message_osd_cluster(
 	  shard.osd, wr, get_osdmap_epoch());
     }
@@ -1028,6 +1098,18 @@ void ReplicatedBackend::issue_op(
 }
 
 // sub op modify
+/*****************************************************************************
+ * 函 数 名  : ReplicatedBackend.do_repop
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月22日
+ * 函数功能  : 副本处理函数
+ * 输入参数  : OpRequestRef op  操作
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 void ReplicatedBackend::do_repop(OpRequestRef op)
 {
   static_cast<MOSDRepOp*>(op->get_nonconst_req())->finish_decode();
@@ -1107,6 +1189,9 @@ void ReplicatedBackend::do_repop(OpRequestRef op)
   }
 
   parent->update_stats(m->pg_stats);
+/** comment by hy 2020-06-26
+ * # 处理 pg log 
+ */
   parent->log_operation(
     log,
     m->updated_hit_set_history,
@@ -1966,6 +2051,9 @@ void ReplicatedBackend::send_pushes(int prio, map<pg_shard_t, vector<PushOp> > &
 	msg->pushes.push_back(*j);
       }
       msg->set_cost(cost);
+/** comment by hy 2020-01-31
+ * # 发送消息
+ */
       get_parent()->send_message_osd_cluster(msg, con);
     }
   }

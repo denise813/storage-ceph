@@ -241,24 +241,49 @@ struct MonClientPinger : public Dispatcher,
 };
 
 
+/** comment by hy 2020-01-15
+ * # AuthClient 是认证方法接口
+   # AuthServer 查询限制后可以使用的方法和权限
+ */
 class MonClient : public Dispatcher,
 		  public AuthClient,
 		  public AuthServer /* for mgr, osd, mds */ {
 public:
+/** comment by hy 2020-01-15
+ * # 获取的"最新"mon拓扑结构
+ */
   MonMap monmap;
+/** comment by hy 2020-01-15
+ * # 配置文件信息
+ */
   std::map<std::string,std::string> config_mgr;
 
 private:
+/** comment by hy 2020-01-15
+ * # 用于与mon通信的网络通道
+ */
   Messenger *messenger;
 
   std::unique_ptr<MonConnection> active_con;
+/** comment by hy 2020-01-15
+ * # 建立的连接在没有认证前放入其中
+ */
   std::map<entity_addrvec_t, MonConnection> pending_cons;
   std::set<unsigned> tried;
-
+/** comment by hy 2020-01-15
+ * # 实例名称 a,b,c
+ */
   EntityName entity_name;
 
   mutable ceph::mutex monc_lock = ceph::make_mutex("MonClient::monc_lock");
   SafeTimer timer;
+/** comment by hy 2020-01-15
+ * # 异步回调,现在需要异步等待回调的有
+     收到配置文件更新,
+     命令行消息处理,
+     session更新
+     版本应答
+ */
   Finisher finisher;
 
   bool initialized;
@@ -287,22 +312,37 @@ private:
   void schedule_tick();
 
   // monclient
+/** comment by hy 2020-01-15
+ * # 初始化为真,其他情况与passthrough_monmap有关
+ */
   bool want_monmap;
   ceph::condition_variable map_cond;
+/** comment by hy 2020-01-15
+ * # 测试时跳过给monserver端发送消息
+ */
   bool passthrough_monmap = false;
   bool got_config = false;
 
   // authenticate
   std::unique_ptr<AuthClientHandler> auth;
   uint32_t want_keys = 0;
+/** comment by hy 2020-01-15
+ * # 认证唯一标识,由主mon进行分配
+ */
   uint64_t global_id = 0;
   ceph::condition_variable auth_cond;
   int authenticate_err = 0;
   bool authenticated = false;
 
+/** comment by hy 2020-01-15
+ * # 没获得稳定连接的时候,发送的消息放入队列中,等待恢复状态时定时重发
+ */
   std::list<MessageRef> waiting_for_session;
   utime_t last_rotating_renew_sent;
   std::unique_ptr<Context> session_established_context;
+/** comment by hy 2020-01-15
+ * # 已经有一个稳定的连接标识位
+ */
   bool had_a_connection;
   double reopen_interval_multiplier;
 
@@ -512,6 +552,9 @@ public:
 
   // admin commands
 private:
+/** comment by hy 2020-03-26
+ * # 
+ */
   uint64_t last_mon_command_tid;
 
   struct MonCommand {

@@ -24,7 +24,13 @@
 
 class MgrMonitor: public PaxosService
 {
+/** comment by hy 2020-04-23
+ * # 当前的mgrmap
+ */
   MgrMap map;
+/** comment by hy 2020-04-23
+ * # 待更新的mgrmap
+ */
   MgrMap pending_map;
   bool ever_had_active_mgr = false;
 
@@ -35,7 +41,9 @@ class MgrMonitor: public PaxosService
   std::list<std::string> misc_option_strings;
 
   utime_t first_seen_inactive;
-
+/** comment by hy 2020-04-23
+ * # 记录每个mgr进程发送beacon消息的时间戳
+ */
   std::map<uint64_t, ceph::coarse_mono_clock::time_point> last_beacon;
 
   /**

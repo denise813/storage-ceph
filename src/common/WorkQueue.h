@@ -41,25 +41,49 @@ struct ThreadPool {
 
 
 /// Pool of threads that share work submitted to multiple work queues.
+/** comment by hy 2020-01-28
+ * # 普通线程池,所有线程共一个队列
+ */
 class ThreadPool : public md_config_obs_t {
 protected:
   CephContext *cct;
+/** comment by hy 2020-01-27
+ * # 线程池的名字
+ */
   std::string name;
   std::string thread_name;
   std::string lockname;
   ceph::mutex _lock;
   ceph::condition_variable _cond;
+/** comment by hy 2020-01-27
+ * # 线程池是否停止的标志
+ */
   bool _stop;
+/** comment by hy 2020-01-27
+ * # 暂时中止线程池的标志
+ */
   int _pause;
   int _draining;
   ceph::condition_variable _wait_cond;
 
 public:
+/** comment by hy 2020-01-27
+ * # 超时检查处理
+ */
   class TPHandle : public HBHandle {
     friend class ThreadPool;
     CephContext *cct;
+/** comment by hy 2020-01-28
+ * # 心跳
+ */
     ceph::heartbeat_handle_d *hb;
+/** comment by hy 2020-01-28
+ * # 超时
+ */
     ceph::coarse_mono_clock::rep grace;
+/** comment by hy 2020-01-28
+ * # 自杀的超时时间
+ */
     ceph::coarse_mono_clock::rep suicide_grace;
   public:
     TPHandle(
@@ -631,6 +655,9 @@ private:
   ceph::unordered_map<Context*, int> m_context_results;
 };
 
+/** comment by hy 2020-01-28
+ * # 线程自己有一个队列,需要顺序执行的放在一个队列中
+ */
 class ShardedThreadPool {
 
   CephContext *cct;

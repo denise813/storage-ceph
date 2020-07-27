@@ -14,21 +14,48 @@
 #include "kv/KeyValueDB.h"
 
 class BitmapFreelistManager : public FreelistManager {
+/** comment by hy 2020-04-22
+ * # rocksdb中key的前缀，meta为B，bitmap为b
+ */
   std::string meta_prefix, bitmap_prefix;
+/** comment by hy 2020-04-22
+ * # merge操作，实际上就是按位xor
+ */
   std::shared_ptr<KeyValueDB::MergeOperator> merge_op;
   ceph::mutex lock = ceph::make_mutex("BitmapFreelistManager::lock");
-
+/** comment by hy 2020-04-22
+ * # 设备的大小
+ */
   uint64_t size;            ///< size of device (bytes)
+/** comment by hy 2020-04-22
+ * # block的大小，对应bdev_block_size
+ */
   uint64_t bytes_per_block; ///< bytes per block (bdev_block_size)
+/** comment by hy 2020-04-22
+ * # 每个key包含多少个block
+ */
   uint64_t blocks_per_key;  ///< blocks (bits) per key/value pair
+/** comment by hy 2020-04-22
+ * # 每个key对应的空间大小
+ */
   uint64_t bytes_per_key;   ///< bytes per key/value pair
+/** comment by hy 2020-04-22
+ * # 设备总的block数
+ */
   uint64_t blocks;          ///< size of device (blocks, size rounded up)
-
+/** comment by hy 2020-04-22
+ * # block掩码
+ */
   uint64_t block_mask;  ///< mask to convert byte offset to block offset
+/** comment by hy 2020-04-22
+ * # key的掩码,每个key包含的block 对应的字节数
+ */
   uint64_t key_mask;    ///< mask to convert offset to key offset
 
   bufferlist all_set_bl;
-
+/** comment by hy 2020-04-22
+ * # 遍历rocksdb key相关的成员
+ */
   KeyValueDB::Iterator enumerate_p;
   uint64_t enumerate_offset; ///< logical offset; position
   bufferlist enumerate_bl;   ///< current key at enumerate_offset

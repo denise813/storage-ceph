@@ -15,11 +15,19 @@
 struct crush_map *crush_create()
 {
 	struct crush_map *m;
+/** comment by hy 2020-04-29
+ * # 分配空间
+ */
 	m = malloc(sizeof(*m));
         if (!m)
                 return NULL;
+/** comment by hy 2020-04-29
+ * # 初始化空间
+ */
 	memset(m, 0, sizeof(*m));
-
+/** comment by hy 2020-04-29
+ * # 初始化 map 信息
+ */
 	set_optimal_crush_map(m);
 	return m;
 }
@@ -45,6 +53,9 @@ void crush_finalize(struct crush_map *map)
 		if (map->buckets[b] == 0)
 			continue;
 		for (i=0; i<map->buckets[b]->size; i++)
+/** comment by hy 2020-04-29
+ * # bucket 嵌套,就是没有到达device 层
+ */
 			if (map->buckets[b]->items[i] >= map->max_devices)
 				map->max_devices = map->buckets[b]->items[i] + 1;
 

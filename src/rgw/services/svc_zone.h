@@ -31,6 +31,9 @@ class RGWSI_Zone : public RGWServiceInstance
   RGWSI_SysObj *sysobj_svc{nullptr};
   RGWSI_RADOS *rados_svc{nullptr};
   RGWSI_SyncModules *sync_modules_svc{nullptr};
+/** comment by hy 2020-03-15
+ * # RGWSI_Bucket_Sync_SObj
+ */
   RGWSI_Bucket_Sync *bucket_sync_svc{nullptr};
 
   RGWRealm *realm{nullptr};

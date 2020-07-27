@@ -174,6 +174,9 @@ private:
   std::string destroy_wakeup_pipe();
   std::string bind_and_listen(const std::string &sock_path, int *fd);
 
+/** comment by hy 2020-01-19
+ * # 管理命令
+ */
   std::thread th;
   void entry() noexcept;
   void do_accept();
@@ -181,8 +184,17 @@ private:
 
   CephContext *m_cct;
   std::string m_path;
+/** comment by hy 2020-01-19
+ * # 管理本地 sock
+ */
   int m_sock_fd = -1;
+/** comment by hy 2020-01-19
+ * # 关闭事件读管道句柄
+ */
   int m_wakeup_rd_fd = -1;
+/** comment by hy 2020-01-19
+ * # 关闭事件写管道句柄
+ */
   int m_wakeup_wr_fd = -1;
   bool m_shutdown = false;
 

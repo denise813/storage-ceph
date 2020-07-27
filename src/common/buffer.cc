@@ -264,6 +264,9 @@ static ceph::spinlock debug_lock;
   };
 
   class buffer::raw_static : public buffer::raw {
+/** comment by hy 2020-01-13
+ * # 使用 map
+ */
   public:
     MEMPOOL_CLASS_HELPERS();
 
@@ -311,6 +314,9 @@ static ceph::spinlock debug_lock;
     return ceph::unique_leakable_ptr<buffer::raw>(new raw_malloc(len, buf));
   }
   ceph::unique_leakable_ptr<buffer::raw>
+/** comment by hy 2020-01-13
+ * # 使用 new 分配内存
+ */
   buffer::create_static(unsigned len, char *buf) {
     return ceph::unique_leakable_ptr<buffer::raw>(new raw_static(buf, len));
   }

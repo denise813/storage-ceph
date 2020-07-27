@@ -184,7 +184,14 @@ inline namespace v15_2_0 {
   class CEPH_BUFFER_API ptr {
     friend class list;
   protected:
+/** comment by hy 2020-01-13
+ * # ptr就是对于 buffer::raw 的任意的数据段
+ */
     raw *_raw;
+ /** comment by hy 2020-01-13
+ * # _off是在_raw里的偏移量
+     _len是ptr的长度
+ */
     unsigned _off, _len;
   private:
 
@@ -433,6 +440,9 @@ inline namespace v15_2_0 {
    */
 
   class CEPH_BUFFER_API list {
+/** comment by hy 2020-01-13
+ * # 多个内存数据段的列表
+ */
   public:
     // this the very low-level implementation of singly linked list
     // ceph::buffer::list is built on. We don't use intrusive slist
@@ -656,7 +666,13 @@ inline namespace v15_2_0 {
     // bufferlist holds have this trait -- if somebody ::push_back(const ptr&),
     // he expects it won't change.
     ptr* _carriage;
+/** comment by hy 2020-01-13
+ * # 所有总长度
+ */
     unsigned _len, _num;
+/** comment by hy 2020-02-17
+ * # 当函数调用 rebuild用来内存对齐时,需要内存拷贝的数据量
+ */
 
     template <bool is_const>
     class CEPH_BUFFER_API iterator_impl {
@@ -925,6 +941,9 @@ inline namespace v15_2_0 {
     }
 
   private:
+/** comment by hy 2020-02-17
+ * # 访问list迭代器
+ */
     // always_empty_bptr has no underlying raw but its _len is always 0.
     // This is useful for e.g. get_append_buffer_unused_tail_length() as
     // it allows to avoid conditionals on hot paths.

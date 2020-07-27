@@ -665,7 +665,9 @@ void RGWOp_Key_Create::execute()
 
     op_state.set_key_type(key_type);
   }
-
+/** comment by hy 2020-03-09
+ * # 开始调用admin进行操作
+ */
   http_ret = RGWUserAdminOp_Key::create(store, op_state, flusher);
 }
 

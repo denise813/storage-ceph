@@ -190,7 +190,9 @@ void Log::submit_entry(Entry&& e)
     if (m_stop) break; // force addition
     m_cond_loggers.wait(lock);
   }
-
+/** comment by hy 2020-04-24
+ * # 进队列
+ */
   m_new.emplace_back(std::move(e));
   m_cond_flusher.notify_all();
   m_queue_mutex_holder = 0;
@@ -205,11 +207,16 @@ void Log::flush()
     std::scoped_lock lock2(m_queue_mutex);
     m_queue_mutex_holder = pthread_self();
     assert(m_flush.empty());
+/** comment by hy 2020-04-24
+ * # O(1)的交换，这样m_new又可以接收新日志的提交了
+ */
     m_flush.swap(m_new);
     m_cond_loggers.notify_all();
     m_queue_mutex_holder = 0;
   }
-
+/** comment by hy 2020-04-24
+ * # 真正打印临时队列的信息, 并且会记录到m_recent
+ */
   _flush(m_flush, false);
   m_flush_mutex_holder = 0;
 }
@@ -249,10 +256,15 @@ void Log::_flush(EntryVector& t, bool crash)
   for (auto& e : t) {
     auto prio = e.m_prio;
     auto stamp = e.m_stamp;
+/** comment by hy 2020-04-24
+ * # vector下标，判断本条日志属于哪个子系统
+ */
     auto sub = e.m_subsys;
     auto thread = e.m_thread;
     auto str = e.strv();
-
+/** comment by hy 2020-04-24
+ * # 志级别小于等于子系统设置的级别才会被打印
+ */
     bool should_log = crash || m_subs->get_log_level(sub) >= prio;
     bool do_fd = m_fd >= 0 && should_log;
     bool do_syslog = m_syslog_crash >= prio && should_log;
@@ -303,7 +315,9 @@ void Log::_flush(EntryVector& t, bool crash)
     if (do_graylog2 && m_graylog) {
       m_graylog->log_entry(e);
     }
-
+/** comment by hy 2020-04-24
+ * # 将日志存放到m_recent队列
+ */
     m_recent.push_back(std::move(e));
   }
   t.clear();

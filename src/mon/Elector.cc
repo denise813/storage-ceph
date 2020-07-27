@@ -120,6 +120,9 @@ void Elector::_start()
 
 void Elector::_defer_to(int who)
 {
+/** comment by hy 2020-04-23
+ * # 发回确认消息
+ */
   MMonElection *m = new MMonElection(MMonElection::OP_ACK, get_epoch(), mon->monmap);
   m->mon_features = ceph::features::mon::get_supported();
   m->mon_release = ceph_release();
@@ -247,6 +250,9 @@ void Elector::handle_propose(MonOpRequestRef op)
             << dendl;
     nak_old_peer(op);
   }
+/** comment by hy 2020-04-23
+ * # 开始选举
+ */
   logic.receive_propose(from, m->epoch);
 }
 

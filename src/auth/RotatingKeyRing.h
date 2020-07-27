@@ -27,8 +27,14 @@ class KeyRing;
 
 class RotatingKeyRing : public KeyStore {
   CephContext *cct;
+/** comment by hy 2020-01-16
+ * # 模块对应的ID
+ */
   uint32_t service_id;
   RotatingSecrets secrets;
+/** comment by hy 2020-01-16
+ * # 模块对应的秘钥
+ */
   KeyRing *keyring;
   mutable ceph::mutex lock;
 

@@ -307,12 +307,25 @@ public:
   } state;
 
   struct _Header {
+/** comment by hy 2020-02-23
+ * # 自己在kv数据库中的序号
+ */
     uint64_t seq;
+/** comment by hy 2020-02-23
+ * # 父对象的序号
+ */
     uint64_t parent;
+/** comment by hy 2020-02-23
+ * # 子对象的数量
+ */
     uint64_t num_children;
-
+/** comment by hy 2020-02-23
+ * # 对象信息 key
+ */
     ghobject_t oid;
-
+/** comment by hy 2020-02-23
+ * # 保存了当前的日志的序号
+ */
     SequencerPosition spos;
 
     void encode(bufferlist &bl) const {
@@ -557,6 +570,7 @@ private:
 
   /**
    * Removes header seq lock and possibly object lock
+   * 这个类用来给智能指针设置删除器对象
    * once Header is out of scope
    * @see lookup_parent
    * @see generate_new_header

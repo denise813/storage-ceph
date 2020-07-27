@@ -121,7 +121,9 @@ int MgrStandby::init()
     client_messenger->wait();
     return -1;
   }
-
+/** comment by hy 2020-04-23
+ * # 订阅mgrmap
+ */
   monc.sub_want("mgrmap", 0, 0);
 
   monc.set_want_keys(CEPH_ENTITY_TYPE_MON|CEPH_ENTITY_TYPE_OSD
@@ -222,7 +224,9 @@ void MgrStandby::send_beacon()
   metadata["addr"] = client_messenger->get_myaddr_legacy().ip_only_to_str();
   metadata["addrs"] = stringify(client_messenger->get_myaddrs());
   collect_sys_info(&metadata, g_ceph_context);
-
+/** comment by hy 2020-04-23
+ * # DaemonServer内部的messenger地址
+ */
   auto m = ceph::make_message<MMgrBeacon>(monc.get_fsid(),
 				 monc.get_global_id(),
                                  g_conf()->name.get_id(),
@@ -255,6 +259,9 @@ void MgrStandby::send_beacon()
 void MgrStandby::tick()
 {
   dout(10) << __func__ << dendl;
+/** comment by hy 2020-04-23
+ * # 向monitor发送beacon消息，告诉自己已经启动
+ */
   send_beacon();
 
   timer.add_event_after(
@@ -389,10 +396,16 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
 
   if (active_in_map) {
     if (!active_mgr) {
+/** comment by hy 2020-04-23
+ * # 如果自己在mgrmap中是active的，创建实例mgr，准备干活
+ */
       dout(1) << "Activating!" << dendl;
       active_mgr.reset(new Mgr(&monc, map, &py_module_registry,
                                client_messenger.get(), &objecter,
 			       &client, clog, audit_clog));
+/** comment by hy 2020-04-23
+ * # 执行初始化
+ */
       active_mgr->background_init(new LambdaContext(
             [this](int r){
               // Advertise our active-ness ASAP instead of waiting for
@@ -414,6 +427,9 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
       available_in_map = true;
     }
   } else if (active_mgr != nullptr) {
+/** comment by hy 2020-04-23
+ * # 否则，销毁实例
+ */
     derr << "I was active but no longer am" << dendl;
     respawn();
   } else {

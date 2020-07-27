@@ -434,8 +434,8 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     supplementary_command = [
         '--osd-data', path,
         '--osd-uuid', fsid,
-        '--setuser', 'ceph',
-        '--setgroup', 'ceph'
+        '--setuser', 'root',
+        '--setgroup', 'root'
     ]
 
     if keyring is not None:

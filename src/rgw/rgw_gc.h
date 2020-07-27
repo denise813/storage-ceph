@@ -22,6 +22,9 @@ class RGWGC : public DoutPrefixProvider {
   CephContext *cct;
   RGWRados *store;
   int max_objs;
+/** comment by hy 2020-03-06
+ * # index 对象
+ */
   string *obj_names;
   std::atomic<bool> down_flag = { false };
 

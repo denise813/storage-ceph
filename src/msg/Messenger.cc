@@ -12,7 +12,15 @@
 
 Messenger *Messenger::create_client_messenger(CephContext *cct, string lname)
 {
+/** comment by hy 2020-01-19
+ * # 从配置文件中获取消息类型
+ */
   std::string public_msgr_type = cct->_conf->ms_public_type.empty() ? cct->_conf.get_val<std::string>("ms_type") : cct->_conf->ms_public_type;
+/** comment by hy 2020-01-19
+ * # 生成有效的随机数,作为通路标识
+     lname 是 linkname,可以来自于上传获取
+     因为一个客户端可能对应多个rados,不同的链路关系
+ */
   auto nonce = get_random_nonce();
   return Messenger::create(cct, public_msgr_type, entity_name_t::CLIENT(),
 			   std::move(lname), nonce, 0);
@@ -33,6 +41,24 @@ uint64_t Messenger::get_random_nonce()
   return ceph::util::generate_random_number<uint64_t>();
 }
 
+/*****************************************************************************
+ * 函 数 名  : Messenger.create
+ * 负 责 人  : hy
+ * 创建日期  : 2020年2月18日
+ * 函数功能  :  
+ * 输入参数  : CephContext *cct     
+               const string &type   
+               entity_name_t name   
+               string lname         
+               uint64_t nonce        一个随机数
+               osd为pid 客户端未一个随机数
+               uint64_t cflags      
+ * 输出参数  : 无
+ * 返 回 值  : Messenger
+ * 调用关系  : 
+ * 其    它  : 
+
+*****************************************************************************/
 Messenger *Messenger::create(CephContext *cct, const string &type,
 			     entity_name_t name, string lname,
 			     uint64_t nonce, uint64_t cflags)
@@ -44,6 +70,9 @@ Messenger *Messenger::create(CephContext *cct, const string &type,
   }
   if (r == 0 || type.find("async") != std::string::npos)
     return new AsyncMessenger(cct, name, type, std::move(lname), nonce);
+/** comment by hy 2020-01-19
+ * # 其他类型框架现在不让用,觉得没钱
+ */
   lderr(cct) << "unrecognized ms_type '" << type << "'" << dendl;
   return nullptr;
 }

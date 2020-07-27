@@ -193,6 +193,9 @@ void ObjectReadRequest<I>::send() {
   I *image_ctx = this->m_ictx;
   ldout(image_ctx->cct, 20) << dendl;
 
+/** comment by hy 2020-02-21
+ * # 
+ */
   read_object();
 }
 
@@ -201,6 +204,10 @@ void ObjectReadRequest<I>::read_object() {
   I *image_ctx = this->m_ictx;
   {
     std::shared_lock image_locker{image_ctx->image_lock};
+/** comment by hy 2020-02-21
+ * # 这是表示什么,表示是快照吧?
+     要是快照
+ */
     if (image_ctx->object_map != nullptr &&
         !image_ctx->object_map->object_may_exist(this->m_object_no)) {
       image_ctx->op_work_queue->queue(new LambdaContext([this](int r) {
@@ -213,10 +220,17 @@ void ObjectReadRequest<I>::read_object() {
   ldout(image_ctx->cct, 20) << dendl;
 
   librados::ObjectReadOperation op;
+/** comment by hy 2020-02-21
+ * # 稀疏读,稀疏读就是数据量然后开始多段读吧
+     稀疏读的界限是什么
+ */
   if (this->m_object_len >= image_ctx->sparse_read_threshold_bytes) {
     op.sparse_read(this->m_object_off, this->m_object_len, m_extent_map,
                    m_read_data, nullptr);
   } else {
+/** comment by hy 2020-02-21
+ * # 一起读吧
+ */
     op.read(this->m_object_off, this->m_object_len, m_read_data, nullptr);
   }
   op.set_op_flags2(m_op_flags);
@@ -224,6 +238,9 @@ void ObjectReadRequest<I>::read_object() {
   librados::AioCompletion *rados_completion = util::create_rados_callback<
     ObjectReadRequest<I>, &ObjectReadRequest<I>::handle_read_object>(this);
   int flags = image_ctx->get_read_flags(this->m_snap_id);
+/** comment by hy 2020-02-21
+ * # 发送读命令
+ */
   int r = image_ctx->data_ctx.aio_operate(
     data_object_name(this->m_ictx, this->m_object_no), rados_completion, &op,
     flags, nullptr,
@@ -259,18 +276,30 @@ void ObjectReadRequest<I>::read_parent() {
 
   // calculate reverse mapping onto the image
   Extents parent_extents;
+/** comment by hy 2020-02-21
+ * # 按照范围选择其父范围
+ */
   Striper::extent_to_file(image_ctx->cct, &image_ctx->layout,
                           this->m_object_no, this->m_object_off,
                           this->m_object_len, parent_extents);
 
   uint64_t parent_overlap = 0;
   uint64_t object_overlap = 0;
+/** comment by hy 2020-02-21
+ * # 原始父的元数据,成功返回0
+ */
   int r = image_ctx->get_parent_overlap(this->m_snap_id, &parent_overlap);
   if (r == 0) {
+/** comment by hy 2020-02-21
+ * # 查看叠加对象,返回叠加对象长度
+ */
     object_overlap = image_ctx->prune_parent_extents(parent_extents,
                                                      parent_overlap);
   }
 
+/** comment by hy 2020-02-21
+ * # 对象没重合就这样吧
+ */
   if (object_overlap == 0) {
     image_locker.unlock();
 
@@ -279,13 +308,22 @@ void ObjectReadRequest<I>::read_parent() {
   }
 
   ldout(image_ctx->cct, 20) << dendl;
+/** comment by hy 2020-02-21
+ * # 重合了
+ */
 
   auto parent_completion = AioCompletion::create_and_start<
     ObjectReadRequest<I>, &ObjectReadRequest<I>::handle_read_parent>(
       this, util::get_image_ctx(image_ctx->parent), AIO_TYPE_READ);
+/** comment by hy 2020-02-21
+ * # 开始读父信息
+ */
   ImageRequest<I>::aio_read(image_ctx->parent, parent_completion,
                             std::move(parent_extents), ReadResult{m_read_data},
                             0, this->m_trace);
+/** comment by hy 2020-02-21
+ * # 回调函数是 copy
+ */
 }
 
 template <typename I>
@@ -303,12 +341,20 @@ void ObjectReadRequest<I>::handle_read_parent(int r) {
     return;
   }
 
+/** comment by hy 2020-02-21
+ * # 
+ */
   copyup();
 }
 
 template <typename I>
 void ObjectReadRequest<I>::copyup() {
   I *image_ctx = this->m_ictx;
+/** comment by hy 2020-02-21
+ * # cone_on_read
+     当读写一个对象时,这个对象不存在,并且有父image 就需要CopyUp操作
+     读取父image所对应的对象数据
+ */
   if (!is_copy_on_read(image_ctx, this->m_snap_id)) {
     this->finish(0);
     return;
@@ -316,7 +362,13 @@ void ObjectReadRequest<I>::copyup() {
 
   image_ctx->owner_lock.lock_shared();
   image_ctx->image_lock.lock_shared();
+/** comment by hy 2020-02-21
+ * # 
+ */
   Extents parent_extents;
+/** comment by hy 2020-02-21
+ * # 与父卷,比呀比是不是重叠
+ */
   if (!this->compute_parent_extents(&parent_extents, true) ||
       (image_ctx->exclusive_lock != nullptr &&
        !image_ctx->exclusive_lock->is_lock_owner())) {
@@ -332,12 +384,18 @@ void ObjectReadRequest<I>::copyup() {
   auto it = image_ctx->copyup_list.find(this->m_object_no);
   if (it == image_ctx->copyup_list.end()) {
     // create and kick off a CopyupRequest
+/** comment by hy 2020-02-21
+ * # 
+ */
     auto new_req = CopyupRequest<I>::create(
       image_ctx, this->m_object_no, std::move(parent_extents), this->m_trace);
 
     image_ctx->copyup_list[this->m_object_no] = new_req;
     image_ctx->copyup_list_lock.unlock();
     image_ctx->image_lock.unlock_shared();
+/** comment by hy 2020-02-21
+ * # CopyupRequest::send
+ */
     new_req->send();
   } else {
     image_ctx->copyup_list_lock.unlock();
@@ -416,6 +474,9 @@ void AbstractObjectWriteRequest<I>::send() {
     }
   }
 
+/** comment by hy 2020-02-21
+ * # 对象不存在,结束吧
+ */
   if (!m_object_may_exist && is_no_op_for_nonexistent_object()) {
     ldout(image_ctx->cct, 20) << "skipping no-op on nonexistent object"
                               << dendl;
@@ -423,6 +484,9 @@ void AbstractObjectWriteRequest<I>::send() {
     return;
   }
 
+/** comment by hy 2020-02-21
+ * # 
+ */
   pre_write_object_map_update();
 }
 
@@ -431,12 +495,18 @@ void AbstractObjectWriteRequest<I>::pre_write_object_map_update() {
   I *image_ctx = this->m_ictx;
 
   image_ctx->image_lock.lock_shared();
+/** comment by hy 2020-02-21
+ * # 缓存中没有数据?
+ */
   if (image_ctx->object_map == nullptr || !is_object_map_update_enabled()) {
     image_ctx->image_lock.unlock_shared();
     write_object();
     return;
   }
 
+/** comment by hy 2020-02-21
+ * # 
+ */
   if (!m_object_may_exist && m_copyup_enabled) {
     // optimization: copyup required
     image_ctx->image_lock.unlock_shared();
@@ -491,17 +561,32 @@ void AbstractObjectWriteRequest<I>::write_object() {
     }
   }
 
+/** comment by hy 2020-02-21
+ * # 先添加判断,改对象范围是否支持操作
+     避免不支持的旧osd出现异常直接崩掉
+     新的可以直接关掉这个功能特性
+ */
   add_write_hint(&write);
+/** comment by hy 2020-02-21
+ * # 包装写请求
+     根据标志位设置对象全写，或局部写
+ */
   add_write_ops(&write);
   ceph_assert(write.size() != 0);
 
   librados::AioCompletion *rados_completion = util::create_rados_callback<
     AbstractObjectWriteRequest<I>,
     &AbstractObjectWriteRequest<I>::handle_write_object>(this);
+/** comment by hy 2020-02-21
+ * # 发送数据对象
+ */
   int r = image_ctx->data_ctx.aio_operate(
     data_object_name(this->m_ictx, this->m_object_no), rados_completion,
     &write, m_snap_seq, m_snaps,
     (this->m_trace.valid() ? this->m_trace.get_info() : nullptr));
+/** comment by hy 2020-02-21
+ * # 后悔执行回调,回调完成被唤醒,就释放回调
+ */
   ceph_assert(r == 0);
   rados_completion->release();
 }

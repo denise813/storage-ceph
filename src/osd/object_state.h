@@ -7,6 +7,10 @@
 
 struct ObjectState {
   object_info_t oi;
+/** comment by hy 2020-02-22
+ * # 用来标记对象存在状态,
+     oi从缓存中获取无法知道现在是不是存在
+ */
   bool exists;         ///< the stored object exists (i.e., we will remember the object_info_t)
 
   ObjectState() : exists(false) {}
@@ -37,14 +41,24 @@ struct RWState {
   const char *get_state_name() const {
     return get_state_name(state);
   }
-
+/** comment by hy 2020-02-22
+ * # 读或写的数目
+ */
   int count;              ///< number of readers or writers
   int waiters = 0;        ///< number waiting
-
+/** comment by hy 2020-02-22
+ * # 读写的状态
+ */
   State state:4;               ///< rw state
   /// if set, restart backfill when we can get a read lock
+/** comment by hy 2020-02-22
+ * # 如果设置,获取锁后,重新执行backfill操作
+ */
   bool recovery_read_marker:1;
   /// if set, requeue snaptrim on lock release
+/** comment by hy 2020-02-22
+ * # 如果设置,获取锁后重新加入snaptrim队列中
+ */
   bool snaptrimmer_write_marker:1;
 
   RWState()

@@ -17,7 +17,10 @@
  * This header describes the subsystems (each one gets a "--debug-<subsystem>"
  * log verbosity setting), along with their default verbosities.
  */
-
+/** comment by hy 2020-04-24
+ * # 日志子系统
+     子系统名称，log级别，gather级别
+ */
 DEFAULT_SUBSYS(0, 5)
 SUBSYS(lockdep, 0, 1)
 SUBSYS(context, 0, 1)

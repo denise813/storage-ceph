@@ -1352,6 +1352,7 @@ decode(std::array<T, N>& v, bufferlist::const_iterator& p)
  * start a decoding block
  *
  * @param v current version of the encoding that the code supports/encodes
+ *          消息变化+1
  * @param bl bufferlist::iterator for the encoded data
  */
 #define DECODE_START(v, bl)						\

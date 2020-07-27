@@ -1635,8 +1635,14 @@ void PrimaryLogPG::do_request(
     op->pg_trace.event("do request");
   }
   // make sure we have a new enough map
+/** comment by hy 2020-02-28
+ * # 查看队列中是否存在相同客户端
+ */
   auto p = waiting_for_map.find(op->get_source());
   if (p != waiting_for_map.end()) {
+/** comment by hy 2020-02-28
+ * # 存在将op加入waiting_for_map队列
+ */
     // preserve ordering
     dout(20) << __func__ << " waiting_for_map "
 	     << p->first << " not empty, queueing" << dendl;
@@ -1644,7 +1650,13 @@ void PrimaryLogPG::do_request(
     op->mark_delayed("waiting_for_map not empty");
     return;
   }
+/** comment by hy 2020-02-28
+ * # 不存在相同的客户端,op中携带的epoch比当前新
+ */
   if (!have_same_or_newer_map(op->min_epoch)) {
+/** comment by hy 2020-02-28
+ * # 本地等待map更新,将本op加入waiting_for_map队列
+ */
     dout(20) << __func__ << " min " << op->min_epoch
 	     << ", queue on waiting_for_map " << op->get_source() << dendl;
     waiting_for_map[op->get_source()].push_back(op);
@@ -1653,19 +1665,32 @@ void PrimaryLogPG::do_request(
     return;
   }
 
+/** comment by hy 2020-02-22
+ * # 查看是否可以直接丢弃消息
+ */
   if (can_discard_request(op)) {
     return;
   }
 
   // pg-wide backoffs
+/** comment by hy 2020-02-28
+ * # 不丢弃
+ */
   const Message *m = op->get_req();
   int msg_type = m->get_type();
+/** comment by hy 2020-02-28
+ * # 连接退化特性
+ */
   if (m->get_connection()->has_feature(CEPH_FEATURE_RADOS_BACKOFF)) {
     auto session = ceph::ref_cast<Session>(m->get_connection()->get_priv());
     if (!session)
       return;  // drop it.
 
     if (msg_type == CEPH_MSG_OSD_OP) {
+/** comment by hy 2020-04-08
+ * # 下面都是 backoff 处理
+     ???
+ */
       if (session->check_backoff(cct, info.pgid,
 				 info.pgid.pgid.get_hobj_start(), m)) {
 	return;
@@ -1694,14 +1719,25 @@ void PrimaryLogPG::do_request(
       }
     }
   }
-
+/** comment by hy 2020-02-28
+ * # 已经 peered
+ */
   if (!is_peered()) {
+/** comment by hy 2020-01-30
+ * # 看看该消息能被处理
+ */
     // Delay unless PGBackend says it's ok
     if (pgbackend->can_handle_while_inactive(op)) {
+/** comment by hy 2020-02-22
+ * # 如果可以直接调用处理函数
+ */
       bool handled = pgbackend->handle_message(op);
       ceph_assert(handled);
       return;
     } else {
+/** comment by hy 2020-01-30
+ * # 加入等待peer 队列, 等待 peer
+ */
       waiting_for_peered.push_back(op);
       op->mark_delayed("waiting for peered");
       return;
@@ -1716,9 +1752,23 @@ void PrimaryLogPG::do_request(
   }
 
   ceph_assert(is_peered() && !recovery_state.needs_flush());
+/** comment by hy 2020-01-30
+ * # pg处理对应的正常流程,如恢复,回迁,等等
+     先处理 MSG_OSD_PG_RECOVERY_DELETE 消息
+     后调用不同后端的 _handle_message
+     _handle_message 主要处理 pg 副本的推送数据或拉数据
+
+     PGBackend::handle_message =
+
+     ReplicatedBackend::_handle_message
+     ECBackend::_handle_message
+ */
   if (pgbackend->handle_message(op))
     return;
 
+/** comment by hy 2020-01-30
+ * # 等pg处理完成后进入对象处理
+ */
   switch (msg_type) {
   case CEPH_MSG_OSD_OP:
   case CEPH_MSG_OSD_BACKOFF:
@@ -1736,6 +1786,10 @@ void PrimaryLogPG::do_request(
 	osd->reply_op_error(op, -EOPNOTSUPP);
 	return;
       }
+/** comment by hy 2020-01-30
+ * # 执行对象处理
+     PrimaryLogPG::do_op
+ */
       do_op(op);
       break;
     case CEPH_MSG_OSD_BACKOFF:
@@ -1819,6 +1873,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // change anything that will break other reads on m (operator<<).
   MOSDOp *m = static_cast<MOSDOp*>(op->get_nonconst_req());
   ceph_assert(m->get_type() == CEPH_MSG_OSD_OP);
+/** comment by hy 2020-02-22
+ * # 解析消息数据，清理消息资源
+ */
   if (m->finish_decode()) {
     op->reset_desc();   // for TrackedOp
     m->clear_payload();
@@ -1826,8 +1883,14 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
   dout(20) << __func__ << ": op " << *m << dendl;
 
+/** comment by hy 2020-02-22
+ * # 检查对象对应的快照head对象
+ */
   const hobject_t head = m->get_hobj().get_head();
 
+/** comment by hy 2020-04-08
+ * # pg 处于分裂
+ */
   if (!info.pgid.pgid.contains(
 	info.pgid.pgid.get_split_bits(pool.info.get_pg_num()), head)) {
     derr << __func__ << " " << info.pgid.pgid << " does not contain "
@@ -1854,6 +1917,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     }
   }
 
+/** comment by hy 2020-04-08
+ * # 并发执行,未来支持
+ */
   if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
     // not implemented.
     dout(20) << __func__ << ": PARALLELEXEC not implemented " << *m << dendl;
@@ -1873,8 +1939,14 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&
       op->may_read() &&
       !(op->may_write() || op->may_cache())) {
+/** comment by hy 2020-04-08
+ * # 平衡读和本地读相关内容
+ */
     // balanced reads; any replica will do
     if (!(is_primary() || is_nonprimary())) {
+/** comment by hy 2020-04-08
+ * # 不是主的条件
+ */
       osd->handle_misdirected_op(this, op);
       return;
     }
@@ -1890,16 +1962,31 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     return;
   }
 
+/** comment by hy 2020-02-22
+ * # 检查相关授权
+ */
   if (!op_has_sufficient_caps(op)) {
     osd->reply_op_error(op, -EPERM);
     return;
   }
 
+/** comment by hy 2020-01-30
+ * # 操作中包含过滤等等操作
+     即 请求中包含对PG的操作
+     CEPH_OSD_RMW_FLAG_PGOD
+ */
   if (op->includes_pg_op()) {
+/** comment by hy 2020-04-08
+ * # op中包含includes_pg_op该操作
+     PrimaryLogPG::do_pg_op
+ */
     return do_pg_op(op);
   }
 
   // object name too long?
+/** comment by hy 2020-02-22
+ * # 检查名字长度
+ */
   if (m->get_oid().name.size() > cct->_conf->osd_max_object_name_len) {
     dout(4) << "do_op name is longer than "
 	    << cct->_conf->osd_max_object_name_len
@@ -1935,6 +2022,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   // blacklisted?
+/** comment by hy 2020-02-22
+ * # 检查黑名单
+ */
   if (get_osdmap()->is_blacklisted(m->get_source_addr())) {
     dout(10) << "do_op " << m->get_source_addr() << " is blacklisted" << dendl;
     osd->reply_op_error(op, -EBLACKLISTED);
@@ -1952,6 +2042,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // bypass all full checks anyway.  If this op isn't write or
   // read-ordered, we skip.
   // FIXME: we exclude mds writes for now.
+/** comment by hy 2020-02-22
+ * # 若果是顺序写，并且该对象在该队列中 并且检查磁盘空间
+ */
   if (write_ordered && !(m->get_source().is_mds() ||
 			 m->has_flag(CEPH_OSD_FLAG_FULL_TRY) ||
 			 m->has_flag(CEPH_OSD_FLAG_FULL_FORCE)) &&
@@ -1963,6 +2056,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // mds should have stopped writing before this point.
   // We can't allow OSD to become non-startable even if mds
   // could be writing as part of file removals.
+/** comment by hy 2020-04-08
+ * # 为了安全起见 试着判断是不是满了
+ */
   if (write_ordered && osd->check_failsafe_full(get_dpp()) && 
       !m->has_flag(CEPH_OSD_FLAG_FULL_TRY)) {
     dout(10) << __func__ << " fail-safe full check failed, dropping request." << dendl;
@@ -1971,12 +2067,18 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   int64_t poolid = get_pgid().pool();
   if (op->may_write()) {
 
+/** comment by hy 2020-04-08
+ * # 获取对应的pool
+ */
     const pg_pool_t *pi = get_osdmap()->get_pg_pool(poolid);
     if (!pi) {
       return;
     }
 
     // invalid?
+/** comment by hy 2020-02-22
+ * # 判断是快照,快照不允许写
+ */
     if (m->get_snapid() != CEPH_NOSNAP) {
       dout(20) << __func__ << ": write to clone not valid " << *m << dendl;
       osd->reply_op_error(op, -EINVAL);
@@ -1984,6 +2086,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     }
 
     // too big?
+/** comment by hy 2020-02-22
+ * # 参数错误,或者写过大
+ */
     if (cct->_conf->osd_max_write_size &&
         m->get_data_len() > cct->_conf->osd_max_write_size << 20) {
       // journal can't hold commit!
@@ -2004,6 +2109,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 	   << dendl;
 
   // missing object?
+/** comment by hy 2020-02-22
+ * # 对象不可读丢失
+ */
   if (is_unreadable_object(head)) {
     if (!is_primary()) {
       osd->reply_op_error(op, -EAGAIN);
@@ -2013,26 +2121,45 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 	(g_conf()->osd_backoff_on_degraded ||
 	 (g_conf()->osd_backoff_on_unfound &&
 	  recovery_state.get_missing_loc().is_unfound(head)))) {
+/** comment by hy 2020-04-08
+ * # 
+ */
       add_backoff(session, head, head);
       maybe_kick_recovery(head);
     } else {
+/** comment by hy 2020-02-28
+ * # 对象不可读,加入unreadable_object队列,等待本地对象待修复
+ */
       wait_for_unreadable_object(head, op);
     }
     return;
   }
 
+/** comment by hy 2020-01-30
+ * # 上面是对写之前的检查,下面检查其他
+ */
   if (write_ordered) {
     // degraded object?
+/** comment by hy 2020-02-22
+ * # 构造要访问的head对象
+ */
     if (is_degraded_or_backfilling_object(head)) {
       if (can_backoff && g_conf()->osd_backoff_on_degraded) {
         add_backoff(session, head, head);
         maybe_kick_recovery(head);
       } else {
+/** comment by hy 2020-02-28
+ * # 包含写操作,对象正在不可写
+ */
         wait_for_degraded_object(head, op);
       }
       return;
     }
 
+/** comment by hy 2020-01-30
+ * # 这里巡检检查
+     head对象进行巡检,其他的将等候该对象巡检完成
+ */
     if (scrubber.is_chunky_scrub_active() && write_blocked_by_scrub(head)) {
       dout(20) << __func__ << ": waiting for scrub" << dendl;
       waiting_for_scrub.push_back(op);
@@ -2044,6 +2171,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     }
 
     // blocked on snap?
+/** comment by hy 2020-02-22
+ * # 对head对象各种检查
+ */
     if (auto blocked_iter = objects_blocked_on_degraded_snap.find(head);
 	blocked_iter != std::end(objects_blocked_on_degraded_snap)) {
       hobject_t to_wait_on(head);
@@ -2073,6 +2203,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     version_t user_version;
     int return_code = 0;
     vector<pg_log_op_return_item_t> op_returns;
+/** comment by hy 2020-05-31
+ * # 
+ */
     bool got = check_in_progress_op(
       m->get_reqid(), &version, &user_version, &return_code, &op_returns);
     if (got) {
@@ -2137,6 +2270,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     }
   }
 
+/** comment by hy 2020-04-08
+ * # 开始加载一个对象操作,加载时会检查对象相关的内容,如 snap 信息
+ */
   int r = find_object_context(
     oid, &obc, can_create,
     m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE),
@@ -2149,6 +2285,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     obc->ssc = get_snapset_context(oid, true);
   }
 
+/** comment by hy 2020-04-08
+ * # 开始等待这个状态
+ */
   if (r == -EAGAIN) {
     // If we're not the primary of this OSD, we just return -EAGAIN. Otherwise,
     // we have to wait for the object.
@@ -2177,37 +2316,64 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     }
   }
 
+/** comment by hy 2020-04-08
+ * # 处理 hit, hit 集合
+ */
   bool in_hit_set = false;
+/** comment by hy 2020-04-08
+ * # hit_set 有 hit_set_create 消息处理接口触发
+ */
   if (hit_set) {
     if (obc.get()) {
+/** comment by hy 2020-04-08
+ * # 在范围里面
+ */
       if (obc->obs.oi.soid != hobject_t() && hit_set->contains(obc->obs.oi.soid))
 	in_hit_set = true;
     } else {
       if (missing_oid != hobject_t() && hit_set->contains(missing_oid))
         in_hit_set = true;
     }
+/** comment by hy 2020-04-08
+ * # 将操作插入到 hit 集合中
+ */
     if (!op->hitset_inserted) {
       hit_set->insert(oid);
       op->hitset_inserted = true;
       if (hit_set->is_full() ||
           hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp()) {
+/** comment by hy 2020-04-08
+ * # hit 持久化, 持久化到 log
+ */
         hit_set_persist();
       }
     }
   }
 
   if (agent_state) {
+/** comment by hy 2020-04-08
+ * # 
+ */
     if (agent_choose_mode(false, op))
       return;
   }
 
+/** comment by hy 2020-05-31
+ * # 对象处理
+ */
   if (obc.get() && obc->obs.exists && obc->obs.oi.has_manifest()) {
+/** comment by hy 2020-04-08
+ * # 这个怎么长得有点向对象的哪个 mainfest 呢?
+ */
     if (maybe_handle_manifest(op,
 			       write_ordered,
 			       obc))
     return;
   }
 
+/** comment by hy 2020-04-08
+ * # 处理缓存
+ */
   if (maybe_handle_cache(op,
 			 write_ordered,
 			 obc,
@@ -2221,6 +2387,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     // copy the reqids for copy get on ENOENT
     if (r == -ENOENT &&
 	(m->ops[0].op.op == CEPH_OSD_OP_COPY_GET)) {
+/** comment by hy 2020-04-08
+ * # 
+ */
       fill_in_copy_get_noent(op, oid, m->ops[0]);
       return;
     }
@@ -2235,6 +2404,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   // make sure locator is consistent
+/** comment by hy 2020-02-22
+ * # 验证和消息里的相同
+ */
   object_locator_t oloc(obc->obs.oi.soid);
   if (m->get_object_locator() != oloc) {
     dout(10) << " provided locator " << m->get_object_locator() 
@@ -2245,6 +2417,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   // io blocked on obc?
+/** comment by hy 2020-02-22
+ * # 被阻塞
+ */
   if (obc->is_blocked() &&
       !m->has_flag(CEPH_OSD_FLAG_FLUSH)) {
     wait_for_blocked_object(obc->obs.oi.soid, op);
@@ -2253,11 +2428,17 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
   dout(25) << __func__ << " oi " << obc->obs.oi << dendl;
 
+/** comment by hy 2020-02-22
+ * # 创建操作上下文
+ */
   OpContext *ctx = new OpContext(op, m->get_reqid(), &m->ops, obc, this);
 
   if (m->has_flag(CEPH_OSD_FLAG_SKIPRWLOCKS)) {
     dout(20) << __func__ << ": skipping rw locks" << dendl;
   } else if (m->get_flags() & CEPH_OSD_FLAG_FLUSH) {
+/** comment by hy 2020-04-08
+ * # flush 忽略对象读写锁
+ */
     dout(20) << __func__ << ": part of flush, will ignore write lock" << dendl;
 
     // verify there is in fact a flush in progress
@@ -2269,6 +2450,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       return;
     }
   } else if (!get_rw_locks(write_ordered, ctx)) {
+/** comment by hy 2020-04-08
+ * # 异步等候释放,打上一个延迟标志
+ */
     dout(20) << __func__ << " waiting for rw locks " << dendl;
     op->mark_delayed("waiting for rw locks");
     close_op_ctx(ctx);
@@ -2280,6 +2464,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     dout(20) << __func__ << " returned an error: " << r << dendl;
     if (op->may_write() &&
 	get_osdmap()->require_osd_release >= ceph_release_t::kraken) {
+/** comment by hy 2020-04-08
+ * # 记录错误
+ */
       record_write_error(op, oid, nullptr, r,
 			 ctx->op->allows_returnvec() ? ctx : nullptr);
     } else {
@@ -2315,8 +2502,14 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     return;
   }
 
+/** comment by hy 2020-02-22
+ * # 操作正式开始
+ */
   op->mark_started();
 
+/** comment by hy 2020-01-30
+ * # 核心执行语句
+ */
   execute_ctx(ctx);
   utime_t prepare_latency = ceph_clock_now();
   prepare_latency -= op->get_dequeued_time();
@@ -2330,6 +2523,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   // force recovery of the oldest missing object if too many logs
+/** comment by hy 2020-04-08
+ * # 
+ */
   maybe_force_recovery();
 }
 
@@ -3837,28 +4033,46 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   ctx->reset_obs(ctx->obc);
   ctx->update_log_only = false; // reset in case finish_copyfrom() is re-running execute_ctx
   OpRequestRef op = ctx->op;
+/** comment by hy 2020-01-31
+ * # 获取消息,将消息填写到上下文中
+ */
   auto m = op->get_req<MOSDOp>();
   ObjectContextRef obc = ctx->obc;
   const hobject_t& soid = obc->obs.oi.soid;
 
   // this method must be idempotent since we may call it several times
   // before we finally apply the resulting transaction.
+/** comment by hy 2020-04-08
+ * # 新建一个事务
+ */
   ctx->op_t.reset(new PGTransaction);
 
   if (op->may_write() || op->may_cache()) {
     // snap
     if (!(m->has_flag(CEPH_OSD_FLAG_ENFORCE_SNAPC)) &&
 	pool.info.is_pool_snaps_mode()) {
+/** comment by hy 2020-04-09
+ * # 如果是对整个 pool 的快照操作
+ */
       // use pool's snapc
       ctx->snapc = pool.snapc;
     } else {
       // client specified snapc
+/** comment by hy 2020-04-09
+ * # 如果是用户特定的快照 如RBD
+ */
       ctx->snapc.seq = m->get_snap_seq();
+/** comment by hy 2020-04-09
+ * # 设置为信息带的相关信息
+ */
       ctx->snapc.snaps = m->get_snaps();
       filter_snapc(ctx->snapc.snaps);
     }
     if ((m->has_flag(CEPH_OSD_FLAG_ORDERSNAP)) &&
 	ctx->snapc.seq < obc->ssc->snapset.seq) {
+/** comment by hy 2020-04-09
+ * # 客户端的 snap序号小于服务端的 返回错误
+ */
       dout(10) << " ORDERSNAP flag set and snapc seq " << ctx->snapc.seq
 	       << " < snapset seq " << obc->ssc->snapset.seq
 	       << " on " << obc->obs.oi.soid << dendl;
@@ -3893,6 +4107,11 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
         reqid.name._num, reqid.tid, reqid.inc);
   }
 
+/** comment by hy 2020-04-08
+ * # 将相关的操作封装到 ctx->op_t中 封装成事务
+     读操作进行读
+     写操作进行 pglog 写入缓冲等,等待pg状态机
+ */
   int result = prepare_transaction(ctx);
 
   {
@@ -3903,6 +4122,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
         reqid.name._num, reqid.tid, reqid.inc);
   }
 
+/** comment by hy 2020-04-08
+ * # 调用该函数 异步读取
+ */
   bool pending_async_reads = !ctx->pending_async_reads.empty();
   if (result == -EINPROGRESS || pending_async_reads) {
     // come back later.
@@ -3926,6 +4148,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
       result >= 0) {
     // successful update
     if (ctx->op->allows_returnvec()) {
+/** comment by hy 2020-04-08
+ * # 
+ */
       // enforce reasonable bound on the return buffer sizes
       for (auto& i : *ctx->ops) {
 	if (i.outdata.length() > cct->_conf->osd_max_write_op_reply_len) {
@@ -3952,8 +4177,13 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   if ((ctx->op_t->empty() || result < 0) && !ctx->update_log_only) {
     // finish side-effects
     if (result >= 0)
+/** comment by hy 2020-03-21
+ * # 
+ */
       do_osd_op_effects(ctx, m->get_connection());
-
+/** comment by hy 2020-04-09
+ * # 同步读取
+ */
     complete_read_ctx(result, ctx);
     return;
   }
@@ -3963,6 +4193,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   ceph_assert(op->may_write() || op->may_cache());
 
   // trim log?
+/** comment by hy 2020-04-09
+ * # 调用函数 计算是否将旧的PG log日志进行trim操作
+ */
   recovery_state.update_trim_to();
 
   // verify that we are doing this in order?
@@ -3987,6 +4220,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 
   if (ctx->update_log_only) {
     if (result >= 0)
+/** comment by hy 2020-04-08
+ * # 设置 watcher 通知连接 ping
+ */
       do_osd_op_effects(ctx, m->get_connection());
 
     dout(20) << __func__ << " update_log_only -- result=" << result << dendl;
@@ -4009,6 +4245,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 
   // no need to capture PG ref, repop cancel will handle that
   // Can capture the ctx by pointer, it's owned by the repop
+/** comment by hy 2020-04-08
+ * # 
+ */
   ctx->register_on_commit(
     [m, ctx, this](){
       if (ctx->op)
@@ -4024,6 +4263,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 	ctx->op->mark_commit_sent();
       }
     });
+/** comment by hy 2020-03-21
+ * # 回调函数
+ */
   ctx->register_on_success(
     [ctx, this]() {
       do_osd_op_effects(
@@ -4031,6 +4273,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 	ctx->op ? ctx->op->get_req()->get_connection() :
 	ConnectionRef());
     });
+/** comment by hy 2020-04-08
+ * # 
+ */
   ctx->register_on_finish(
     [ctx]() {
       delete ctx;
@@ -4038,10 +4283,18 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 
   // issue replica writes
   ceph_tid_t rep_tid = osd->get_tid();
-
+/** comment by hy 2020-04-08
+ * # 创建副本操作任务,放入调度队列中
+ */
   RepGather *repop = new_repop(ctx, obc, rep_tid);
-
+/** comment by hy 2020-04-08
+ * # 向各个副本发送同步操作请求, 在其中会调用 commit
+ */
   issue_repop(repop, ctx);
+/** comment by hy 2020-04-08
+ * # 检查发向各个副本的同步操作请求是否已经reply,并更新
+     这里调用 on_finish,与 on_success
+ */
   eval_repop(repop);
   repop->put();
 }
@@ -5514,6 +5767,9 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
     ctx->op_finishers[ctx->current_osd_subop_num].reset(
       new ReadFinisher(osd_op));
   } else {
+/** comment by hy 2020-06-26
+ * # 读取对象
+ */
     int r = pgbackend->objects_read_sync(
       soid, op.extent.offset, op.extent.length, op.flags, &osd_op.outdata);
     // whole object?  can we verify the checksum?
@@ -5755,6 +6011,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	if (!ctx->data_off) {
 	  ctx->data_off = op.extent.offset;
 	}
+/** comment by hy 2020-07-12
+ * # 读数据
+ */
 	result = do_read(ctx, osd_op);
       } else {
 	result = op_finisher->execute();
@@ -6376,6 +6635,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  break;
 	}
 
+/** comment by hy 2020-07-12
+ * # 处理数据长度不一致
+ */
         if (seq && (seq > op.extent.truncate_seq) &&
             (op.extent.offset + op.extent.length > oi.size)) {
 	  // old write, arrived after trimtrunc
@@ -6413,6 +6675,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	    oi.truncate_size = op.extent.truncate_size;
 	  }
 	}
+/** comment by hy 2020-06-26
+ * # 参数检查
+ */
 	result = check_offset_and_length(
 	  op.extent.offset, op.extent.length,
 	  static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
@@ -6431,6 +6696,10 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	    t->nop(soid);
 	  }
 	} else {
+/** comment by hy 2020-06-26
+ * # PGTransaction::write 调用
+     封装 ObjectOperation::BufferUpdate::Write 内容
+ */
 	  t->write(
 	    soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
 	}
@@ -6447,8 +6716,14 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	} else {
 	  obs.oi.clear_data_digest();
         }
+/** comment by hy 2020-06-26
+ * # 更新数据摘要
+ */
 	write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges,
 				    op.extent.offset, op.extent.length);
+/** comment by hy 2020-07-12
+ * # 标记多域信息
+ */
 	ctx->clean_regions.mark_data_region_dirty(op.extent.offset, op.extent.length);
 	dout(10) << "clean_regions modified" << ctx->clean_regions << dendl;
       }
@@ -6683,8 +6958,14 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	if (op.watch.op == CEPH_OSD_WATCH_OP_WATCH ||
 	    op.watch.op == CEPH_OSD_WATCH_OP_LEGACY_WATCH) {
 	  if (oi.watchers.count(make_pair(cookie, entity))) {
+/** comment by hy 2020-03-20
+ * # 已存在,什么也不做
+ */
 	    dout(10) << " found existing watch " << w << " by " << entity << dendl;
 	  } else {
+/** comment by hy 2020-03-20
+ * # 加入该对象对应的watcher 列表中
+ */
 	    dout(10) << " registered new watch " << w << " by " << entity << dendl;
 	    oi.watchers[make_pair(cookie, entity)] = w;
 	    t->nop(soid);  // make sure update the object_info on disk!
@@ -6718,6 +6999,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  p->second->got_ping(ceph_clock_now());
 	  result = 0;
         } else if (op.watch.op == CEPH_OSD_WATCH_OP_UNWATCH) {
+/** comment by hy 2020-03-21
+ * # 
+ */
 	  map<pair<uint64_t, entity_name_t>, watch_info_t>::iterator oi_iter =
 	    oi.watchers.find(make_pair(cookie, entity));
 	  if (oi_iter != oi.watchers.end()) {
@@ -6725,6 +7009,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 		     << entity << dendl;
             oi.watchers.erase(oi_iter);
 	    t->nop(soid);  // update oi on disk
+/** comment by hy 2020-03-21
+ * # 
+ */
 	    ctx->watch_disconnects.push_back(
 	      watch_disconnect_t(cookie, entity, false));
 	  } else {
@@ -8297,7 +8584,10 @@ void PrimaryLogPG::write_update_size_and_usage(object_stat_sum_t& delta_stats, o
     delta_stats.num_bytes += new_size;
     oi.size = new_size;
   }
- 
+
+/** comment by hy 2020-07-12
+ * # 对象数据
+ */
   if (oi.has_manifest() && oi.manifest.is_chunked()) {
     for (auto &p : oi.manifest.chunk_map) {
       if ((p.first <= offset && p.first + p.second.length > offset) ||
@@ -8307,6 +8597,7 @@ void PrimaryLogPG::write_update_size_and_usage(object_stat_sum_t& delta_stats, o
       }
     }
   }
+  
   delta_stats.num_wr++;
   delta_stats.num_wr_kb += shift_round_up(length, 10);
 }
@@ -8465,6 +8756,10 @@ int PrimaryLogPG::prepare_transaction(OpContext *ctx)
   }
 
   // prepare the actual mutation
+/** comment by hy 2020-06-26
+ * # 写入 PGTransaction 事务缓存中
+     即操作对象的buffer write 实例
+ */
   int result = do_osd_ops(ctx, *ctx->ops);
   if (result < 0) {
     if (ctx->op->may_write() &&
@@ -8511,7 +8806,11 @@ int PrimaryLogPG::prepare_transaction(OpContext *ctx)
   // clone, if necessary
   if (soid.snap == CEPH_NOSNAP)
     make_writeable(ctx);
-
+/** comment by hy 2020-06-26
+ * # 写操作才可能走的步骤,
+     包装 pg_log_entry_t，并放入缓冲中
+     以及head 对象的部分信息写入缓冲中
+ */
   finish_ctx(ctx,
 	     ctx->new_obs.exists ? pg_log_entry_t::MODIFY :
 	     pg_log_entry_t::DELETE,
@@ -8578,6 +8877,9 @@ void PrimaryLogPG::finish_ctx(OpContext *ctx, int log_op_type, int result)
   }
 
   // append to log
+/** comment by hy 2020-05-31
+ * # 处理pg log,等待状态机处理
+ */
   ctx->log.push_back(
     pg_log_entry_t(log_op_type, soid, ctx->at_version,
 		   ctx->obs->oi.version,
@@ -8617,7 +8919,9 @@ void PrimaryLogPG::finish_ctx(OpContext *ctx, int log_op_type, int result)
 
   // apply new object state.
   ctx->obc->obs = ctx->new_obs;
-
+/** comment by hy 2020-06-26
+ * # 元数据对象
+ */
   if (soid.is_head() && !ctx->obc->obs.exists) {
     ctx->obc->ssc->exists = false;
     ctx->obc->ssc->snapset = SnapSet();
@@ -10543,6 +10847,9 @@ void PrimaryLogPG::eval_repop(RepGather *repop)
 	for (auto p = to_remove->on_success.begin();
 	     p != to_remove->on_success.end();
 	     to_remove->on_success.erase(p++)) {
+/** comment by hy 2020-07-13
+ * # 执行成功回调,即执行连接相关操作
+ */
 	  (*p)();
 	}
 	remove_repop(to_remove);
@@ -10568,20 +10875,36 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
   if (ctx->head_obc) {
     ctx->op_t->add_obc(ctx->head_obc);
   }
-
+/** comment by hy 2020-05-31
+ * # 副本
+ */
   Context *on_all_commit = new C_OSD_RepopCommit(this, repop);
   if (!(ctx->log.empty())) {
     ceph_assert(ctx->at_version >= projected_last_update);
     projected_last_update = ctx->at_version;
   }
+/** comment by hy 2020-07-13
+ * # pg log 信息
+ */
   for (auto &&entry: ctx->log) {
     projected_log.add(entry);
   }
 
+/** comment by hy 2020-05-31
+ * # 
+ */
   recovery_state.pre_submit_op(
     soid,
     ctx->log,
     ctx->at_version);
+/** comment by hy 2020-04-09
+ * # 将事务发送到OSD处理，对于不同的PG实现
+     把更新请求发送给从OSD，并调用 queue_transactions 函数
+     对该PG的主OSD上的实现更改
+
+     ReplicatedBackend::submit_transaction
+     ECBackend::submit_transaction
+ */
   pgbackend->submit_transaction(
     soid,
     ctx->delta_stats,
@@ -10605,13 +10928,20 @@ PrimaryLogPG::RepGather *PrimaryLogPG::new_repop(
     dout(10) << "new_repop rep_tid " << rep_tid << " on " << *ctx->op->get_req() << dendl;
   else
     dout(10) << "new_repop rep_tid " << rep_tid << " (no op)" << dendl;
-
+/** comment by hy 2020-06-26
+ * # 设置副本请求
+ */
   RepGather *repop = new RepGather(
     ctx, rep_tid, info.last_complete);
 
   repop->start = ceph_clock_now();
-
+/** comment by hy 2020-06-26
+ * # 加入副本队列中
+ */
   repop_queue.push_back(&repop->queue_item);
+/** comment by hy 2020-06-26
+ * # 添加引用计数
+ */
   repop->get();
 
   osd->logger->inc(l_osd_op_wip);
@@ -10848,6 +11178,9 @@ void PrimaryLogPG::check_blacklisted_watchers()
 void PrimaryLogPG::check_blacklisted_obc_watchers(ObjectContextRef obc)
 {
   dout(20) << "PrimaryLogPG::check_blacklisted_obc_watchers for obc " << obc->obs.oi.soid << dendl;
+/** comment by hy 2020-03-21
+ * # Watch
+ */
   for (map<pair<uint64_t, entity_name_t>, WatchRef>::iterator k =
 	 obc->watchers.begin();
 	k != obc->watchers.end();
@@ -10857,10 +11190,16 @@ void PrimaryLogPG::check_blacklisted_obc_watchers(ObjectContextRef obc)
     dout(30) << "watch: Found " << j->second->get_entity() << " cookie " << j->second->get_cookie() << dendl;
     entity_addr_t ea = j->second->get_peer_addr();
     dout(30) << "watch: Check entity_addr_t " << ea << dendl;
+/** comment by hy 2020-03-21
+ * # 判断黑名单
+ */
     if (get_osdmap()->is_blacklisted(ea)) {
       dout(10) << "watch: Found blacklisted watcher for " << ea << dendl;
       ceph_assert(j->second->get_pg() == this);
       j->second->unregister_cb();
+/** comment by hy 2020-03-21
+ * # 
+ */
       handle_watch_timeout(j->second);
     }
   }
@@ -10889,16 +11228,32 @@ void PrimaryLogPG::populate_obc_watchers(ObjectContextRef obc)
     expire += p->second.timeout_seconds;
     dout(10) << "  unconnected watcher " << p->first << " will expire " << expire << dendl;
     WatchRef watch(
+/** comment by hy 2020-04-08
+ * # 生成一个 Watch 对象
+ */
       Watch::makeWatchRef(
 	this, osd, obc, p->second.timeout_seconds, p->first.first,
 	p->first.second, p->second.addr));
+/** comment by hy 2020-04-08
+ * # 
+     Watch::disconnect
+     向 OSD::watch_timer 注册事件等待超时处理
+     并建立一个连接对象
+     该时间是连接检查
+ */
     watch->disconnect();
+/** comment by hy 2020-04-08
+ * # 填充 obc 中的 watcher 表中
+ */
     obc->watchers.insert(
       make_pair(
 	make_pair(p->first.first, p->first.second),
 	watch));
   }
   // Look for watchers from blacklisted clients and drop
+/** comment by hy 2020-03-21
+ * # 检查黑名单在其中
+ */
   check_blacklisted_obc_watchers(obc);
 }
 
@@ -10915,6 +11270,9 @@ void PrimaryLogPG::handle_watch_timeout(WatchRef watch)
     dout(10) << __func__ << " object " << obc->obs.oi.soid << " dne" << dendl;
     return;
   }
+/** comment by hy 2020-03-21
+ * # 等下再调用该接口,变相递归
+ */
   if (is_degraded_or_backfilling_object(obc->obs.oi.soid)) {
     callbacks_for_degraded_object[obc->obs.oi.soid].push_back(
       watch->get_delayed_cb()
@@ -10925,6 +11283,9 @@ void PrimaryLogPG::handle_watch_timeout(WatchRef watch)
     return;
   }
 
+/** comment by hy 2020-03-21
+ * # 
+ */
   if (write_blocked_by_scrub(obc->obs.oi.soid)) {
     dout(10) << "handle_watch_timeout waiting for scrub on obj "
 	     << obc->obs.oi.soid
@@ -10945,6 +11306,9 @@ void PrimaryLogPG::handle_watch_timeout(WatchRef watch)
   list<watch_disconnect_t> watch_disconnects = {
     watch_disconnect_t(watch->get_cookie(), watch->get_entity(), true)
   };
+/** comment by hy 2020-03-21
+ * # 完成后去掉 watch
+ */
   ctx->register_on_success(
     [this, obc, watch_disconnects]() {
       complete_disconnect_watches(obc, watch_disconnects);
@@ -10968,12 +11332,18 @@ void PrimaryLogPG::handle_watch_timeout(WatchRef watch)
   ctx->obc->obs = ctx->new_obs;
 
   // no ctx->delta_stats
+/** comment by hy 2020-03-21
+ * # 
+ */
   simple_opc_submit(std::move(ctx));
 }
 
 ObjectContextRef PrimaryLogPG::create_object_context(const object_info_t& oi,
 						     SnapSetContext *ssc)
 {
+/** comment by hy 2020-04-08
+ * # 加载到缓存LRU 中
+ */
   ObjectContextRef obc(object_contexts.lookup_or_create(oi.soid));
   ceph_assert(obc->destructor_callback == NULL);
   obc->destructor_callback = new C_PG_ObjectContext(this, obc.get());  
@@ -10981,9 +11351,15 @@ ObjectContextRef PrimaryLogPG::create_object_context(const object_info_t& oi,
   obc->obs.exists = false;
   obc->ssc = ssc;
   if (ssc)
+/** comment by hy 2020-04-08
+ * # 快照放入对应的快照缓存中
+ */
     register_snapset_context(ssc);
   dout(10) << "create_object_context " << (void*)obc.get() << " " << oi.soid << " " << dendl;
   if (is_active())
+/** comment by hy 2020-03-21
+ * # 设置 watchers 信息
+ */
     populate_obc_watchers(obc);
   return obc;
 }
@@ -10993,6 +11369,9 @@ ObjectContextRef PrimaryLogPG::get_object_context(
   bool can_create,
   const map<string, bufferlist> *attrs)
 {
+/** comment by hy 2020-04-08
+ * # 从pg log 中找 对象
+ */
   auto it_objects = recovery_state.get_pg_log().get_log().objects.find(soid);
   ceph_assert(
     attrs || !recovery_state.get_pg_log().get_missing().is_missing(soid) ||
@@ -11000,6 +11379,9 @@ ObjectContextRef PrimaryLogPG::get_object_context(
     (it_objects != recovery_state.get_pg_log().get_log().objects.end() &&
       it_objects->second->op ==
       pg_log_entry_t::LOST_REVERT));
+/** comment by hy 2020-04-08
+ * # 从缓存 LRU 中 加载对象
+ */
   ObjectContextRef obc = object_contexts.lookup(soid);
   osd->logger->inc(l_osd_object_ctx_cache_total);
   if (obc) {
@@ -11015,6 +11397,9 @@ ObjectContextRef PrimaryLogPG::get_object_context(
       ceph_assert(it_oi != attrs->end());
       bv = it_oi->second;
     } else {
+/** comment by hy 2020-04-08
+ * # 后端获取属性值
+ */
       int r = pgbackend->objects_get_attr(soid, OI_ATTR, &bv);
       if (r < 0) {
 	if (!can_create) {
@@ -11029,9 +11414,15 @@ ObjectContextRef PrimaryLogPG::get_object_context(
 		 << dendl;
 	// new object.
 	object_info_t oi(soid);
+/** comment by hy 2020-04-08
+ * # 获取对应的快照信息,其实就是快照信息
+ */
 	SnapSetContext *ssc = get_snapset_context(
 	  soid, true, 0, false);
         ceph_assert(ssc);
+/** comment by hy 2020-03-21
+ * # 创建一个对象
+ */
 	obc = create_object_context(oi, ssc);
 	dout(10) << __func__ << ": " << obc << " " << soid
 		 << " " << obc->rwstate
@@ -11042,6 +11433,9 @@ ObjectContextRef PrimaryLogPG::get_object_context(
       }
     }
 
+/** comment by hy 2020-04-08
+ * # 从扩展属性中生成对象
+ */
     object_info_t oi;
     try {
       bufferlist::const_iterator bliter = bv.begin();
@@ -11052,8 +11446,14 @@ ObjectContextRef PrimaryLogPG::get_object_context(
     }
 
     ceph_assert(oi.soid.pool == (int64_t)info.pgid.pool());
-
+/** comment by hy 2020-04-08
+ * # 加载到 LRU 缓存中
+ */
     obc = object_contexts.lookup_or_create(oi.soid);
+/** comment by hy 2020-04-08
+ * # 填写对象,
+     destructor_callback 释放快照缓存信息计数
+ */
     obc->destructor_callback = new C_PG_ObjectContext(this, obc.get());
     obc->obs.oi = oi;
     obc->obs.exists = true;
@@ -11062,6 +11462,9 @@ ObjectContextRef PrimaryLogPG::get_object_context(
       soid, true,
       soid.has_snapset() ? attrs : 0);
 
+/** comment by hy 2020-04-08
+ * # 更新 watch 信息
+ */
     if (is_primary() && is_active())
       populate_obc_watchers(obc);
 
@@ -11132,6 +11535,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
   ceph_assert(oid.pool == static_cast<int64_t>(info.pgid.pool()));
   // want the head?
   if (oid.snap == CEPH_NOSNAP) {
+/** comment by hy 2020-04-08
+ * # 加载对象信息, 有创建表示就会创建对象
+ */
     ObjectContextRef obc = get_object_context(oid, can_create);
     if (!obc) {
       if (pmissing)
@@ -11148,7 +11554,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
   }
 
   // we want a snap
-
+/** comment by hy 2020-04-08
+ * # 检查快照信息
+ */
   hobject_t head = oid.get_head();
   SnapSetContext *ssc = get_snapset_context(oid, can_create);
   if (!ssc || !(ssc->exists || can_create)) {
@@ -11160,12 +11568,18 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
     return -ENOENT;
   }
 
+/** comment by hy 2020-04-08
+ * # 获取 snapid
+ */
   if (map_snapid_to_clone) {
     dout(10) << __func__ << " " << oid << " @" << oid.snap
 	     << " snapset " << ssc->snapset
 	     << " map_snapid_to_clone=true" << dendl;
     if (oid.snap > ssc->snapset.seq) {
       // already must be readable
+/** comment by hy 2020-04-08
+ * # 读一下 对象
+ */
       ObjectContextRef obc = get_object_context(head, false);
       dout(10) << __func__ << " " << oid << " @" << oid.snap
 	       << " snapset " << ssc->snapset
@@ -11200,6 +11614,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
 	return -EAGAIN;
       }
 
+/** comment by hy 2020-04-08
+ * # 获取对象
+ */
       ObjectContextRef obc = get_object_context(oid, false);
       if (!obc || !obc->obs.exists) {
 	dout(10) << __func__ << " " << oid << " @" << oid.snap
@@ -11225,6 +11642,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
  
   // head?
   if (oid.snap > ssc->snapset.seq) {
+/** comment by hy 2020-04-09
+ * # 大于说明 该快照最新，osd还没完成相关信息的更新，直接返回head对象的上下文
+ */
     ObjectContextRef obc = get_object_context(head, false);
     dout(10) << __func__ << " " << head
 	     << " want " << oid.snap << " > snapset seq " << ssc->snapset.seq
@@ -11241,6 +11661,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
   }
 
   // which clone would it be?
+/** comment by hy 2020-04-09
+ * # 检查snapset的克隆列表
+ */
   unsigned k = 0;
   while (k < ssc->snapset.clones.size() &&
 	 ssc->snapset.clones[k] < oid.snap)
@@ -11255,6 +11678,9 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
 		 info.pgid.pool(), oid.get_namespace());
 
   if (recovery_state.get_pg_log().get_missing().is_missing(soid)) {
+/** comment by hy 2020-04-09
+ * # 找到，但处于缺失状态
+ */
     dout(20) << __func__ << " " << soid << " missing, try again later"
 	     << dendl;
     if (pmissing)
@@ -11404,6 +11830,9 @@ SnapSetContext *PrimaryLogPG::get_snapset_context(
 {
   std::lock_guard l(snapset_contexts_lock);
   SnapSetContext *ssc;
+/** comment by hy 2020-04-08
+ * # 查找snap 信息
+ */
   map<hobject_t, SnapSetContext*>::iterator p = snapset_contexts.find(
     oid.get_snapdir());
   if (p != snapset_contexts.end()) {
@@ -11413,19 +11842,31 @@ SnapSetContext *PrimaryLogPG::get_snapset_context(
       return NULL;
     }
   } else {
+/** comment by hy 2020-04-08
+ * # 创建 snap 信息
+ */
     bufferlist bv;
     if (!attrs) {
       int r = -ENOENT;
       if (!(oid.is_head() && !oid_existed)) {
+/** comment by hy 2020-04-08
+ * # 底层获取
+ */
 	r = pgbackend->objects_get_attr(oid.get_head(), SS_ATTR, &bv);
       }
       if (r < 0 && !can_create)
 	return NULL;
     } else {
+/** comment by hy 2020-04-08
+ * # 扩展属性获取
+ */
       auto it_ss = attrs->find(SS_ATTR);
       ceph_assert(it_ss != attrs->end());
       bv = it_ss->second;
     }
+/** comment by hy 2020-04-08
+ * # 快照信息的设置
+ */
     ssc = new SnapSetContext(oid.get_snapdir());
     _register_snapset_context(ssc);
     if (bv.length()) {
@@ -13526,6 +13967,10 @@ hobject_t PrimaryLogPG::get_hit_set_archive_object(utime_t start,
     start.localtime(ss, true /* legacy pre-octopus form */) << "_";
     end.localtime(ss, true /* legacy pre-octopus form */);
   }
+/** comment by hy 2020-04-08
+ * # ps() = m_seed
+     osd_hit_set_namespace = ".ceph-internal"
+ */
   hobject_t hoid(sobject_t(ss.str(), CEPH_NOSNAP), "",
 		 info.pgid.ps(), info.pgid.pool(),
 		 cct->_conf->osd_hit_set_namespace);
@@ -13693,6 +14138,10 @@ void PrimaryLogPG::hit_set_persist()
   for (auto p = info.hit_set.history.begin();
        p != info.hit_set.history.end();
        ++p) {
+/** comment by hy 2020-04-08
+ * # aoid 是以时间间隔为对象名称
+     start-end
+ */
     hobject_t aoid = get_hit_set_archive_object(p->begin, p->end, p->using_gmt);
 
     // Once we hit a degraded object just skip further trim
@@ -13708,6 +14157,9 @@ void PrimaryLogPG::hit_set_persist()
   // look just at that.  This is necessary because our transactions
   // may include a modify of the new hit_set *and* a delete of the
   // old one, and this may span the backfill boundary.
+/** comment by hy 2020-04-08
+ * # 对象 backfill 中
+ */
   for (set<pg_shard_t>::const_iterator p = get_backfill_targets().begin();
        p != get_backfill_targets().end();
        ++p) {
@@ -13721,7 +14173,9 @@ void PrimaryLogPG::hit_set_persist()
     }
   }
 
-
+/** comment by hy 2020-04-08
+ * # 历史中没有,新开一个
+ */
   pg_hit_set_info_t new_hset = pg_hit_set_info_t(pool.info.use_gmt_hitset);
   new_hset.begin = hit_set_start_stamp;
   new_hset.end = now;
@@ -13733,17 +14187,25 @@ void PrimaryLogPG::hit_set_persist()
   // If the current object is degraded we skip this persist request
   if (write_blocked_by_scrub(oid))
     return;
-
+/** comment by hy 2020-04-08
+ * # ???
+ */
   hit_set->seal();
   encode(*hit_set, bl);
   dout(20) << __func__ << " archive " << oid << dendl;
 
   if (agent_state) {
     agent_state->add_hit_set(new_hset.begin, hit_set);
+/** comment by hy 2020-04-08
+ * # hit_set_map = <time_t,HitSetRef>
+ */
     uint32_t size = agent_state->hit_set_map.size();
     if (size >= pool.info.hit_set_count) {
       size = pool.info.hit_set_count > 0 ? pool.info.hit_set_count - 1: 0;
     }
+/** comment by hy 2020-04-08
+ * # 内存控制
+ */
     hit_set_in_memory_trim(size);
   }
 
@@ -13782,7 +14244,9 @@ void PrimaryLogPG::hit_set_persist()
   bufferlist boi(sizeof(ctx->new_obs.oi));
   encode(ctx->new_obs.oi, boi,
 	   get_osdmap()->get_features(CEPH_ENTITY_TYPE_OSD, nullptr));
-
+/** comment by hy 2020-04-08
+ * # 
+ */
   ctx->op_t->create(oid);
   if (bl.length()) {
     ctx->op_t->write(oid, 0, bl.length(), bl, 0);
@@ -13794,6 +14258,9 @@ void PrimaryLogPG::hit_set_persist()
   attrs[OI_ATTR].claim(boi);
   attrs[SS_ATTR].claim(bss);
   setattrs_maybe_cache(ctx->obc, ctx->op_t.get(), attrs);
+/** comment by hy 2020-04-08
+ * # 
+ */
   ctx->log.push_back(
     pg_log_entry_t(
       pg_log_entry_t::MODIFY,
@@ -13806,7 +14273,9 @@ void PrimaryLogPG::hit_set_persist()
       0)
     );
   ctx->log.back().clean_regions = ctx->clean_regions;
-
+/** comment by hy 2020-04-08
+ * # 
+ */
   hit_set_trim(ctx, max);
 
   simple_opc_submit(std::move(ctx));

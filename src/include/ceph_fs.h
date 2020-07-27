@@ -57,13 +57,28 @@
 /*
  * ceph_file_layout - describe data layout for a file/inode
  */
+/** comment by hy 2020-02-18
+ * # 文件到对象的映射
+ */
 struct ceph_file_layout {
 	/* file -> object mapping */
+/** comment by hy 2020-02-18
+ * # stripe 的单位
+ */
 	__le32 fl_stripe_unit;     /* stripe unit, in bytes.  must be multiple
 				      of page size. */
+/** comment by hy 2020-02-18
+ * # stripe 对象数
+ */
 	__le32 fl_stripe_count;    /* over this many objects */
+/** comment by hy 2020-02-18
+ * # 对象大小
+ */
 	__le32 fl_object_size;     /* until objects are this big, then move to
 				      new objects */
+/** comment by hy 2020-02-18
+ * # 哈希值 0 表示没有设置, 1表示sha256
+ */
 	__le32 fl_cas_hash;        /* UNUSED.  0 = none; 1 = sha256 */
 
 	/* pg -> disk layout */
@@ -71,6 +86,9 @@ struct ceph_file_layout {
 
 	/* object -> pg layout */
 	__le32 fl_unused;       /* unused; used to be preferred primary for pg (-1 for none) */
+/** comment by hy 2020-02-18
+ * # pool 对应的id
+ */
 	__le32 fl_pg_pool;      /* namespace, crush ruleset, rep level */
 } __attribute__ ((packed));
 
@@ -124,10 +142,16 @@ extern const char *ceph_con_mode_name(int con_mode);
 
 /* misc */
 #define CEPH_MSG_SHUTDOWN               1
+/** comment by hy 2020-01-22
+ * # ping 服务消息
+ */
 #define CEPH_MSG_PING                   2
 
 /* client <-> monitor */
 #define CEPH_MSG_MON_MAP                4
+/** comment by hy 2020-01-22
+ * # 获取monmap
+ */
 #define CEPH_MSG_MON_GET_MAP            5
 #define CEPH_MSG_MON_GET_OSDMAP         6
 #define CEPH_MSG_MON_METADATA           7
@@ -135,6 +159,9 @@ extern const char *ceph_con_mode_name(int con_mode);
 #define CEPH_MSG_STATFS_REPLY           14
 #define CEPH_MSG_MON_SUBSCRIBE          15
 #define CEPH_MSG_MON_SUBSCRIBE_ACK      16
+/** comment by hy 2020-01-22
+ * # 向mon进行证书认证消息
+ */
 #define CEPH_MSG_AUTH			17
 #define CEPH_MSG_AUTH_REPLY		18
 #define CEPH_MSG_MON_GET_VERSION        19

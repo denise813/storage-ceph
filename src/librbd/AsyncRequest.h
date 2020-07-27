@@ -20,8 +20,19 @@ public:
   virtual ~AsyncRequest();
 
   void complete(int r) {
+/** comment by hy 2020-02-25
+ * # 有request finish 而来 
+     本类作为其关联关系,使用类方法调用
+     调用子类的 should_complete
+ */
     if (should_complete(r)) {
+/** comment by hy 2020-02-25
+ * # 又是一个虚函数
+ */
       r = filter_return_code(r);
+/** comment by hy 2020-02-25
+ * # 再次 finish
+ */
       finish_and_destroy(r);
     }
   }

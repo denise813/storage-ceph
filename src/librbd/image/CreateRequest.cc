@@ -130,6 +130,9 @@ CreateRequest<I>::CreateRequest(const ConfigProxy& config, IoCtx &ioctx,
   m_io_ctx.dup(ioctx);
   m_cct = reinterpret_cast<CephContext *>(m_io_ctx.cct());
 
+/** comment by hy 2020-02-18
+ * # 获取对象id
+ */
   m_id_obj = util::id_obj_name(m_image_name);
   m_header_obj = util::header_name(m_image_id);
   m_objmap_name = ObjectMap<>::object_map_name(m_image_id, CEPH_NOSNAP);

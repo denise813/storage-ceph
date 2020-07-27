@@ -64,6 +64,9 @@ class RGWSI_BucketIndex_RADOS : public RGWSI_BucketIndex
 public:
 
   struct Svc {
+/** comment by hy 2020-03-15
+ * # RGWSI_Zone
+ */
     RGWSI_Zone *zone{nullptr};
     RGWSI_RADOS *rados{nullptr};
     RGWSI_BILog_RADOS *bilog{nullptr};

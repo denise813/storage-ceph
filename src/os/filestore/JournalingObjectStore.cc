@@ -124,6 +124,9 @@ uint64_t JournalingObjectStore::ApplyManager::op_apply_start(uint64_t op)
 {
   std::unique_lock l{apply_lock};
   blocked_cond.wait(l, [this] {
+/** comment by hy 2020-04-23
+ * # 新的apply操作将会阻塞
+ */
     if (blocked) {
       dout(10) << "op_apply_start blocked, waiting" << dendl;
     }
@@ -196,8 +199,14 @@ bool JournalingObjectStore::ApplyManager::commit_start()
     std::unique_lock l{apply_lock};
     dout(10) << "commit_start max_applied_seq " << max_applied_seq
 	     << ", open_ops " << open_ops << dendl;
+/** comment by hy 2020-04-23
+ * # 这个仅仅为journal replay起作用
+ */
     blocked = true;
     blocked_cond.wait(l, [this] {
+/** comment by hy 2020-04-23
+ * # 等待其他inflight apply 完成
+ */
       if (open_ops > 0) {
         dout(10) << "commit_start waiting for " << open_ops
 		 << " open ops to drain" << dendl;
@@ -214,7 +223,9 @@ bool JournalingObjectStore::ApplyManager::commit_start()
 	ceph_assert(commit_waiters.empty());
 	goto out;
       }
-
+/** comment by hy 2020-04-23
+ * # 更新序列号
+ */
       committing_seq = max_applied_seq;
 
       dout(10) << "commit_start committing " << committing_seq
@@ -223,6 +234,9 @@ bool JournalingObjectStore::ApplyManager::commit_start()
   }
   ret = true;
 
+/** comment by hy 2020-02-23
+ * # 日志同步时，计算目前完成的最大日志seq
+ */
   if (journal)
     journal->commit_start(committing_seq);  // tell the journal too
  out:
@@ -236,6 +250,9 @@ void JournalingObjectStore::ApplyManager::commit_started()
   dout(10) << "commit_started committing " << committing_seq << ", unblocking"
 	   << dendl;
   blocked = false;
+/** comment by hy 2020-02-23
+ * # 开始同步日志
+ */
   blocked_cond.notify_all();
 }
 
@@ -268,6 +285,10 @@ void JournalingObjectStore::_op_journal_transactions(
     dout(10) << "op_journal_transactions " << op  << dendl;
 
   if (journal && journal->is_writeable()) {
+/** comment by hy 2020-02-06
+ * # 日志提交
+     放入journal队列，等待write线程执行journal写请求
+ */
     journal->submit_entry(op, tbl, orig_len, onjournal, osd_op);
   } else if (onjournal) {
     apply_manager.add_waiter(op, onjournal);

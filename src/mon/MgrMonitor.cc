@@ -241,6 +241,9 @@ void MgrMonitor::update_from_paxos(bool *need_bootstrap)
 void MgrMonitor::prime_mgr_client()
 {
   dout(10) << __func__ << dendl;
+/** comment by hy 2020-03-20
+ * # Mgr client
+ */
   mon->mgr_client.ms_dispatch2(make_message<MMgrMap>(map));
 }
 

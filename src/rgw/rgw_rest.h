@@ -606,6 +606,9 @@ class RGWRESTMgr {
 
 protected:
   std::map<std::string, RGWRESTMgr*> resource_mgrs;
+/** comment by hy 2020-03-15
+ * # 
+ */
   std::multimap<size_t, std::string> resources_by_size;
   RGWRESTMgr* default_mgr;
 

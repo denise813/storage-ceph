@@ -46,6 +46,9 @@ int manual_fallocate(int fd, off_t offset, off_t len) {
   int r = lseek(fd, offset, SEEK_SET);
   if (r == -1)
     return errno;
+/** comment by hy 2020-04-13
+ * # 128 K
+ */
   char data[1024*128];
   // TODO: compressing filesystems would require random data
   // FIPS zeroization audit 20191115: this memset is not security related.

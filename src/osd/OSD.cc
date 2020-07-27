@@ -1725,6 +1725,9 @@ void OSDService::queue_for_scrub(PG *pg, bool with_high_priority)
     scrub_queue_priority = cct->_conf->osd_client_op_priority;
   }
   const auto epoch = pg->get_osdmap_epoch();
+/** comment by hy 2020-04-24
+ * # 放入队列
+ */
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(new PGScrub(pg->get_pgid(), epoch)),
@@ -2512,6 +2515,9 @@ will start to track new ops received afterwards.";
     list<pair<entity_addr_t,utime_t> > bl;
     OSDMapRef curmap = service.get_osdmap();
 
+/** comment by hy 2020-03-20
+ * # 黑名单下到osd端就认为操作成功
+ */
     f->open_array_section("blacklist");
     curmap->get_blacklist(&bl);
     for (list<pair<entity_addr_t,utime_t> >::iterator it = bl.begin();
@@ -3206,10 +3212,19 @@ int OSD::get_num_op_shards()
 int OSD::get_num_op_threads()
 {
   if (cct->_conf->osd_op_num_threads_per_shard)
+/** comment by hy 2020-04-24
+ * # 默认是0
+ */
     return get_num_op_shards() * cct->_conf->osd_op_num_threads_per_shard;
   if (store_is_rotational)
+/** comment by hy 2020-04-24
+ * # 默认是5
+ */
     return get_num_op_shards() * cct->_conf->osd_op_num_threads_per_shard_hdd;
   else
+/** comment by hy 2020-04-24
+ * # 默认是8
+ */
     return get_num_op_shards() * cct->_conf->osd_op_num_threads_per_shard_ssd;
 }
 
@@ -3287,6 +3302,10 @@ int OSD::init()
   dout(2) << "journal " << journal_path << dendl;
   ceph_assert(store);  // call pre_init() first!
 
+/** comment by hy 2020-04-22
+ * # store 初始化完成以后,调整分片数量
+     bulestore 默认为1
+ */
   store->set_cache_shards(get_num_cache_shards());
 
   int r = store->mount();
@@ -3529,6 +3548,9 @@ int OSD::init()
   update_log_config();
 
   // i'm ready!
+/** comment by hy 2020-04-24
+ * # 初始化的时候注册dispatcher，收到消息后才知道怎么处理
+ */
   client_messenger->add_dispatcher_tail(&mgrc);
   client_messenger->add_dispatcher_tail(this);
   cluster_messenger->add_dispatcher_head(this);
@@ -4489,6 +4511,9 @@ PG* OSD::_make_pg(
     // pool was deleted; grab final pg_pool_t off disk.
     ghobject_t oid = make_final_pool_info_oid(pgid.pool());
     bufferlist bl;
+/** comment by hy 2020-01-28
+ * # 读取pool对应的元数据
+ */
     int r = store->read(service.meta_ch, oid, 0, 0, bl);
     if (r < 0) {
       derr << __func__ << " missing pool " << pgid.pool() << " tombstone"
@@ -4742,11 +4767,17 @@ PGRef OSD::handle_pg_create_info(const OSDMapRef& osdmap,
 {
   spg_t pgid = info->pgid;
 
+/** comment by hy 2020-01-28
+ * # 检查pg数量超过上限
+ */
   if (maybe_wait_for_max_pg(osdmap, pgid, info->by_mon)) {
     dout(10) << __func__ << " hit max pg, dropping" << dendl;
     return nullptr;
   }
 
+/** comment by hy 2020-01-28
+ * # 创建前,先巡检
+ */
   PeeringCtx rctx = create_context();
 
   OSDMapRef startmap = get_map(info->epoch);
@@ -4782,15 +4813,30 @@ PGRef OSD::handle_pg_create_info(const OSDMapRef& osdmap,
 		 << "the pool allows ec overwrites but is not stored in "
 		 << "bluestore, so deep scrubbing will not detect bitrot";
   }
+/** comment by hy 2020-01-28
+ * # 创建 mk pg 事务
+ */
   create_pg_collection(
     rctx.transaction, pgid, pgid.get_split_bits(pp->get_pg_num()));
+/** comment by hy 2020-01-28
+ * # 准备 pg 元数据 放入数据库中
+ */
   init_pg_ondisk(rctx.transaction, pgid, pp);
 
   int role = startmap->calc_pg_role(pg_shard_t(whoami, pgid.shard), acting);
 
+/** comment by hy 2020-01-28
+ * # 创建pg实例 返回 PrimaryLogPG 实例
+ */
   PGRef pg = _make_pg(startmap, pgid);
+/** comment by hy 2020-01-28
+ * # 设置事务序列 执行器
+ */
   pg->ch = store->create_new_collection(pg->coll);
 
+/** comment by hy 2020-01-28
+ * # 设置事务的操作序列 内容
+ */
   {
     uint32_t shard_index = pgid.hash_to_shard(shards.size());
     assert(NULL != shards[shard_index]);
@@ -4802,6 +4848,10 @@ PGRef OSD::handle_pg_create_info(const OSDMapRef& osdmap,
   // we are holding the shard lock
   ceph_assert(!pg->is_deleted());
 
+/** comment by hy 2020-01-28
+ * # 清理脏数据？
+     PrimaryLogPG::init
+ */
   pg->init(
     role,
     up,
@@ -4820,6 +4870,9 @@ PGRef OSD::handle_pg_create_info(const OSDMapRef& osdmap,
     pg->set_dynamic_perf_stats_queries(m_perf_queries);
   }
 
+/** comment by hy 2020-01-28
+ * # 开始进入状态机了
+ */
   pg->handle_initialize(rctx);
   pg->handle_activate_map(rctx);
 
@@ -4843,6 +4896,9 @@ bool OSD::maybe_wait_for_max_pg(const OSDMapRef& osdmap,
 
   std::lock_guard l(pending_creates_lock);
   if (is_mon_create) {
+/** comment by hy 2020-01-28
+ * # 设置pending标志
+ */
     pending_creates_from_mon++;
   } else {
     bool is_primary = osdmap->get_pg_acting_role(pgid, whoami) == 0;
@@ -5077,16 +5133,35 @@ void OSD::need_heartbeat_peer_update()
 void OSD::maybe_update_heartbeat_peers()
 {
   ceph_assert(ceph_mutex_is_locked(osd_lock));
-
+/** comment by hy 2020-04-24
+ * # 在osd启动的过程中，或者在osd收到更新osdmap的消息
+     osd状态变为waiting，此时需要更新peers集合
+ */
   if (is_waiting_for_healthy() || is_active()) {
     utime_t now = ceph_clock_now();
+/** comment by hy 2020-04-24
+ * # 第一次设置需要更新，这时候应该是osd刚启动
+ */
     if (last_heartbeat_resample == utime_t()) {
       last_heartbeat_resample = now;
+/** comment by hy 2020-04-24
+ * # 设置需要更新peers标志
+ */
       heartbeat_set_peers_need_update();
     } else if (!heartbeat_peers_need_update()) {
+/** comment by hy 2020-04-24
+ * # 后续更新，应该是收到osdmap变更的消息
+ */
       utime_t dur = now - last_heartbeat_resample;
       if (dur > cct->_conf->osd_heartbeat_grace) {
+/** comment by hy 2020-04-24
+ * # 仅仅在超出grace时间后才更新，因为超过grace
+     osdmap的变更才可能导致pgmap变化
+ */
 	dout(10) << "maybe_update_heartbeat_peers forcing update after " << dur << " seconds" << dendl;
+/** comment by hy 2020-04-24
+ * # 设置需要更新peers标志
+ */
 	heartbeat_set_peers_need_update();
 	last_heartbeat_resample = now;
 	// automatically clean up any stale heartbeat peers
@@ -5097,6 +5172,9 @@ void OSD::maybe_update_heartbeat_peers()
   }
 
   if (!heartbeat_peers_need_update())
+/** comment by hy 2020-04-24
+ * # 不需要更新直接返回
+ */
     return;
   heartbeat_clear_peers_need_update();
 
@@ -5106,9 +5184,15 @@ void OSD::maybe_update_heartbeat_peers()
 
 
   // build heartbeat from set
+/** comment by hy 2020-04-24
+ * # 需要osd状态是active，不然更新没意义
+ */
   if (is_active()) {
     vector<PGRef> pgs;
     _get_pgs(&pgs);
+/** comment by hy 2020-04-24
+ * # 遍历osd负责的所有pg
+ */
     for (auto& pg : pgs) {
       pg->with_heartbeat_peers([&](int peer) {
 	  if (get_osdmap()->is_up(peer)) {
@@ -5143,7 +5227,13 @@ void OSD::maybe_update_heartbeat_peers()
 
   // remove down peers; enumerate extras
   map<int,HeartbeatInfo>::iterator p = heartbeat_peers.begin();
+/** comment by hy 2020-04-24
+ * # 遍历pg对应的peers
+ */
   while (p != heartbeat_peers.end()) {
+/** comment by hy 2020-04-24
+ * # 如果为up，则加入心跳集合
+ */
     if (!get_osdmap()->is_up(p->first)) {
       int o = p->first;
       ++p;
@@ -5256,6 +5346,9 @@ void OSD::handle_osd_ping(MOSDPing *m)
   switch (m->op) {
 
   case MOSDPing::PING:
+/** comment by hy 2020-04-24
+ * # 处理心跳消息
+ */
     {
       if (cct->_conf->osd_debug_drop_ping_probability > 0) {
 	auto heartbeat_drop = debug_heartbeat_drops_remaining.find(from);
@@ -5289,13 +5382,19 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	m->delta_ub,
 	&sender_delta_ub);
       dout(20) << __func__ << " new stamps " << *s->stamps << dendl;
-
+/** comment by hy 2020-04-24
+ * # 
+ 当进程内部状态不正确的时候，丢弃心跳消息，此时处理心跳已经变得没有意义
+      很多线程池会设置timeout时间，如果超时状态就会是unhealthy
+ */
       if (!cct->get_heartbeat_map()->is_healthy()) {
 	dout(10) << "internal heartbeat not healthy, dropping ping request"
 		 << dendl;
 	break;
       }
-
+/** comment by hy 2020-04-24
+ * # 注意是PING_REPLY
+ */
       Message *r = new MOSDPing(monc->get_fsid(),
 				curmap->get_epoch(),
 				MOSDPing::PING_REPLY,
@@ -5332,7 +5431,15 @@ void OSD::handle_osd_ping(MOSDPing *m)
     break;
 
   case MOSDPing::PING_REPLY:
+/** comment by hy 2020-04-24
+ * # 处理心跳回包
+ */
     {
+/** comment by hy 2020-04-24
+ * # 更新时间戳，避免心跳超时
+     osd有专门的tick线程进行周期性的检查 
+     如果发现有心跳超时的 就会上报monitor
+ */
       map<int,HeartbeatInfo>::iterator i = heartbeat_peers.find(from);
       if (i != heartbeat_peers.end()) {
         auto acked = i->second.ping_history.find(m->ping_stamp);
@@ -5566,6 +5673,9 @@ void OSD::heartbeat_entry()
   if (is_stopping())
     return;
   while (!heartbeat_stop) {
+/** comment by hy 2020-04-24
+ * # 发送消息
+ */
     heartbeat();
 
     double wait;
@@ -5617,6 +5727,9 @@ void OSD::heartbeat_check()
              << " (oldest deadline " << oldest_deadline << ")"
              << dendl;
 	// fail
+/** comment by hy 2020-04-24
+ * # 插入队列，等待上报给monitor
+ */
 	failure_queue[p->first] = p->second.first_tx;
       } else {
 	derr << "heartbeat_check: no reply from "
@@ -5657,6 +5770,9 @@ void OSD::heartbeat()
 
   // refresh peer list and osd stats
   vector<int> hb_peers;
+/** comment by hy 2020-04-24
+ * # 遍历所有peers，发送心跳，peers集合的选取需要遵循一定规则
+ */
   for (map<int,HeartbeatInfo>::iterator p = heartbeat_peers.begin();
        p != heartbeat_peers.end();
        ++p)
@@ -5694,7 +5810,9 @@ void OSD::heartbeat()
     Session *s = static_cast<Session*>(i->second.con_back->get_priv().get());
     std::optional<ceph::signedspan> delta_ub;
     s->stamps->sent_ping(&delta_ub);
-
+/** comment by hy 2020-04-24
+ * # 向back地址发送
+ */
     i->second.con_back->send_message(
       new MOSDPing(monc->get_fsid(),
 		   service.get_osdmap_epoch(),
@@ -5707,6 +5825,9 @@ void OSD::heartbeat()
 		   delta_ub));
 
     if (i->second.con_front)
+/** comment by hy 2020-04-24
+ * # 向front地址发送
+ */
       i->second.con_front->send_message(
 	new MOSDPing(monc->get_fsid(),
 		     service.get_osdmap_epoch(),
@@ -6115,24 +6236,64 @@ void OSD::ms_handle_connect(Connection *con)
       last_mon_report = now;
 
       // resend everything, it's a new session
+/** comment by hy 2020-04-06
+ * # 处于full 状态 向 mon 消息
+     MSG_OSD_FULL
+ */
       send_full_update();
+/** comment by hy 2020-04-06
+ * # 发送 alive 消息
+     MSG_OSD_ALIVE
+ */
       send_alive();
+/** comment by hy 2020-04-06
+ * # 放入 pg_temp_pending 列表中pg,
+     转让 pg_temp_wanted
+     等待定时线程发送？
+ */
       service.requeue_pg_temp();
+/** comment by hy 2020-04-06
+ * # 
+ */
       service.clear_sent_ready_to_merge();
+/** comment by hy 2020-04-06
+ * # 发送消息
+     MSG_OSD_PGTEMP
+ */
       service.send_pg_temp();
+/** comment by hy 2020-04-06
+ * # 
+ */
       service.send_ready_to_merge();
+/** comment by hy 2020-04-06
+ * # MSG_OSD_PG_CREATED
+ */
       service.send_pg_created();
+/** comment by hy 2020-04-06
+ * # 
+ */
       requeue_failures();
+/** comment by hy 2020-04-06
+ * # 
+ */
       send_failures();
 
       map_lock.unlock_shared();
       if (is_active()) {
+/** comment by hy 2020-04-06
+ * # MSG_OSD_BEACON
+ */
 	send_beacon(ceph::coarse_mono_clock::now());
       }
     }
 
     // full map requests may happen while active or pre-boot
     if (requested_full_first) {
+/** comment by hy 2020-04-06
+ * # 获取全部的 map 信息
+     CEPH_MSG_MON_GET_OSDMAP
+     为什么不仅仅最新的一个版本
+ */
       rerequest_full_maps();
     }
   }
@@ -6680,6 +6841,9 @@ void OSD::send_failures()
     int osd = failure_queue.begin()->first;
     if (!failure_pending.count(osd)) {
       int failed_for = (int)(double)(now - failure_queue.begin()->second);
+/** comment by hy 2020-04-24
+ * # 向monitor发送消息，报告osd心跳超时
+ */
       monc->send_mon_message(
 	new MOSDFailure(
 	  monc->get_fsid(),
@@ -6877,6 +7041,9 @@ bool OSD::heartbeat_dispatch(Message *m)
     break;
 
   case MSG_OSD_PING:
+/** comment by hy 2020-04-24
+ * # 处理心跳
+ */
     handle_osd_ping(static_cast<MOSDPing*>(m));
     break;
 
@@ -6891,6 +7058,9 @@ bool OSD::heartbeat_dispatch(Message *m)
 bool OSD::ms_dispatch(Message *m)
 {
   dout(20) << "OSD::ms_dispatch: " << *m << dendl;
+/** comment by hy 2020-01-21
+ * # 处理 关闭 当前 osd
+ */
   if (m->get_type() == MSG_OSD_MARK_ME_DOWN) {
     service.got_stop_ack();
     m->put();
@@ -6898,7 +7068,9 @@ bool OSD::ms_dispatch(Message *m)
   }
 
   // lock!
-
+/** comment by hy 2020-01-21
+ * # 处于关闭中将不处理消息
+ */
   osd_lock.lock();
   if (is_stopping()) {
     osd_lock.unlock();
@@ -6906,7 +7078,13 @@ bool OSD::ms_dispatch(Message *m)
     return true;
   }
 
+/** comment by hy 2020-01-21
+ * # 等候同步消息,现阶段等候的pg create 消息
+ */
   do_waiters();
+/** comment by hy 2020-01-21
+ * # 全部同步消息执行完将执行异步消息
+ */
   _dispatch(m);
 
   osd_lock.unlock();
@@ -6942,7 +7120,9 @@ void OSDService::maybe_share_map(
   if (osdmap->get_epoch() <= last_sent_epoch) {
     return;
   }
-
+/** comment by hy 2020-01-30
+ * # 发送 osdmap
+ */
   send_incremental_map(last_sent_epoch, con, osdmap);
   last_sent_epoch = osdmap->get_epoch();
 
@@ -6961,33 +7141,58 @@ void OSD::dispatch_session_waiting(const ceph::ref_t<Session>& session, OSDMapRe
 {
   ceph_assert(ceph_mutex_is_locked(session->session_dispatch_lock));
 
+/** comment by hy 2020-01-30
+ * # 遍历seesion 中的操作容器中的操作
+      中on map 里面的操作
+ */
   auto i = session->waiting_on_map.begin();
   while (i != session->waiting_on_map.end()) {
     OpRequestRef op = &(*i);
     ceph_assert(ms_can_fast_dispatch(op->get_req()));
+/** comment by hy 2020-05-31
+ * # 取出消息
+ */
     auto m = op->get_req<MOSDFastDispatchOp>();
     if (m->get_min_epoch() > osdmap->get_epoch()) {
       break;
     }
+/** comment by hy 2020-01-30
+ * # session 准备好了
+ */
     session->waiting_on_map.erase(i++);
     op->put();
 
     spg_t pgid;
     if (m->get_type() == CEPH_MSG_OSD_OP) {
+/** comment by hy 2020-02-22
+ * # 对PG做调整
+ */
       pg_t actual_pgid = osdmap->raw_pg_to_pg(
 	static_cast<const MOSDOp*>(m)->get_pg());
+/** comment by hy 2020-01-30
+ * # 获得该pg对应的主osd
+ */
       if (!osdmap->get_primary_shard(actual_pgid, &pgid)) {
 	continue;
       }
     } else {
       pgid = m->get_spg();
     }
+/** comment by hy 2020-01-30
+ * # 放入执行队列中，等待处理
+ */
     enqueue_op(pgid, std::move(op), m->get_map_epoch());
   }
 
   if (session->waiting_on_map.empty()) {
+/** comment by hy 2020-02-22
+ * # 处理完了
+ */
     clear_session_waiting_on_map(session);
   } else {
+/** comment by hy 2020-02-22
+ * # 如果on_map 里面还有请求
+ */
     register_session_waiting_on_map(session);
   }
 }
@@ -6995,12 +7200,18 @@ void OSD::dispatch_session_waiting(const ceph::ref_t<Session>& session, OSDMapRe
 void OSD::ms_fast_dispatch(Message *m)
 {
   FUNCTRACE(cct);
+/** comment by hy 2020-02-22
+ * # 检查状态,停止中就不处理消息
+ */
   if (service.is_stopping()) {
     m->put();
     return;
   }
 
   // peering event?
+/** comment by hy 2020-01-30
+ * # 需要 peer 事件
+ */
   switch (m->get_type()) {
   case CEPH_MSG_PING:
     dout(10) << "ping from " << m->get_source() << dendl;
@@ -7046,6 +7257,9 @@ void OSD::ms_fast_dispatch(Message *m)
     }
   }
 
+/** comment by hy 2020-03-23
+ * # 创建OpRequest并监控,用于磁盘慢速监控,同时将消息转化为 opRequest 结构
+ */
   OpRequestRef op = op_tracker.create_request<OpRequest, Message*>(m);
   {
 #ifdef WITH_LTTNG
@@ -7058,16 +7272,25 @@ void OSD::ms_fast_dispatch(Message *m)
   if (m->trace)
     op->osd_trace.init("osd op", &trace_endpoint, &m->trace);
 
+/** comment by hy 2020-02-22
+ * # 将消息转化成 op数据
+ */
   // note sender epoch, min req's epoch
   op->sent_epoch = static_cast<MOSDFastDispatchOp*>(m)->get_map_epoch();
   op->min_epoch = static_cast<MOSDFastDispatchOp*>(m)->get_min_epoch();
   ceph_assert(op->min_epoch <= op->sent_epoch); // sanity check!
 
+/** comment by hy 2020-04-08
+ * # 延迟执行
+ */
   service.maybe_inject_dispatch_delay();
 
   if (m->get_connection()->has_features(CEPH_FEATUREMASK_RESEND_ON_SPLIT) ||
       m->get_type() != CEPH_MSG_OSD_OP) {
     // queue it directly
+/** comment by hy 2020-04-08
+ * # 直接加入队列
+ */
     enqueue_op(
       static_cast<MOSDFastDispatchOp*>(m)->get_spg(),
       std::move(op),
@@ -7076,12 +7299,25 @@ void OSD::ms_fast_dispatch(Message *m)
     // legacy client, and this is an MOSDOp (the *only* fast dispatch
     // message that didn't have an explicit spg_t); we need to map
     // them to an spg_t while preserving delivery order.
+/** comment by hy 2020-01-30
+ * # 等候 session 执行操作
+ */
     auto priv = m->get_connection()->get_priv();
     if (auto session = static_cast<Session*>(priv.get()); session) {
       std::lock_guard l{session->session_dispatch_lock};
       op->get();
+/** comment by hy 2020-02-22
+ * # 将请求放入map队列
+ */
       session->waiting_on_map.push_back(*op);
+/** comment by hy 2020-02-22
+ * # 获取最新的session和osdmap
+ */
       OSDMapRef nextmap = service.get_nextmap_reserved();
+/** comment by hy 2020-01-30
+ * # 处理对象读写的操作
+     循环调用 dispatch_op_fast 来完成请求完整状态转化
+ */
       dispatch_session_waiting(session, nextmap);
       service.release_map(nextmap);
     }
@@ -7142,6 +7378,9 @@ void OSD::do_waiters()
   ceph_assert(ceph_mutex_is_locked(osd_lock));
 
   dout(10) << "do_waiters -- start" << dendl;
+/** comment by hy 2020-04-06
+ * # 等待操作的完成, 这里有pg peer 处理
+ */
   while (!finished.empty()) {
     OpRequestRef next = finished.front();
     finished.pop_front();
@@ -7154,6 +7393,9 @@ void OSD::dispatch_op(OpRequestRef op)
 {
   switch (op->get_req()->get_type()) {
 
+/** comment by hy 2020-04-07
+ * # 这是老版本的消息码了
+ */
   case MSG_OSD_PG_CREATE:
     handle_pg_create(op);
     break;
@@ -7170,6 +7412,9 @@ void OSD::_dispatch(Message *m)
 
     // map and replication
   case CEPH_MSG_OSD_MAP:
+/** comment by hy 2020-04-06
+ * # 处理 osdmap
+ */
     handle_osd_map(static_cast<MOSDMap*>(m));
     break;
   case MSG_MON_GET_PURGED_SNAPS_REPLY:
@@ -7189,10 +7434,16 @@ void OSD::_dispatch(Message *m)
 
   case MSG_OSD_PG_CREATE:
     {
+/** comment by hy 2020-03-23
+ * # 创建OpRequest 跟踪请求
+ */
       OpRequestRef op = op_tracker.create_request<OpRequest, Message*>(m);
       if (m->trace)
         op->osd_trace.init("osd op", &trace_endpoint, &m->trace);
       // no map?  starting up?
+/** comment by hy 2020-01-21
+ * # 为什么会出现这种情况?
+ */
       if (!get_osdmap()) {
         dout(7) << "no OSDMap, not booted" << dendl;
 	logger->inc(l_osd_waiting_for_map);
@@ -7632,6 +7883,9 @@ vector<DaemonHealthMetric> OSD::get_health_metrics()
 void OSD::wait_for_new_map(OpRequestRef op)
 {
   // ask?
+/** comment by hy 2020-01-21
+ * # 订阅 最新 osd 信息
+ */
   if (waiting_for_osdmap.empty()) {
     osdmap_subscribe(get_osdmap_epoch() + 1, false);
   }
@@ -7740,6 +7994,9 @@ void OSD::handle_osd_map(MOSDMap *m)
     // for some period, until we hit the max_lag_factor bound, at which point
     // we block here to stop injesting more maps than they are able to keep
     // up with.
+/** comment by hy 2020-03-20
+ * # 这是
+ */
     epoch_t max_lag = cct->_conf->osd_map_cache_size *
       m_osd_pg_epoch_max_lag_factor;
     ceph_assert(max_lag > 0);
@@ -7751,6 +8008,9 @@ void OSD::handle_osd_map(MOSDMap *m)
       }
     }
     epoch_t osdmap_epoch = get_osdmap_epoch();
+/** comment by hy 2020-03-20
+ * # 
+ */
     if (osd_min > 0 &&
 	osdmap_epoch > max_lag &&
 	osdmap_epoch - max_lag > osd_min) {
@@ -7781,13 +8041,23 @@ void OSD::handle_osd_map(MOSDMap *m)
     m->put();
     return;
   }
+/** comment by hy 2020-03-20
+ * # 状态不对
+ */
   if (is_initializing()) {
     dout(0) << "ignoring osdmap until we have initialized" << dendl;
     m->put();
     return;
   }
 
+/** comment by hy 2020-03-20
+ * # 获取会话
+ */
   auto session = ceph::ref_cast<Session>(m->get_connection()->get_priv());
+/** comment by hy 2020-03-20
+ * # 会话不是osd,或者mon 推送
+     可能是 客户端或者 mgr
+ */
   if (session && !(session->entity_name.is_mon() ||
 		   session->entity_name.is_osd())) {
     //not enough perms!
@@ -7797,6 +8067,9 @@ void OSD::handle_osd_map(MOSDMap *m)
     return;
   }
 
+/** comment by hy 2020-03-20
+ * # objecter 也进行更新
+ */
   // share with the objecter
   if (!is_preboot())
     service.objecter->handle_osd_map(m);
@@ -7902,6 +8175,9 @@ void OSD::handle_osd_map(MOSDMap *m)
       auto p = bl.cbegin();
       inc.decode(p);
 
+/** comment by hy 2020-03-20
+ * # osd map 里面的东西好多呀,黑名单也在里面
+ */
       if (o->apply_incremental(inc) < 0) {
 	derr << "ERROR: bad fsid?  i have " << get_osdmap()->get_fsid() << " and inc has " << inc.fsid << dendl;
 	ceph_abort_msg("bad fsid");
@@ -8826,6 +9102,9 @@ bool OSD::require_same_peer_instance(const Message *m, const OSDMapRef& map,
 {
   int from = m->get_source().num();
 
+/** comment by hy 2020-01-21
+
+ */
   if (map->is_down(from) ||
       (map->get_cluster_addrs(from) != m->get_source_addrs())) {
     dout(5) << "from dead osd." << from << ", marking down, "
@@ -8834,8 +9113,14 @@ bool OSD::require_same_peer_instance(const Message *m, const OSDMapRef& map,
 	    << (map->is_up(from) ?
 		map->get_cluster_addrs(from) : entity_addrvec_t())
 	    << dendl;
+/** comment by hy 2020-01-21
+ * # 标记连接为 down
+ */
     ConnectionRef con = m->get_connection();
     con->mark_down();
+/** comment by hy 2020-01-21
+ * # 清理 session
+ */
     if (auto s = ceph::ref_cast<Session>(con->get_priv()); s) {
       if (!is_fast_dispatch)
 	s->session_dispatch_lock.lock();
@@ -8866,6 +9151,10 @@ bool OSD::require_same_or_newer_map(OpRequestRef& op, epoch_t epoch,
   ceph_assert(ceph_mutex_is_locked(osd_lock));
 
   // do they have a newer map?
+/** comment by hy 2020-01-21
+ * # 这里比较 osd map 比较 pg map 是不是更合适一点?
+         可不可以解耦?
+ */
   if (epoch > osdmap->get_epoch()) {
     dout(7) << "waiting for newer map epoch " << epoch
 	    << " > my " << osdmap->get_epoch() << " with " << m << dendl;
@@ -8873,11 +9162,18 @@ bool OSD::require_same_or_newer_map(OpRequestRef& op, epoch_t epoch,
     return false;
   }
 
+/** comment by hy 2020-01-21
+ * # 是最新的osdmap，服务状态也ok的
+ */
   if (!require_self_aliveness(op->get_req(), epoch)) {
     return false;
   }
 
   // ok, our map is same or newer.. do they still exist?
+/** comment by hy 2020-01-21
+ * # 消息来源于集群内部,osdmap 相对最新, 判断 消息来源的osd 没挂
+         如果挂了就清理 session 资源
+ */
   if (m->get_connection()->get_messenger() == cluster_messenger &&
       !require_same_peer_instance(op->get_req(), osdmap, is_fast_dispatch)) {
     return false;
@@ -8950,6 +9246,18 @@ void OSD::split_pgs(
 /*
  * holding osd_lock
  */
+/*****************************************************************************
+ * 函 数 名  : OSD.handle_pg_create
+ * 负 责 人  : hy
+ * 创建日期  : 2020年1月21日
+ * 函数功能  : 创建本地pg
+ * 输入参数  : OpRequestRef op  操作数据
+ * 输出参数  : 无
+ * 返 回 值  : void
+ * 调用关系  : 
+ * 其    它  : 这个是消息中主pg才能收到
+
+*****************************************************************************/
 void OSD::handle_pg_create(OpRequestRef op)
 {
   // NOTE: this can be removed in P release (mimic is the last version to
@@ -8960,16 +9268,29 @@ void OSD::handle_pg_create(OpRequestRef op)
 
   dout(10) << "handle_pg_create " << *m << dendl;
 
+/** comment by hy 2020-01-21
+ * # 判断消息来源是mon,主pg的消息来源于mon
+     不是就丢弃
+ */
   if (!require_mon_peer(op->get_req())) {
     return;
   }
 
+/** comment by hy 2020-01-21
+ * # 如果消息版本高于当前版本 请求更新osdmap
+ */
   if (!require_same_or_newer_map(op, m->epoch, false))
     return;
-
+/** comment by hy 2020-01-21
+ * # 标记开始标签
+ */
   op->mark_started();
 
   const auto osdmap = get_osdmap();
+/** comment by hy 2020-01-21
+ * # 创建pg消息一批操作,这里一批操作是不是可以更细化为
+     一批无数据的操作,和一批等待数据变化的操作
+ */
   map<pg_t,utime_t>::const_iterator ci = m->ctimes.begin();
   for (map<pg_t,pg_create_t>::const_iterator p = m->mkpg.begin();
        p != m->mkpg.end();
@@ -8998,13 +9319,18 @@ void OSD::handle_pg_create(OpRequestRef op)
     osdmap->pg_to_up_acting_osds(on, &up, &up_primary, &acting, &acting_primary);
     int role = osdmap->calc_pg_role(pg_shard_t(whoami, pgid.shard), acting);
 
+/** comment by hy 2020-01-21
+ * # 验算是不是主pg
+ */
     if (acting_primary != whoami) {
       dout(10) << "mkpg " << on << "  not acting_primary (" << acting_primary
 	       << "), my role=" << role << ", skipping" << dendl;
       continue;
     }
 
-
+/** comment by hy 2020-02-28
+ * # 验证 Primary 发生变化
+ */
     PastIntervals pi;
     pg_history_t history;
     build_initial_pg_history(pgid, created, ci->second, &history, &pi);
@@ -9043,6 +9369,9 @@ void OSD::handle_pg_create(OpRequestRef op)
     }
   }
 
+/** comment by hy 2020-02-23
+ * # 更新osd心跳列表
+ */
   maybe_update_heartbeat_peers();
 }
 
@@ -9098,6 +9427,9 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
     m->put();
     return;
   }
+/** comment by hy 2020-01-27
+ * # 创建的pg数
+ */
   for (auto& p : m->pgs) {
     spg_t pgid = p.first;
     epoch_t created = p.second.first;
@@ -9108,14 +9440,26 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
 	       << "@" << created_stamp
 	       << " (no history or past_intervals)" << dendl;
       // pre-octopus ... no pg history.  this can be removed in Q release.
+/** comment by hy 2020-04-07
+ * # 开始进入 peer evt
+ */
       enqueue_peering_evt(
 	pgid,
+/** comment by hy 2020-04-07
+ * # peer 事件
+ */
 	PGPeeringEventRef(
 	  std::make_shared<PGPeeringEvent>(
 	    m->epoch,
 	    m->epoch,
+/** comment by hy 2020-04-07
+ * # 事件类型
+ */
 	    NullEvt(),
 	    true,
+/** comment by hy 2020-04-07
+ * # 携带创建信息
+ */
 	    new PGCreateInfo(
 	      pgid,
 	      created,
@@ -9128,20 +9472,35 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
 	       << "@" << created_stamp
 	       << " history " << q->second.first
 	       << " pi " << q->second.second << dendl;
+/** comment by hy 2020-04-07
+ * # 有历史信息
+ */
       if (!q->second.second.empty() &&
 	  m->epoch < q->second.second.get_bounds().second) {
 	clog->error() << "got pg_create on " << pgid << " epoch " << m->epoch
 		      << " and unmatched past_intervals " << q->second.second
 		      << " (history " << q->second.first << ")";
       } else {
+/** comment by hy 2020-04-07
+ * # 开始进入 peer evt
+ */
 	enqueue_peering_evt(
 	  pgid,
+/** comment by hy 2020-04-07
+ * # peer 事件
+ */
 	  PGPeeringEventRef(
 	    std::make_shared<PGPeeringEvent>(
 	      m->epoch,
 	      m->epoch,
+/** comment by hy 2020-04-07
+ * # 事件类型
+ */
 	      NullEvt(),
 	      true,
+/** comment by hy 2020-04-07
+ * # 携带创建信息
+ */
 	      new PGCreateInfo(
 		pgid,
 		m->epoch,
@@ -9155,6 +9514,9 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
 
   {
     std::lock_guard l(pending_creates_lock);
+/** comment by hy 2020-04-07
+ * # 第一次执行 peer
+ */
     if (pending_creates_from_mon == 0) {
       last_pg_create_epoch = m->epoch;
     }
@@ -9597,6 +9959,9 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef&& op, epoch_t epoch)
   op->osd_trace.keyval("cost", cost);
   op->mark_queued_for_pg();
   logger->tinc(l_osd_op_before_queue_op_lat, latency);
+/** comment by hy 2020-01-30
+ * # PGOpItem::run 中将调用 osd->dequeue_op
+ */
   op_shardedwq.queue(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(new PGOpItem(pg, std::move(op))),
@@ -9606,7 +9971,13 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef&& op, epoch_t epoch)
 void OSD::enqueue_peering_evt(spg_t pgid, PGPeeringEventRef evt)
 {
   dout(15) << __func__ << " " << pgid << " " << evt->get_desc() << dendl;
+/** comment by hy 2020-01-28
+ * # OSD::ShardedOpWQ::_enqueue
+ */
   op_shardedwq.queue(
+/** comment by hy 2020-04-07
+ * # 调度条目
+ */
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(new PGPeeringItem(pgid, evt)),
       10,
@@ -9618,6 +9989,9 @@ void OSD::enqueue_peering_evt(spg_t pgid, PGPeeringEventRef evt)
 
 /*
  * NOTE: dequeue called in worker thread, with pg lock
+ */
+/** comment by hy 2020-04-08
+ * # call by PGOpItem::run
  */
 void OSD::dequeue_op(
   PGRef pg, OpRequestRef op,
@@ -9640,16 +10014,30 @@ void OSD::dequeue_op(
 
   logger->tinc(l_osd_op_before_dequeue_op_lat, latency);
 
+/** comment by hy 2020-01-30
+ * # 满足条件就发送本地osdmap,上一步会接收处理osdmap的更新
+ */
   service.maybe_share_map(m->get_connection().get(),
 			  pg->get_osdmap(),
 			  op->sent_epoch);
 
+/** comment by hy 2020-02-22
+ * # pg真删除,就丢弃消息
+ */
   if (pg->is_deleting())
     return;
 
+/** comment by hy 2020-04-08
+ * # 
+ */
   op->mark_reached_pg();
   op->osd_trace.event("dequeue_op");
 
+/** comment by hy 2020-01-30
+ * # handle是超时监控处理
+         PG::do_request = 0
+         PrimaryLogPG::do_request
+ */
   pg->do_request(op, handle);
 
   // finish
@@ -10140,12 +10528,18 @@ void OSDShard::_wake_pg_slot(
   for (auto i = slot->to_process.rbegin();
        i != slot->to_process.rend();
        ++i) {
+/** comment by hy 2020-04-07
+ * # 
+ */
     scheduler->enqueue_front(std::move(*i));
   }
   slot->to_process.clear();
   for (auto i = slot->waiting.rbegin();
        i != slot->waiting.rend();
        ++i) {
+/** comment by hy 2020-04-07
+ * # 
+ */
     scheduler->enqueue_front(std::move(*i));
   }
   slot->waiting.clear();
@@ -10400,7 +10794,13 @@ void OSD::ShardedOpWQ::_add_slot_waiter(
 
 void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 {
+/** comment by hy 2020-04-07
+ * # 获取该线程对应的分片里面的数据
+ */
   uint32_t shard_index = thread_index % osd->num_shards;
+/** comment by hy 2020-05-31
+ * # sdata = OSDShard
+ */
   auto& sdata = osd->shards[shard_index];
   ceph_assert(sdata);
 
@@ -10414,22 +10814,34 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   sdata->shard_lock.lock();
   if (sdata->scheduler->empty() &&
       (!is_smallest_thread_index || sdata->context_queue.empty())) {
-    std::unique_lock wait_lock{sdata->sdata_wait_lock};
-    if (is_smallest_thread_index && !sdata->context_queue.empty()) {
-      // we raced with a context_queue addition, don't wait
-      wait_lock.unlock();
-    } else if (!sdata->stop_waiting) {
+      std::unique_lock wait_lock{sdata->sdata_wait_lock};
+      if (is_smallest_thread_index && !sdata->context_queue.empty()) {
+        // we raced with a context_queue addition, don't wait
+        wait_lock.unlock();
+      } else if (!sdata->stop_waiting) {
+/** comment by hy 2020-01-28
+ * # stop
+ */
       dout(20) << __func__ << " empty q, waiting" << dendl;
       osd->cct->get_heartbeat_map()->clear_timeout(hb);
       sdata->shard_lock.unlock();
+/** comment by hy 2020-04-08
+ * # 等待唤醒
+ */
       sdata->sdata_cond.wait(wait_lock);
       wait_lock.unlock();
       sdata->shard_lock.lock();
+/** comment by hy 2020-04-08
+ * # 等待 pg create 处理完成
+ */
       if (sdata->scheduler->empty() &&
          !(is_smallest_thread_index && !sdata->context_queue.empty())) {
 	sdata->shard_lock.unlock();
 	return;
       }
+/** comment by hy 2020-04-08
+ * # 重置超时
+ */
       // found a work item; reapply default wq timeouts
       osd->cct->get_heartbeat_map()->reset_timeout(hb,
         timeout_interval, suicide_interval);
@@ -10443,11 +10855,17 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 
   list<Context *> oncommits;
   if (is_smallest_thread_index) {
+/** comment by hy 2020-04-07
+ * # ContextQueue::move_to
+ */
     sdata->context_queue.move_to(oncommits);
   }
 
   if (sdata->scheduler->empty()) {
     if (osd->is_stopping()) {
+/** comment by hy 2020-01-28
+ * # 停止状态丢弃
+ */
       sdata->shard_lock.unlock();
       for (auto c : oncommits) {
 	dout(10) << __func__ << " discarding in-flight oncommit " << c << dendl;
@@ -10460,9 +10878,15 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     return;
   }
 
+/** comment by hy 2020-01-28
+ * # 取出数据
+ */
   OpSchedulerItem item = sdata->scheduler->dequeue();
   if (osd->is_stopping()) {
     sdata->shard_lock.unlock();
+/** comment by hy 2020-04-08
+ * # 清理提交
+ */
     for (auto c : oncommits) {
       dout(10) << __func__ << " discarding in-flight oncommit " << c << dendl;
       delete c;
@@ -10470,7 +10894,13 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     return;    // OSD shutdown, discard.
   }
 
+/** comment by hy 2020-04-07
+ * # get_ordering_token 返回 pg
+ */
   const auto token = item.get_ordering_token();
+/** comment by hy 2020-04-08
+ * #  r = <spg_t,unique_ptr<OSDShardPGSlot>>
+ */
   auto r = sdata->pg_slots.emplace(token, nullptr);
   if (r.second) {
     r.first->second = make_unique<OSDShardPGSlot>();
@@ -10482,6 +10912,11 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 	   << " waiting " << slot->waiting
 	   << " waiting_peering " << slot->waiting_peering
 	   << dendl;
+/** comment by hy 2020-01-28
+ * # to_process = deque<OpSchedulerItem>
+     压入处理
+     一个 pg 在一个线程中处理？
+ */
   slot->to_process.push_back(std::move(item));
   dout(20) << __func__ << " " << slot->to_process.back()
 	   << " queued" << dendl;
@@ -10496,13 +10931,22 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     ++slot->num_running;
 
     sdata->shard_lock.unlock();
+/** comment by hy 2020-01-28
+ * # 为什么要注入两次延迟测试?
+ */
     osd->service.maybe_inject_dispatch_delay();
     pg->lock();
     osd->service.maybe_inject_dispatch_delay();
     sdata->shard_lock.lock();
 
+/** comment by hy 2020-01-28
+ * # 查找对应的pg
+ */
     auto q = sdata->pg_slots.find(token);
     if (q == sdata->pg_slots.end()) {
+/** comment by hy 2020-01-28
+ * # 没找到
+ */
       // this can happen if we race with pg removal.
       dout(20) << __func__ << " slot " << token << " no longer there" << dendl;
       pg->unlock();
@@ -10512,7 +10956,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     }
     slot = q->second.get();
     --slot->num_running;
-
+/** comment by hy 2020-01-30
+ * # 无数据处理
+ */
     if (slot->to_process.empty()) {
       // raced with _wake_pg_slot or consume_map
       dout(20) << __func__ << " " << token
@@ -10522,6 +10968,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       handle_oncommits(oncommits);
       return;
     }
+/** comment by hy 2020-01-30
+ * # 处理序号不正确
+ */
     if (requeue_seq != slot->requeue_seq) {
       dout(20) << __func__ << " " << token
 	       << " requeue_seq " << slot->requeue_seq << " > our "
@@ -10546,6 +10995,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 	   << " waiting " << slot->waiting
 	   << " waiting_peering " << slot->waiting_peering << dendl;
 
+/** comment by hy 2020-01-28
+ * # 设置超时监控
+ */
   ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval,
 				 suicide_interval);
 
@@ -10556,43 +11008,97 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   set<pair<spg_t,epoch_t>> new_children;
   OSDMapRef osdmap;
 
+/** comment by hy 2020-01-30
+ * # 处理 pg 操作
+ */
   while (!pg) {
     // should this pg shard exist on this osd in this (or a later) epoch?
     osdmap = sdata->shard_osdmap;
+/** comment by hy 2020-04-07
+ * # qi = OpSchedulerItem
+ */
     const PGCreateInfo *create_info = qi.creates_pg();
+/** comment by hy 2020-01-28
+ * # 
+ */
     if (!slot->waiting_for_split.empty()) {
+/** comment by hy 2020-01-28
+ * # 等待分裂
+ */
       dout(20) << __func__ << " " << token
 	       << " splitting " << slot->waiting_for_split << dendl;
       _add_slot_waiter(token, slot, std::move(qi));
     } else if (qi.get_map_epoch() > osdmap->get_epoch()) {
+/** comment by hy 2020-01-28
+ * # 等待osdamp
+ */
       dout(20) << __func__ << " " << token
 	       << " map " << qi.get_map_epoch() << " > "
 	       << osdmap->get_epoch() << dendl;
       _add_slot_waiter(token, slot, std::move(qi));
     } else if (qi.is_peering()) {
+/** comment by hy 2020-01-28
+ * # 消息时 peer
+     PGPeeringItem::peering_requires_pg =
+     PGPeeringEvent::requires_pg
+ */
       if (!qi.peering_requires_pg()) {
 	// for pg-less events, we run them under the ordering lock, since
 	// we don't have the pg lock to keep them ordered.
+/** comment by hy 2020-04-07
+ * # 不是peer 消息
+     qi = OpSchedulerItem
+     PGOpItem::run
+     = OSD::dequeue_op
+ */
 	qi.run(osd, sdata, pg, tp_handle);
       } else if (osdmap->is_up_acting_osd_shard(token, osd->whoami)) {
+/** comment by hy 2020-01-28
+ * # 
+ */
 	if (create_info) {
+/** comment by hy 2020-01-28
+ * # 创建信息来至于mon,进一步校验是不是主
+ */
 	  if (create_info->by_mon &&
 	      osdmap->get_pg_acting_primary(token.pgid) != osd->whoami) {
+/** comment by hy 2020-01-28
+ * # 不是pg对应的主osd,就忽略
+ */
 	    dout(20) << __func__ << " " << token
 		     << " no pg, no longer primary, ignoring mon create on "
 		     << qi << dendl;
 	  } else {
+/** comment by hy 2020-01-28
+ * # 是pg对应的主osd
+ */
 	    dout(20) << __func__ << " " << token
 		     << " no pg, should create on " << qi << dendl;
+/** comment by hy 2020-01-28
+ * # 处理 本地 pg log后,进入状态机
+ */
 	    pg = osd->handle_pg_create_info(osdmap, create_info);
 	    if (pg) {
 	      // we created the pg! drop out and continue "normally"!
+/** comment by hy 2020-04-07
+ * # OSDShard::_attach_pg
+ */
 	      sdata->_attach_pg(slot, pg.get());
+/** comment by hy 2020-04-07
+ * # 处理 slot 各个队列中的
+     OSDShard::_wake_pg_slot
+ */
 	      sdata->_wake_pg_slot(token, slot);
 
 	      // identify split children between create epoch and shard epoch.
+/** comment by hy 2020-01-28
+ * # 切片与合并处理,判断分裂
+ */
 	      osd->service.identify_splits_and_merges(
 		pg->get_osdmap(), osdmap, pg->pg_id, &new_children, nullptr);
+/** comment by hy 2020-04-07
+ * # OSDShard::_prime_splits
+ */
 	      sdata->_prime_splits(&new_children);
 	      // distribute remaining split children to other shards below!
 	      break;
@@ -10628,14 +11134,23 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       if (pushes_to_free > 0) {
 	sdata->shard_lock.unlock();
 	osd->service.release_reserved_pushes(pushes_to_free);
+/** comment by hy 2020-04-07
+ * # 回调完成
+ */
 	handle_oncommits(oncommits);
 	return;
       }
     }
     sdata->shard_lock.unlock();
+/** comment by hy 2020-04-07
+ * # 回调完成
+ */
     handle_oncommits(oncommits);
     return;
   }
+/** comment by hy 2020-01-30
+ * # 非 pg 操作
+ */
   if (qi.is_peering()) {
     OSDMapRef osdmap = sdata->shard_osdmap;
     if (qi.get_map_epoch() > osdmap->get_epoch()) {
@@ -10648,6 +11163,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   }
   sdata->shard_lock.unlock();
 
+/** comment by hy 2020-01-30
+ * # 分裂 pg
+ */
   if (!new_children.empty()) {
     for (auto shard : osd->shards) {
       shard->prime_splits(osdmap, &new_children);
@@ -10677,6 +11195,14 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   delete f;
   *_dout << dendl;
 
+/** comment by hy 2020-01-30
+ * # 调用操作对应的run方法
+     上面事 pg 操作
+     这里事 object 操作
+     qi = OpSchedulerItem
+     PGOpItem::run
+     = OSD::dequeue_op
+ */
   qi.run(osd, sdata, pg, tp_handle);
 
   {
@@ -10694,11 +11220,17 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 }
 
 void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
+/** comment by hy 2020-04-07
+ * # pgid % 分片数
+     OpSchedulerItem::get_ordering_token = spg_t
+ */
   uint32_t shard_index =
     item.get_ordering_token().hash_to_shard(osd->shards.size());
 
   dout(20) << __func__ << " " << item << dendl;
-
+/** comment by hy 2020-04-07
+ * # 从分片中获取对应数据
+ */
   OSDShard* sdata = osd->shards[shard_index];
   assert (NULL != sdata);
 
@@ -10706,6 +11238,19 @@ void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
   {
     std::lock_guard l{sdata->shard_lock};
     empty = sdata->scheduler->empty();
+/** comment by hy 2020-04-07
+ * # 往对应的分片里面放数据
+     OSDShard 初始化时 ceph::osd::scheduler::make_scheduler
+     生成 Scheduler
+     配置文件中 osd_op_queue = "wpq"(default)
+        ClassedOpQueueScheduler<WeightedPriorityQueue<OpSchedulerItem, client>>>
+        分成两个权重队列 前一个先执行 后一个再执行
+
+     配置文件 osd_op_queue = "mclock_scheduler"
+         mClockScheduler
+     OpScheduler::enqueue =
+     ClassedOpQueueScheduler
+ */
     sdata->scheduler->enqueue(std::move(item));
   }
 

@@ -108,6 +108,9 @@ void SetSnapRequest<I>::send_block_writes() {
     klass, &klass::handle_block_writes>(this);
 
   std::shared_lock owner_locker{m_image_ctx.owner_lock};
+/** comment by hy 2020-02-19
+ * # 阻塞写？
+ */
   m_image_ctx.io_work_queue->block_writes(ctx);
 }
 
@@ -193,6 +196,9 @@ Context *SetSnapRequest<I>::send_refresh_parent(int *result) {
     }
 
     parent_md = *parent_info;
+/** comment by hy 2020-02-19
+ * # 打开了就重刷
+ */
     refresh_parent = RefreshParentRequest<I>::is_refresh_required(
         m_image_ctx, parent_md, m_image_ctx.migration_info);
   }
@@ -200,11 +206,17 @@ Context *SetSnapRequest<I>::send_refresh_parent(int *result) {
   if (!refresh_parent) {
     if (m_snap_id == CEPH_NOSNAP) {
       // object map is loaded when exclusive lock is acquired
+/** comment by hy 2020-02-19
+ * # 自己不是 snap,更新与 parent 的关联
+ */
       *result = apply();
       finalize();
       return m_on_finish;
     } else {
       // load snapshot object map
+/** comment by hy 2020-02-19
+ * # 
+ */
       return send_open_object_map(result);
     }
   }
