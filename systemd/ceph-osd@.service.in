@@ -9,7 +9,7 @@ LimitNOFILE=1048576
 LimitNPROC=1048576
 EnvironmentFile=-@SYSTEMD_ENV_FILE@
 Environment=CLUSTER=ceph
-ExecStart=/usr/bin/ceph-osd -f --cluster ${CLUSTER} --id %i --setuser ceph --setgroup ceph
+ExecStart=/usr/bin/ceph-osd -f --cluster ${CLUSTER} --id %i --setuser root --setgroup root
 ExecStartPre=/usr/lib/ceph/ceph-osd-prestart.sh --cluster ${CLUSTER} --id %i
 ExecReload=/bin/kill -HUP $MAINPID
 LockPersonality=true

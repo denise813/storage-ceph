@@ -9,7 +9,7 @@ LimitNOFILE=1048576
 LimitNPROC=1048576
 EnvironmentFile=-@SYSTEMD_ENV_FILE@
 Environment=CLUSTER=ceph
-ExecStart=/usr/bin/radosgw -f --cluster ${CLUSTER} --name client.%i --setuser ceph --setgroup ceph
+ExecStart=/usr/bin/radosgw -f --cluster ${CLUSTER} --name client.%i --setuser root --setgroup root
 LockPersonality=true
 MemoryDenyWriteExecute=true
 NoNewPrivileges=true

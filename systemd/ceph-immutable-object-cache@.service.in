@@ -9,7 +9,7 @@ LimitNOFILE=1048576
 LimitNPROC=1048576
 EnvironmentFile=-@SYSTEMD_ENV_FILE@
 Environment=CLUSTER=ceph
-ExecStart=/usr/bin/ceph-immutable-object-cache -f --cluster ${CLUSTER} --id %i --setuser ceph --setgroup ceph
+ExecStart=/usr/bin/ceph-immutable-object-cache -f --cluster ${CLUSTER} --id %i --setuser root --setgroup root
 ExecReload=/bin/kill -HUP $MAINPID
 PrivateDevices=yes
 ProtectHome=true
