@@ -337,13 +337,22 @@ void BlueFS::_add_block_extent(unsigned id, uint64_t offset, uint64_t length,
   ceph_assert(bdev[id]->get_size() >= offset + length);
   block_all[id].insert(offset, length);
 
+/** comment by hy 2020-07-28
+ * # 已经分配过
+ */
   if (id < alloc.size() && alloc[id]) {
     if (!skip)
       log_t.op_alloc_add(id, offset, length);
 
+/** comment by hy 2020-07-28
+ * # 设备分配权初始化
+ */
     alloc[id]->init_add_free(offset, length);
   }
 
+/** comment by hy 2020-07-28
+ * # 记录长度
+ */
   if (logger)
     logger->inc(l_bluefs_gift_bytes, length);
   dout(10) << __func__ << " done" << dendl;
@@ -535,6 +544,9 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
   FileRef log_file = ceph::make_ref<File>();
   log_file->fnode.ino = 1;
   log_file->vselector_hint = vselector->get_hint_for_log();
+/** comment by hy 2020-07-28
+ * # 分配 wal文件 磁盘的pextent 并和文件关联
+ */
   int r = _allocate(
     vselector->select_prefer_bdev(log_file->vselector_hint),
     cct->_conf->bluefs_max_log_runway,
@@ -562,6 +574,9 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
   _flush_and_sync_log(l);
 
   // write supers
+/** comment by hy 2020-07-29
+ * # 创建 sb
+ */
   super.log_fnode = log_file->fnode;
   super.memorized_layout = layout;
   _write_super(BDEV_DB);
@@ -620,6 +635,10 @@ void BlueFS::_init_alloc()
     dout(1) << __func__ << " id " << id
 	     << " alloc_size 0x" << std::hex << alloc_size[id]
 	     << " size 0x" << bdev[id]->get_size() << std::dec << dendl;
+/** comment by hy 2020-07-30
+ * # 默认根据配置文件选择 HybridAllocator
+     是 AvlAllocator 与 bitmap 的混合体
+ */
     alloc[id] = Allocator::create(cct, cct->_conf->bluefs_allocator,
 				  bdev[id]->get_size(),
 				  alloc_size[id], name);
@@ -678,8 +697,10 @@ int BlueFS::mount()
   _init_alloc();
   _init_logger();
 
-/** comment by hy 2020-04-22
- * # 超级快(SuperBlock)中，记录了日志文件的inode，
+/** comment by hy 2020-04-2
+ * # 回放文件系统日志，日志项即的事务OP，
+     文件系统的dir_map/file_map就会被更新超级快(SuperBlock)中，
+     记录了日志文件的inode，
      异常情况下通过重新mount文件系统，读取超级块，
      定位到日志文件，然后读取日志进行回重建所有文件的内存映像(file_map)
      遍历file_map，即可初始化Allocator的空间。
@@ -3165,6 +3186,8 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
     extents.reserve(4);  // 4 should be (more than) enough for most allocations
 /** comment by hy 2020-04-22
  * # 真正分配空间的操作
+     BitmapAllocator::allocate
+     分配的空间放入 PExtentVector中
  */
     alloc_len = alloc[id]->allocate(round_up_to(len, alloc_size[id]),
 				    alloc_size[id], hint, &extents);

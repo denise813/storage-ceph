@@ -68,6 +68,9 @@ int64_t HybridAllocator::allocate(
       bmap_alloc->release(local_extents);
       res = 0;
     }
+/** comment by hy 2020-07-30
+ * # 
+ */
     if ((uint64_t)res < want) {
       auto res2 = _allocate(want - res, unit, max_alloc_size, hint, extents);
       if (res2 < 0) {

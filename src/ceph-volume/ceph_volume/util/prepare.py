@@ -45,7 +45,7 @@ def write_keyring(osd_id, secret, keyring_name='keyring', name=None):
             '--name', name,
             '--add-key', secret
         ])
-    system.chown(osd_keyring)
+    # system.chown(osd_keyring)
 
 
 def get_journal_size(lv_format=True):
@@ -330,7 +330,8 @@ def _link_device(device, device_type, osd_id):
         device_type
     )
     command = ['ln', '-s', device, device_path]
-    system.chown(device)
+    # 设置用户的命令去除
+    #system.chown(device)
 
     process.run(command)
 
@@ -420,7 +421,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)
     monmap = os.path.join(path, 'activate.monmap')
 
-    system.chown(path)
+    # system.chown(path)
 
     base_command = [
         'ceph-osd',
@@ -445,13 +446,13 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
         base_command.extend(
             ['--bluestore-block-wal-path', wal]
         )
-        system.chown(wal)
+        # system.chown(wal)
 
     if db:
         base_command.extend(
             ['--bluestore-block-db-path', db]
         )
-        system.chown(db)
+        # system.chown(db)
 
     if get_osdspec_affinity():
         base_command.extend(['--osdspec-affinity', get_osdspec_affinity()])
@@ -480,8 +481,8 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
     monmap = os.path.join(path, 'activate.monmap')
     journal = os.path.join(path, 'journal')
 
-    system.chown(journal)
-    system.chown(path)
+    # system.chown(journal)
+    # system.chown(path)
 
     command = [
         'ceph-osd',
@@ -503,8 +504,8 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
         '--osd-data', path,
         '--osd-journal', journal,
         '--osd-uuid', fsid,
-        '--setuser', 'ceph',
-        '--setgroup', 'ceph'
+        '--setuser', 'root',
+        '--setgroup', 'root'
     ])
 
     _, _, returncode = process.call(

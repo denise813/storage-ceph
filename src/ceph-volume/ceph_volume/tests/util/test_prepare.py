@@ -136,8 +136,8 @@ mkfs_filestore_flags = [
     '--osd-data',
     '--osd-journal',
     '--osd-uuid',
-    '--setuser', 'ceph',
-    '--setgroup', 'ceph'
+    '--setuser', 'root',
+    '--setgroup', 'root'
 ]
 
 
@@ -336,7 +336,7 @@ class TestMkfsFilestore(object):
             '--keyfile', '-', '--osd-data', '/var/lib/ceph/osd/ceph-1/',
             '--osd-journal', '/var/lib/ceph/osd/ceph-1/journal',
             '--osd-uuid', 'asdf-1234',
-            '--setuser', 'ceph', '--setgroup', 'ceph'])
+            '--setuser', 'root', '--setgroup', 'root'])
         assert expected in str(error.value)
 
 
@@ -364,7 +364,7 @@ class TestMkfsBluestore(object):
             '-i', '1', '--monmap', '/var/lib/ceph/osd/ceph-1/activate.monmap',
             '--keyfile', '-', '--osd-data', '/var/lib/ceph/osd/ceph-1/',
             '--osd-uuid', 'asdf-1234',
-            '--setuser', 'ceph', '--setgroup', 'ceph'])
+            '--setuser', 'root', '--setgroup', 'root'])
         assert expected in str(error.value)
 
 

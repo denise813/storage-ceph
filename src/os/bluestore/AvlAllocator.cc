@@ -187,6 +187,9 @@ int64_t AvlAllocator::_allocate(
   uint64_t allocated = 0;
   while (allocated < want) {
     uint64_t offset, length;
+/** comment by hy 2020-07-30
+ * # 
+ */
     int r = _allocate(std::min(max_alloc_size, want - allocated),
       unit, &offset, &length);
     if (r < 0) {

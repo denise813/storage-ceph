@@ -497,10 +497,20 @@ static void generate_extent_shard_key_and_apply(
 {
   if (key->empty()) { // make full key
     ceph_assert(!onode_key.empty());
+/** comment by hy 2020-07-29
+ * # 没有指定则在 onode key 即对象的 key中加上前缀 x 
+     偏移信息等
+ */
     get_extent_shard_key(onode_key, offset, key);
   } else {
+/** comment by hy 2020-07-29
+ * # 偏移 也就是说一个范围 应该是小于 4G的
+ */
     rewrite_extent_shard_key(offset, key);
   }
+/** comment by hy 2020-07-29
+ * # lamba 函数 从 数据库中加载 数据 从而到内存中
+ */
   apply(*key);
 }
 
@@ -2856,6 +2866,9 @@ unsigned BlueStore::ExtentMap::decode_some(bufferlist& bl)
   unsigned n = 0;
 
   while (!p.end()) {
+/** comment by hy 2020-07-29
+ * # Extent 对应的是文件的偏移
+ */
     Extent *le = new Extent();
     uint64_t blobid;
     denc_varint(blobid, p);
@@ -2885,10 +2898,16 @@ unsigned BlueStore::ExtentMap::decode_some(bufferlist& bl)
 	le->assign_blob(blobs[blobid - 1]);
 	ceph_assert(le->blob);
       } else {
+/** comment by hy 2020-07-29
+ * # blob 对应的是数据块描述
+ */
 	Blob *b = new Blob();
         uint64_t sbid = 0;
         b->decode(onode->c, p, struct_v, &sbid, false);
 	blobs[n] = b;
+/** comment by hy 2020-07-29
+ * # share blob 对应的是数据块
+ */
 	onode->c->open_shared_blob(sbid, b);
 	le->assign_blob(b);
       }
@@ -4861,7 +4880,7 @@ int BlueStore::_check_or_set_bdev_label(
     label.btime = ceph_clock_now();
     label.description = desc;
 /** comment by hy 2020-06-22
- * # 写下磁盘
+ * # 生成临时文件作为id 写下磁盘
  */
     int r = _write_bdev_label(cct, path, label);
     if (r < 0)
@@ -4921,11 +4940,16 @@ int BlueStore::_open_bdev(bool create)
 {
   ceph_assert(bdev == NULL);
   string p = path + "/block";
+  
   bdev = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this), discard_cb, static_cast<void*>(this));
   int r = bdev->open(p);
   if (r < 0)
     goto fail;
 
+/** comment by hy 2020-07-28
+ * # NVMEDevice
+     KernelDevice
+ */
   if (create && cct->_conf->bdev_enable_discard) {
     bdev->discard(0, bdev->get_size());
   }
@@ -5425,6 +5449,9 @@ int BlueStore::_minimal_open_bluefs(bool create)
   // shared device
   bfn = path + "/block";
   // never trim here
+/** comment by hy 2020-07-28
+ * # 将设备添加到对应的数组中并设置io上下文实例
+ */
   r = bluefs->add_block_device(bluefs_layout.shared_bdev, bfn, false,
 			       true /* shared with bluestore */);
   if (r < 0) {
@@ -5509,7 +5536,7 @@ free_bluefs:
 int BlueStore::_open_bluefs(bool create)
 {
 /** comment by hy 2020-06-22
- * # 加载对应的设备
+ * # 加载对应3种的设备
  */
   int r = _minimal_open_bluefs(create);
   if (r < 0) {
@@ -5521,6 +5548,10 @@ int BlueStore::_open_bluefs(bool create)
     string options = cct->_conf->bluestore_rocksdb_options;
 
     rocksdb::Options rocks_opts;
+
+/** comment by hy 2020-07-28
+ * # 数据库参数
+ */
     int r = RocksDBStore::ParseOptionsFromStringStatic(
       cct,
       options,
@@ -5531,6 +5562,18 @@ int BlueStore::_open_bluefs(bool create)
     }
 
     double reserved_factor = cct->_conf->bluestore_volume_selection_reserved_factor;
+/** comment by hy 2020-07-28
+ * # 磁盘配比,与磁盘预留,
+     wal_total
+     db_total
+     slow_total
+     level0_size
+     level_base
+     level_multiplier
+     reserved_factor
+     reserved
+     new_pol
+ */
     vselector =
       new RocksDBBlueFSVolumeSelector(
         bluefs->get_block_device_size(BlueFS::BDEV_WAL) * 95 / 100,
@@ -5757,8 +5800,9 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
 
   map<string,string> kv_options;
   // force separate wal dir for all new deployments.
+
 /** comment by hy 2020-05-27
- * # 后续将在数据库中创建+ wal 路径 
+ * # 后续将在数据库中创建+ wal 路径
  */
   kv_options["separate_wal_dir"] = 1;
   rocksdb::Env *env = NULL;
@@ -5889,6 +5933,10 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
 
   FreelistManager::setup_merge_operators(db);
   db->set_merge_operator(PREFIX_STAT, merge_op);
+/** comment by hy 2020-07-28
+ * # cache_kv_ratio = conf->bluestore_cache_kv_ratio
+     cache_size = bluestore_cache_size_hdd
+ */
   db->set_cache_size(cache_kv_ratio * cache_size);
 
   if (kv_backend == "rocksdb") {
@@ -5905,6 +5953,9 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
     }
   }
 
+/** comment by hy 2020-07-28
+ * # 数据库初始化
+ */
   db->init(options);
   if (to_repair_db)
     return 0;
@@ -9980,7 +10031,7 @@ int BlueStore::_do_read(
   // generally, don't buffer anything, unless the client explicitly requests
   // it.
 /** comment by hy 2020-04-22
- * # 设置是否缓存
+ * # 设置是否缓存,默认读有缓存的,但是还要结合请求
  */
   bool buffered = false;
   if (op_flags & CEPH_OSD_OP_FLAG_FADVISE_WILLNEED) {
@@ -11431,6 +11482,10 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       }
       throttle.log_state_latency(*txc, logger, l_bluestore_state_io_done_lat);
       txc->state = TransContext::STATE_KV_QUEUED;
+/** comment by hy 2020-07-30
+ * # sync之前的提交
+     提交到缓冲中就唤醒下盘动作,既提交前将kv缓冲都下盘
+ */
       if (cct->_conf->bluestore_sync_submit_transaction) {
 	if (txc->last_nid >= nid_max ||
 	    txc->last_blobid >= blobid_max) {
@@ -11454,7 +11509,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 		   << dendl;
 	} else {
 /** comment by hy 2020-02-05
- * # 提交事务,并唤醒其他等待时间,并设置已经完成提交状态 STATE_KV_SUBMITTED
+ * # 提交事务,并唤醒下盘,并设置已经完成提交状态 STATE_KV_SUBMITTED
  */
 	  _txc_apply_kv(txc, true);
 	}
@@ -12912,8 +12967,8 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
   unsigned j = 0;
 /** comment by hy 2020-02-03
  * # pg 对应的目录 信息即容器信息
-        i 作为事务迭代器
-        一个操作对应的 容器
+     i 作为事务迭代器
+     一个操作对应的 容器
  */
   for (vector<coll_t>::iterator p = i.colls.begin(); p != i.colls.end();
        ++p, ++j) {
@@ -13340,7 +13395,7 @@ int BlueStore::_touch(TransContext *txc,
  */
   _assign_nid(txc, o);
 /** comment by hy 2020-02-04
- * # 插入事务的onode缓存中
+ * # 插入事务的onode 内存缓存中
  */
   txc->write_onode(o);
   dout(10) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
@@ -14135,7 +14190,7 @@ int BlueStore::_do_alloc_write(
   prealloc.reserve(2 * wctx->writes.size());;
   int64_t prealloc_left = 0;
 /** comment by hy 2020-02-05
- * # 申请空间,由指定的分配器指定
+ * # 申请空间,由指定的分配器指定,申请是由后往前进行
  */
   prealloc_left = alloc->allocate(
     need, min_alloc_size, need,
@@ -14478,6 +14533,9 @@ void BlueStore::_choose_write_options(
 
   // compression parameters
   unsigned alloc_hints = o->onode.alloc_hint_flags;
+/** comment by hy 2020-07-28
+ * # 压缩选项
+ */
   auto cm = select_option(
     "compression_mode",
     comp_mode.load(),
@@ -14654,11 +14712,11 @@ int BlueStore::_do_write(
 
   WriteContext wctx;
 /** comment by hy 2020-02-04
- * # 设置对应的写选项
+ * # 设置对应的写选项,与压缩等有关联
  */
   _choose_write_options(c, o, fadvise_flags, &wctx);
 /** comment by hy 2020-06-25
- * # 等效于 page fault
+ * # 等效于 page fault, 这个时候只是分配空间,没有填写数据
  */
   o->extent_map.fault_range(db, offset, length);
 /** comment by hy 2020-02-05
@@ -15347,7 +15405,7 @@ int BlueStore::_clone(TransContext *txc,
  */
   _do_truncate(txc, c, newo, 0);
 /** comment by hy 2020-02-05
- * # 写时拷贝,默认为true
+ * # 克隆的时候使用写时拷贝,默认为true
  */
   if (cct->_conf->bluestore_clone_cow) {
     _do_clone_range(txc, c, oldo, newo, 0, oldo->onode.size, 0);
@@ -15460,6 +15518,9 @@ int BlueStore::_clone_range(TransContext *txc,
   _assign_nid(txc, newo);
 
   if (length > 0) {
+/** comment by hy 2020-07-30
+ * # 默认为真,拷贝的时候使用写时拷贝
+ */
     if (cct->_conf->bluestore_clone_cow) {
       _do_zero(txc, c, newo, dstoff, length);
       _do_clone_range(txc, c, oldo, newo, srcoff, length, dstoff);

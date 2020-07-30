@@ -3807,6 +3807,9 @@ std::vector<Option> get_global_options() {
     .set_default(4_K)
     .set_description(""),
 
+/** comment by hy 2020-07-28
+ * # rocks 统计数据
+ */
     Option("rocksdb_perf", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description(""),
@@ -4141,6 +4144,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description(""),
 
+/** comment by hy 2020-07-29
+ * # bluefs 配置参数
+ */
     Option("bluefs_alloc_size", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(1_M)
     .set_description("Allocation unit size for DB and WAL devices"),
@@ -4180,7 +4186,18 @@ std::vector<Option> get_global_options() {
     Option("bluefs_buffered_io", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("Enabled buffered IO for bluefs reads.")
-    .set_long_description("When this option is enabled, bluefs will in some cases perform buffered reads.  This allows the kernel page cache to act as a secondary cache for things like RocksDB compaction.  For example, if the rocksdb block cache isn't large enough to hold blocks from the compressed SST files itself, they can be read from page cache instead of from the disk.  This option previously was enabled by default, however in some test cases it appears to cause excessive swap utilization by the linux kernel and a large negative performance impact after several hours of run time.  Please exercise caution when enabling."),
+    .set_long_description("When this option is enabled, "
+        "bluefs will in some cases perform buffered reads."
+        "This allows the kernel page cache to act as a secondary cache "
+        "for things like RocksDB compaction."
+        "For example, if the rocksdb block cache isn't large enough to "
+        "hold blocks from the compressed SST files itself, "
+        "they can be read from page cache instead of from the disk. "
+        "This option previously was enabled by default, "
+        "however in some test cases it appears to cause "
+        "excessive swap utilization by the linux kernel and "
+        "a large negative performance impact after several hours of run time. "
+        " Please exercise caution when enabling."),
 
     Option("bluefs_sync_write", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
@@ -4611,13 +4628,21 @@ std::vector<Option> get_global_options() {
    num_levels - 最多可以有几个level
  */
     Option("bluestore_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
-    .set_default("compression=kNoCompression,max_write_buffer_number=4,min_write_buffer_number_to_merge=1,recycle_log_file_num=4,write_buffer_size=268435456,writable_file_max_buffer_size=0,compaction_readahead_size=2097152,max_background_compactions=2")
+    .set_default("compression=kNoCompression,max_write_buffer_number=4,"
+      "min_write_buffer_number_to_merge=1,recycle_log_file_num=4,"
+      "write_buffer_size=268435456,writable_file_max_buffer_size=0,"
+      "compaction_readahead_size=2097152,max_background_compactions=2")
     .set_description("Rocksdb options"),
 
     Option("bluestore_rocksdb_cf", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("Enable use of rocksdb column families for bluestore metadata"),
 
+/** comment by hy 2020-07-30
+ * # M表示
+     P表示
+     L表示
+ */
     Option("bluestore_rocksdb_cfs", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("M= P= L=")
     .set_description("List of whitespace-separate key/value pairs where key is CF name and value is CF options"),
@@ -4650,6 +4675,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description("Run deep fsck after mkfs"),
 
+/** comment by hy 2020-07-30
+ * # 提交前先sync 之前缓存中的事务
+ */
     Option("bluestore_sync_submit_transaction", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description("Try to submit metadata transaction to rocksdb in queuing thread context"),
@@ -4690,6 +4718,10 @@ std::vector<Option> get_global_options() {
     .set_description("Default bluestore_throttle_cost_per_io for non-rotation (solid state) media")
     .add_see_also("bluestore_throttle_cost_per_io"),
 
+/** comment by hy 2020-07-30
+ * # 操作数量延迟 bluestore_deferred_batch_ops
+     如果设置了该值则按照该值,否则使用根据设备定制的参考值
+ */
     Option("bluestore_deferred_batch_ops", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_flag(Option::FLAG_RUNTIME)
@@ -4707,6 +4739,9 @@ std::vector<Option> get_global_options() {
     .set_description("Default bluestore_deferred_batch_ops for non-rotational (solid state) media")
     .add_see_also("bluestore_deferred_batch_ops"),
 
+/** comment by hy 2020-07-30
+ * # 一次性预分配id
+ */
     Option("bluestore_nid_prealloc", Option::TYPE_INT, Option::LEVEL_DEV)
     .set_default(1024)
     .set_description("Number of unique object ids to preallocate at a time"),
@@ -4830,15 +4865,24 @@ std::vector<Option> get_global_options() {
     .set_default("default")
     .set_enum_allowed({"default", "hdd", "ssd"})
     .set_description("Enforces specific hw profile settings")
-    .set_long_description("'hdd' enforces settings intended for BlueStore above a rotational drive. 'ssd' enforces settings intended for BlueStore above a solid drive. 'default' - using settings for the actual hardware."),
+    .set_long_description("'hdd' enforces settings intended for "
+      "BlueStore above a rotational drive. "
+      "'ssd' enforces settings intended for BlueStore above a solid drive. "
+      "'default' - using settings for the actual hardware."),
 
+/** comment by hy 2020-07-30
+ * # 最小空间
+ */
     Option("bluestore_avl_alloc_bf_threshold", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(131072)
-    .set_description(""),
+    .set_description("unit is kb,defult is 128M"),
 
+/** comment by hy 2020-07-30
+ * # 保持空间的空闲度
+ */
     Option("bluestore_avl_alloc_bf_free_pct", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(4)
-    .set_description(""),
+    .set_description("unit is %"),
 
     Option("bluestore_hybrid_alloc_mem_cap", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(64_M)
@@ -4848,17 +4892,27 @@ std::vector<Option> get_global_options() {
     .set_default("rocksdb_original")
     .set_enum_allowed({ "rocksdb_original", "use_some_extra" })
     .set_description("Determines bluefs volume selection policy")
-    .set_long_description("Determines bluefs volume selection policy. 'use_some_extra' policy allows to override RocksDB level granularity and put high level's data to faster device even when the level doesn't completely fit there"),
+    .set_long_description("Determines bluefs volume selection policy. "
+      "'use_some_extra' policy allows to override RocksDB level granularity "
+      "and put high level's data to faster device even when "
+      "the level doesn't completely fit there"),
 
     Option("bluestore_volume_selection_reserved_factor", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
       .set_flag(Option::FLAG_STARTUP)
       .set_default(2.0)
-      .set_description("DB level size multiplier. Determines amount of space at DB device to bar from the usage when 'use some extra' policy is in action. Reserved size is determined as sum(L_max_size[0], L_max_size[L-1]) + L_max_size[L] * this_factor"),
+      .set_description("DB level size multiplier. "
+        "Determines amount of space at DB device to bar "
+        "from the usage when 'use some extra' policy is in action. "
+        "Reserved size is determined as "
+        "sum(L_max_size[0], L_max_size[L-1]) + L_max_size[L] * this_factor"),
 
     Option("bluestore_volume_selection_reserved", Option::TYPE_INT, Option::LEVEL_ADVANCED)
       .set_flag(Option::FLAG_STARTUP)
       .set_default(0)
-      .set_description("Space reserved at DB device and not allowed for 'use some extra' policy usage. Overrides 'bluestore_volume_selection_reserved_factor' setting and introduces straightforward limit."),
+      .set_description("Space reserved at DB device "
+      "and not allowed for 'use some extra' policy usage. "
+      "Overrides 'bluestore_volume_selection_reserved_factor' "
+      "setting and introduces straightforward limit."),
 
     Option("bluestore_ioring", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)

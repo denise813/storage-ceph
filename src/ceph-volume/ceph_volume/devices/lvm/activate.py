@@ -64,7 +64,7 @@ def activate_filestore(lvs, no_systemd=False):
         prepare_utils.mount_osd(source, osd_id, is_vdo=is_vdo)
 
     # ensure that the OSD destination is always chowned properly
-    system.chown(destination)
+    # system.chown(destination)
 
     # always re-do the symlink regardless if it exists, so that the journal
     # device path that may have changed can be mapped correctly every time
@@ -72,7 +72,7 @@ def activate_filestore(lvs, no_systemd=False):
     process.run(['ln', '-snf', osd_journal, destination])
 
     # make sure that the journal has proper permissions
-    system.chown(osd_journal)
+    # system.chown(osd_journal)
 
     if no_systemd is False:
         # enable the ceph-volume unit for this OSD
@@ -159,7 +159,9 @@ def activate_bluestore(lvs, no_systemd=False):
     # Once symlinks are removed, the osd dir can be 'primed again. chown first,
     # regardless of what currently exists so that ``prime-osd-dir`` can succeed
     # even if permissions are somehow messed up
-    system.chown(osd_path)
+    # commit by hy 2020-07-28
+    # 因为已经修改了启动的权限 所以这里就不用 修改目录权限
+    #system.chown(osd_path)
     prime_command = [
         'ceph-bluestore-tool', '--cluster=%s' % conf.cluster,
         'prime-osd-dir', '--dev', osd_lv_path,
@@ -174,18 +176,18 @@ def activate_bluestore(lvs, no_systemd=False):
     # block.wal, and block.db devices that may have changed can be mapped
     # correctly every time
     process.run(['ln', '-snf', osd_lv_path, os.path.join(osd_path, 'block')])
-    system.chown(os.path.join(osd_path, 'block'))
-    system.chown(osd_path)
+    #system.chown(os.path.join(osd_path, 'block'))
+    #system.chown(osd_path)
     if db_device_path:
         destination = os.path.join(osd_path, 'block.db')
         process.run(['ln', '-snf', db_device_path, destination])
-        system.chown(db_device_path)
-        system.chown(destination)
+        #system.chown(db_device_path)
+        #system.chown(destination)
     if wal_device_path:
         destination = os.path.join(osd_path, 'block.wal')
         process.run(['ln', '-snf', wal_device_path, destination])
-        system.chown(wal_device_path)
-        system.chown(destination)
+        #system.chown(wal_device_path)
+        #system.chown(destination)
 
     if no_systemd is False:
         # enable the ceph-volume unit for this OSD

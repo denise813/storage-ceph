@@ -578,9 +578,15 @@ public:
     std::atomic_int nref = {0};     ///< reference count
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
+/** comment by hy 2020-07-29
+ * # 磁盘数据块
+ */
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
 
   private:
+/** comment by hy 2020-07-29
+ * # 描述数据块信息
+ */
     mutable bluestore_blob_t blob;  ///< decoded blob metadata
 #ifdef CACHE_BLOB_BL
     mutable bufferlist blob_bl;     ///< cached encoded blob, blob is dirty if empty
@@ -1870,7 +1876,8 @@ public:
 	boost::intrusive::list_member_hook<>,
 	&TransContext::sequencer_item> > q_list_t;
 /** comment by hy 2020-07-14
- * # 插入的事务列表
+ * # 插入的事务上下文列表, TransContext
+     里面包含 数据库事务
  */
     q_list_t q;  ///< transactions
 

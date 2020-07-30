@@ -1932,6 +1932,9 @@ int OSD::mkfs(CephContext *cct, ObjectStore *store, uuid_d fsid, int whoami, str
   // if we are fed a uuid for this osd, use it.
   store->set_fsid(cct->_conf->osd_uuid);
 
+/** comment by hy 2020-07-28
+ * # 后端存储引擎格式文件系统
+ */
   ret = store->mkfs();
   if (ret) {
     derr << "OSD::mkfs: ObjectStore::mkfs failed with error "
@@ -1941,6 +1944,9 @@ int OSD::mkfs(CephContext *cct, ObjectStore *store, uuid_d fsid, int whoami, str
 
   store->set_cache_shards(1);  // doesn't matter for mkfs!
 
+/** comment by hy 2020-07-28
+ * # mount
+ */
   ret = store->mount();
   if (ret) {
     derr << "OSD::mkfs: couldn't mount ObjectStore: error "

@@ -769,7 +769,7 @@ protected:
 	  ceph_assert(free_pos < bits_per_slot);
 	}
 /** comment by hy 2020-04-22
- * # 
+ * # _allocate_l1
  */
 	do {
 	  ceph_assert(length > *allocated);
