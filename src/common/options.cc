@@ -4642,6 +4642,17 @@ std::vector<Option> get_global_options() {
  * # M表示
      P表示
      L表示
+        const string PREFIX_SUPER = "S";       // field -> value
+        const string PREFIX_STAT = "T";        // field -> value(int64 array)
+        const string PREFIX_COLL = "C";        // collection name -> cnode_t
+        const string PREFIX_OBJ = "O";         // object name -> onode_t
+        const string PREFIX_OMAP = "M";        // u64 + keyname -> value
+        const string PREFIX_PGMETA_OMAP = "P"; // u64 + keyname -> value(for meta coll)
+        const string PREFIX_PERPOOL_OMAP = "m"; // s64 + u64 + keyname -> value
+        const string PREFIX_DEFERRED = "L";    // id -> deferred_transaction_t
+        const string PREFIX_ALLOC = "B";       // u64 offset -> u64 length (freelist)
+        const string PREFIX_ALLOC_BITMAP = "b";// (see BitmapFreelistManager)
+        const string PREFIX_SHARED_BLOB = "X"; // u64 offset -> shared_blob_t
  */
     Option("bluestore_rocksdb_cfs", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("M= P= L=")
@@ -4801,6 +4812,9 @@ std::vector<Option> get_global_options() {
     .set_default(0)
     .set_description(""),
 
+/** comment by hy 2020-08-01
+ * # by pass
+ */
     Option("bluestore_debug_omit_block_device_write", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description(""),

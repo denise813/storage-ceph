@@ -1273,7 +1273,7 @@ int librados::RadosClient::service_daemon_register(
     return -EBUSY;
   }
 /** comment by hy 2020-03-06
- * # 
+ * # 向 mgr 注册服务
  */
   mgrclient.service_daemon_register(service_name, daemon_name,
 				    daemon_metadata);

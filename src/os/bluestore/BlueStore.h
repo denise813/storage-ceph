@@ -2052,6 +2052,9 @@ private:
   utime_t next_dump_on_bluefs_alloc_failure;
 
   KeyValueDB *db = nullptr;
+/** comment by hy 2020-08-02
+ * # block 数据设备
+ */
   BlockDevice *bdev = nullptr;
   std::string freelist_type;
   FreelistManager *fm = nullptr;

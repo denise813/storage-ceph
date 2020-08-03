@@ -156,6 +156,9 @@ void Mgr::background_init(Context *completion)
   finisher.start();
 
   finisher.queue(new LambdaContext([this, completion](int r){
+/** comment by hy 2020-07-31
+ * # 调用初始化函数
+ */
     init();
     completion->complete(0);
   }));
@@ -276,6 +279,9 @@ void Mgr::init()
   lock.lock();
 
   // Start communicating with daemons to learn statistics etc
+/** comment by hy 2020-07-31
+ * # 初始化 服务端
+ */
   int r = server.init(monc->get_global_id(), client_messenger->get_myaddrs());
   if (r < 0) {
     derr << "Initialize server fail: " << cpp_strerror(r) << dendl;
@@ -289,6 +295,9 @@ void Mgr::init()
   // up to date by watching maps, so do the initial load before
   // we subscribe to any maps)
   dout(4) << "Loading daemon metadata..." << dendl;
+/** comment by hy 2020-07-31
+ * # 加载所有元数据
+ */
   load_all_metadata();
 
   // Populate PGs in ClusterState

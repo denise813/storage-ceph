@@ -140,6 +140,10 @@ int KernelDevice::open(const string& p)
 
   // disable readahead as it will wreak havoc on our mix of
   // directio/aio and buffered io.
+/** comment by hy 2020-08-03
+ * # 对文件进行预取的系统调用
+     将要进行随机操作 表示 禁止预读
+ */
   r = posix_fadvise(fd_buffereds[WRITE_LIFE_NOT_SET], 0, 0, POSIX_FADV_RANDOM);
   if (r) {
     r = -r;
@@ -405,7 +409,9 @@ int KernelDevice::flush()
   // followers until the aio is stable.
   std::lock_guard l(flush_mutex);
 /** comment by hy 2020-04-24
- * # 如果 io_since_flush 为false，则没有要sync的数据，直接退出
+ * # 如果 io_since_flush 为false 则没有要sync的数据，直接退出
+     有写就会变成 sync
+     compare_exchange_strong 等同比较
  */
   bool expect = true;
   if (!io_since_flush.compare_exchange_strong(expect, false)) {
@@ -899,6 +905,9 @@ int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int w
   return 0;
 }
 
+/** comment by hy 2020-08-02
+ * # BlueFs 文件sync, 同步文件等场合
+ */
 int KernelDevice::write(
   uint64_t off,
   bufferlist &bl,
@@ -959,7 +968,13 @@ int KernelDevice::aio_write(
   _aio_log_start(ioc, off, len);
 
 #ifdef HAVE_LIBAIO
+/** comment by hy 2020-08-02
+ * # 使用异步io 的前提 直接io 与 对齐
+ */
   if (aio && dio && !buffered) {
+/** comment by hy 2020-08-02
+ * # 测试
+ */
     if (cct->_conf->bdev_inject_crash &&
 	rand() % cct->_conf->bdev_inject_crash == 0) {
       derr << __func__ << " bdev_inject_crash: dropping io 0x" << std::hex
@@ -973,9 +988,18 @@ int KernelDevice::aio_write(
       bufferptr p = buffer::create_small_page_aligned(len);
       aio.bl.append(std::move(p));
       aio.bl.prepare_iov(&aio.iov);
+/** comment by hy 2020-08-02
+ * # aio_t::preadv 包装数据
+ */
       aio.preadv(off, len);
       ++injecting_crash;
     } else {
+/** comment by hy 2020-08-02
+ * # 正常流程
+ */
+/** comment by hy 2020-08-02
+ * # 小于 page
+ */
       if (bl.length() <= RW_IO_MAX) {
 	// fast path (non-huge write)
 	ioc->pending_aios.push_back(aio_t(ioc, choose_fd(false, write_hint)));
@@ -984,7 +1008,7 @@ int KernelDevice::aio_write(
 	bl.prepare_iov(&aio.iov);
 	aio.bl.claim_append(bl);
 /** comment by hy 2020-02-05
- * # aio_t::pwritev
+ * # aio_t::pwritev 包装数据
  */
 	aio.pwritev(off, len);
 	dout(30) << aio << dendl;

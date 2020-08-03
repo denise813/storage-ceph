@@ -11516,8 +11516,9 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       }
       {
 /** comment by hy 2020-03-02
- * # 异步提交,应用完成后变化为提交到数据库了的状态
+ * # 异步提交,应用完成后变化为提交到数据库的状态
      BlueStore::_kv_sync_thread,将从kv_queue 取数据,然后 submit_transaction
+     对应为 kv_committing
  */
 	std::lock_guard l(kv_lock);
 	kv_queue.push_back(txc);
@@ -11529,6 +11530,9 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	  kv_queue_unsubmitted.push_back(txc);
 	  ++txc->osr->kv_committing_serially;
 	}
+/** comment by hy 2020-08-02
+ * # kv_ios 决定 kv sync 线程是否要进行刷 数据盘
+ */
 	if (txc->had_ios)
 	  kv_ios++;
 	kv_throttle_costs += txc->cost;
@@ -11795,6 +11799,9 @@ void BlueStore::_txc_apply_kv(TransContext *txc, bool sync_submit_transaction)
 #endif
   }
 
+/** comment by hy 2020-08-01
+ * # 唤醒对应的 flush
+ */
   for (auto ls : { &txc->onodes, &txc->modified_objects }) {
     for (auto& o : *ls) {
       dout(20) << __func__ << " onode " << o << " had " << o->flushing_count
@@ -12171,6 +12178,7 @@ void BlueStore::_kv_sync_thread()
   kv_cond.notify_all();
 /** comment by hy 2020-03-02
  * # 处理提交了的事务
+     这里是性能改造点
  */
   while (true) {
     ceph_assert(kv_committing.empty());
@@ -12236,6 +12244,8 @@ void BlueStore::_kv_sync_thread()
 /** comment by hy 2020-04-24
  * # 处理 deferred_done_queue
  */
+     auto end_flush = start;
+     auto begin_flush = start;
       if (force_flush) {
 	dout(20) << __func__ << " num_aios=" << aios
 		 << " force_flush=" << (int)force_flush
@@ -12243,17 +12253,22 @@ void BlueStore::_kv_sync_thread()
 	// flush/barrier on block device
 /** comment by hy 2020-04-24
  * # 刷数据到磁盘上
+     KernelDevice::flush
+     这里是最多的 0.004148904 = 240 IPOS
  */
+        begin_flush = mono_clock::now();
 	bdev->flush();
+        end_flush = mono_clock::now();
 
 	// if we flush then deferred done are now deferred stable
 	deferred_stable.insert(deferred_stable.end(), deferred_done.begin(),
 			       deferred_done.end());
 	deferred_done.clear();
       }
-      auto after_flush = mono_clock::now();
 
+      auto after_flush = mono_clock::now();
       // we will use one final transaction to force a sync
+
       KeyValueDB::Transaction synct = db->get_transaction();
 
       // increase {nid,blobid}_max?  note that this covers both the
@@ -12262,6 +12277,9 @@ void BlueStore::_kv_sync_thread()
       // we submit.
       uint64_t new_nid_max = 0, new_blobid_max = 0;
       if (nid_last + cct->_conf->bluestore_nid_prealloc/2 > nid_max) {
+/** comment by hy 2020-08-01
+ * # 这个放在 lead 线程处理
+ */
 	KeyValueDB::Transaction t =
 	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
 	new_nid_max = nid_last + cct->_conf->bluestore_nid_prealloc;
@@ -12271,6 +12289,9 @@ void BlueStore::_kv_sync_thread()
 	dout(10) << __func__ << " new_nid_max " << new_nid_max << dendl;
       }
       if (blobid_last + cct->_conf->bluestore_blobid_prealloc/2 > blobid_max) {
+/** comment by hy 2020-08-01
+ * # 这个也是放在lead线程处理
+ */
 	KeyValueDB::Transaction t =
 	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
 	new_blobid_max = blobid_last + cct->_conf->bluestore_blobid_prealloc;
@@ -12281,6 +12302,9 @@ void BlueStore::_kv_sync_thread()
       }
 /** comment by hy 2020-04-24
  * # 继续执行
+     需要多线程处理
+     l_bluestore_state_kv_queued_lat state_kv_queued_lat
+     0.029806399
  */
       for (auto txc : kv_committing) {
 	throttle.log_state_latency(*txc, logger, l_bluestore_state_kv_queued_lat);
@@ -12303,12 +12327,16 @@ void BlueStore::_kv_sync_thread()
       // transaction is ready for commit.
       throttle.release_kv_throttle(costs);
 
+/** comment by hy 2020-08-03
+ * # 距离上一次 操作 时间间隔操作配置文件间隔
+     默认配置为 1秒
+ */
       if (bluefs &&
 	  after_flush - bluefs_last_balance >
 	  ceph::make_timespan(cct->_conf->bluestore_bluefs_balance_interval)) {
 	bluefs_last_balance = after_flush;
 /** comment by hy 2020-05-30
- * # 
+ * # 更新 文件系统 bitmap
  */
 	int r = _balance_bluefs_freespace();
 	ceph_assert(r >= 0);
@@ -12338,8 +12366,10 @@ void BlueStore::_kv_sync_thread()
 /** comment by hy 2020-04-24
  * # submit_transaction 同步kv，有设置bluefs_extents、删除wal两种操作
  */
+      auto begin_kv = mono_clock::now();
       int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction_sync(synct);
       ceph_assert(r == 0);
+      auto end_kv = mono_clock::now();
 
       int committing_size = kv_committing.size();
       int deferred_size = deferred_stable.size();
@@ -12401,22 +12431,31 @@ void BlueStore::_kv_sync_thread()
 
       {
 	auto finish = mono_clock::now();
-	ceph::timespan dur_flush = after_flush - start;
-	ceph::timespan dur_kv = finish - after_flush;
+	ceph::timespan dur_flush = end_flush - begin_flush;
+	ceph::timespan dur_kv = end_kv - begin_flush;
 	ceph::timespan dur = finish - start;
 	dout(20) << __func__ << " committed " << committing_size
 	  << " cleaned " << deferred_size
 	  << " in " << dur
 	  << " (" << dur_flush << " flush + " << dur_kv << " kv commit)"
 	  << dendl;
+/** comment by hy 2020-08-02
+ * # kv_flush_lat 延迟
+ */
 	log_latency("kv_flush",
 	  l_bluestore_kv_flush_lat,
 	  dur_flush,
 	  cct->_conf->bluestore_log_op_age);
+/** comment by hy 2020-08-02
+ * # kv_commit_lat 延迟
+ */
 	log_latency("kv_commit",
 	  l_bluestore_kv_commit_lat,
 	  dur_kv,
 	  cct->_conf->bluestore_log_op_age);
+/** comment by hy 2020-08-02
+ * # kv_sync_lat 延迟
+ */
 	log_latency("kv_sync",
 	  l_bluestore_kv_sync_lat,
 	  dur,
@@ -12644,6 +12683,9 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     throttle.log_state_latency(txc, logger, l_bluestore_state_deferred_queued_lat);
   }
   uint64_t start = 0, pos = 0;
+/** comment by hy 2020-08-03
+ * # bufferlist 对齐
+ */
   bufferlist bl;
   auto i = b->iomap.begin();
   while (true) {
@@ -12657,6 +12699,7 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
 	  logger->inc(l_bluestore_deferred_write_bytes, bl.length());
 /** comment by hy 2020-04-22
  * # 准备所有txc的写buffer
+     这个涉及对齐等行为
  */
 	  int r = bdev->aio_write(start, bl, &b->ioc, false);
 	  ceph_assert(r == 0);
@@ -12680,7 +12723,7 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     ++i;
   }
 /** comment by hy 2020-04-22
- * # 一次性提交所有txc
+ * # 提交数据
  */
   bdev->aio_submit(&b->ioc);
 }
@@ -13645,7 +13688,7 @@ void BlueStore::_do_write_small(
 	      op->data = bl;
 	    } else {
 /** comment by hy 2020-02-04
- * # 立即执行异步写,关键流程,并更新缓存
+ * # 将数据按照aio要求组装写入缓存,关键流程,并更新缓存
  */
 	      b->get_blob().map_bl(
 		b_off, bl,
@@ -14359,8 +14402,9 @@ int BlueStore::_do_alloc_write(
 	  [&](uint64_t offset, bufferlist& t) {
 /** comment by hy 2020-02-05
  * # 调用后端存储设备进行处理
+     这里的处理按照要求写入缓存
        NVMEDevice::aio_write
-       KernelDevice::aio_write    
+       KernelDevice::aio_write
  */
 	    bdev->aio_write(offset, t, &txc->ioc, false);
 	  });

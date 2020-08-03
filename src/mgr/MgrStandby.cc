@@ -224,9 +224,7 @@ void MgrStandby::send_beacon()
   metadata["addr"] = client_messenger->get_myaddr_legacy().ip_only_to_str();
   metadata["addrs"] = stringify(client_messenger->get_myaddrs());
   collect_sys_info(&metadata, g_ceph_context);
-/** comment by hy 2020-04-23
- * # DaemonServer内部的messenger地址
- */
+
   auto m = ceph::make_message<MMgrBeacon>(monc.get_fsid(),
 				 monc.get_global_id(),
                                  g_conf()->name.get_id(),
@@ -397,7 +395,9 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
   if (active_in_map) {
     if (!active_mgr) {
 /** comment by hy 2020-04-23
- * # 如果自己在mgrmap中是active的，创建实例mgr，准备干活
+ * # 如果自己在mgrmap中是active的，创建实例mgr
+     后续将判断自己是不是在这个active 中
+     如果是将准备处理命令,否是将拒绝处理命令
  */
       dout(1) << "Activating!" << dendl;
       active_mgr.reset(new Mgr(&monc, map, &py_module_registry,
@@ -405,6 +405,7 @@ void MgrStandby::handle_mgr_map(ref_t<MMgrMap> mmap)
 			       &client, clog, audit_clog));
 /** comment by hy 2020-04-23
  * # 执行初始化
+     Mgr::background_init
  */
       active_mgr->background_init(new LambdaContext(
             [this](int r){
@@ -455,6 +456,11 @@ bool MgrStandby::ms_dispatch2(const ref_t<Message>& m)
   if (active_mgr) {
     auto am = active_mgr;
     lock.unlock();
+/** comment by hy 2020-07-31
+ * # 转到主Mgr 上
+     Mgr::ms_dispatch2
+     而这个是只是处理map
+ */
     handled = am->ms_dispatch2(m);
     lock.lock();
   }

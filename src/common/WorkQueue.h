@@ -656,7 +656,7 @@ private:
 };
 
 /** comment by hy 2020-01-28
- * # 线程自己有一个队列,需要顺序执行的放在一个队列中
+ * # 共享队列
  */
 class ShardedThreadPool {
 
@@ -763,6 +763,24 @@ public:
   /// wait for all work to complete
   void drain();
 
+};
+
+class simple_thread_pool_t
+{
+  string pool_name;
+  string thread_name;
+  int thread_num;
+  // 线程函数
+  void (*func)(void *arg);
+  //queue queue;
+
+  simple_thread_pool_t(string pool_name, string thread_name,
+    int thread_num, void *(thread_func)(void *arg),
+    void *arg);
+  ~simple_thread_pool_t();
+
+  void enqueue(void *);
+  void dequeue(void *);
 };
 
 #endif

@@ -66,6 +66,9 @@ void PyModuleRegistry::init()
 
   std::list<std::string> failed_modules;
 
+/** comment by hy 2020-07-31
+ * # 从目录中加载模块
+ */
   const std::string module_path = g_conf().get_val<std::string>("mgr_module_path");
   std::set<std::string> module_names = probe_modules(module_path);
   // Load python code
@@ -75,6 +78,9 @@ void PyModuleRegistry::init()
     // Everything starts disabled, set enabled flag on module
     // when we see first MgrMap
     auto mod = std::make_shared<PyModule>(module_name);
+/** comment by hy 2020-07-31
+ * # PyModule::load
+ */
     int r = mod->load(pMainThreadState);
     if (r != 0) {
       // Don't use handle_pyerror() here; we don't have the GIL
