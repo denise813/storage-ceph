@@ -210,8 +210,15 @@ bool RGWLifecycleConfiguration::valid()
 void *RGWLC::LCWorker::entry() {
   do {
     utime_t start = ceph_clock_now();
+/** comment by hy 2020-08-06
+ * # 到达 rgw_lifecycle_work_time 设置的时间范围
+     或者 设定 rgw_lc_debug_interval>0 作为条件
+ */
     if (should_work(start)) {
       ldpp_dout(dpp, 2) << "life cycle: start" << dendl;
+/** comment by hy 2020-08-06
+ * # 执行回收
+ */
       int r = lc->process(this);
       if (r < 0) {
         ldpp_dout(dpp, 0) << "ERROR: do life cycle process() returned error r=" << r << dendl;
@@ -1307,6 +1314,9 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker)
   };
   worker->workpool->setf(pf);
 
+/** comment by hy 2020-08-06
+ * # prefix_map 对象分片的相关信息
+ */
   multimap<string, lc_op>& prefix_map = config.get_prefix_map();
   ldpp_dout(this, 10) << __func__ <<  "() prefix_map size="
 		      << prefix_map.size()
@@ -1314,6 +1324,9 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker)
 
   rgw_obj_key pre_marker;
   rgw_obj_key next_marker;
+/** comment by hy 2020-08-06
+ * # 检查它们是否达到了过期时间
+ */
   for(auto prefix_iter = prefix_map.begin(); prefix_iter != prefix_map.end();
       ++prefix_iter) {
     auto& op = prefix_iter->second;
@@ -1449,12 +1462,18 @@ static inline vector<int> random_sequence(uint32_t n)
 
 int RGWLC::process(LCWorker* worker)
 {
+/** comment by hy 2020-08-06
+ * # rgw_lc_lock_max_time 默认 60 S
+ */
   int max_secs = cct->_conf->rgw_lc_lock_max_time;
 
   /* generate an index-shard sequence unrelated to any other
    * that might be running in parallel */
   vector<int> shard_seq = random_sequence(max_objs);
   for (auto index : shard_seq) {
+/** comment by hy 2020-08-06
+ * # 
+ */
     int ret = process(index, max_secs, worker);
     if (ret < 0)
       return ret;
@@ -1542,6 +1561,9 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker)
       goto exit;
     }
     l.unlock(&store->getRados()->lc_pool_ctx, obj_names[index]);
+/** comment by hy 2020-08-06
+ * # 正式开始进行对象的lc操作
+ */
     ret = bucket_lc_process(entry.first, worker);
     bucket_lc_post(index, max_lock_secs, entry, ret, worker);
   } while(1);

@@ -28,6 +28,11 @@ Restart=on-failure
 StartLimitInterval=30min
 StartLimitBurst=3
 RestartSec=10
+#CPUAffinity=14 15 16 17 18 19 20 21 22 23 24 25 26 27
+nice=-20
+#CPUQuota=20%
+#MemoryLimit=500M
+#LimitRSS=1073741824
 
 [Install]
 WantedBy=ceph-osd.target

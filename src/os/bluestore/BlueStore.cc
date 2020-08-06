@@ -83,7 +83,13 @@ MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::TransContext, bluestore_transcontext,
 const string PREFIX_SUPER = "S";       // field -> value
 const string PREFIX_STAT = "T";        // field -> value(int64 array)
 const string PREFIX_COLL = "C";        // collection name -> cnode_t
+/** comment by hy 2020-08-06
+ * # object 信息
+ */
 const string PREFIX_OBJ = "O";         // object name -> onode_t
+/** comment by hy 2020-08-06
+ * # object 元数据信息
+ */
 const string PREFIX_OMAP = "M";        // u64 + keyname -> value
 const string PREFIX_PGMETA_OMAP = "P"; // u64 + keyname -> value(for meta coll)
 const string PREFIX_PERPOOL_OMAP = "m"; // s64 + u64 + keyname -> value

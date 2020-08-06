@@ -4611,20 +4611,23 @@ std::vector<Option> get_global_options() {
     .set_description("max duration to force deferred submit"),
 
 /** comment by hy 2020-06-08
- * # write_buffer_size - 控制memtable的大小，ceph默认是256MB
-   # max_write_buffer_number - 控制内存中memtable的最大数量，根据内存大小来设置
-   # min_write_buffer_number_to_merge - 控制触发flush所需要的immutable数
-
-   level:
-   max_background_compactions - SST文件合并并发线程数
-   level0_file_num_compaction_trigger - 触发level0向level1合并所需要的
-        level0的文件数目
+ * # write_buffer_size -
+         控制memtable的大小，ceph默认是256MB
+   # max_write_buffer_number -
+         控制内存中memtable的最大数量，根据内存大小来设置
+   # min_write_buffer_number_to_merge -
+         控制触发flush所需要的immutable数
+   max_background_compactions -
+         SST文件合并并发线程数
+   level0_file_num_compaction_trigger - 
+       触发level0向level1合并所需要的level0的文件数目
    max_bytes_for_level_base - level1的大小，
-        一旦level1的文件总大小超过该值，就会触发level1
-        向下合并
-   target_file_size_base - level1-levelN的单个SST文件大小
-   max_bytes_for_level_multiplier - level1-levelN中，相邻两个level的大小的差距，
-        例如level1为256MB，差距为10的话，level2就为2560MB 
+        一旦level1的文件总大小超过该值，就会触发level1向下合并
+   target_file_size_base -
+        level1-levelN的单个SST文件大小
+   max_bytes_for_level_multiplier -
+        level1-levelN中，相邻两个level的大小的差距，
+        例如level1为256MB，差距为10的话，level2就为2560MB
    num_levels - 最多可以有几个level
  */
     Option("bluestore_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
@@ -6728,7 +6731,9 @@ std::vector<Option> get_rgw_options() {
     .set_long_description(
         "The default quota configuration for total size of objects for a single user. A "
         "negative number means 'unlimited'."),
-
+/** comment by hy 2020-08-06
+ * # 分段上传的最小单位
+ */
     Option("rgw_multipart_min_part_size", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(5_M)
     .set_description("Minimum S3 multipart-upload part size")
@@ -6736,6 +6741,9 @@ std::vector<Option> get_rgw_options() {
         "When doing a multipart upload, each part (other than the last part) should be "
         "at least this size."),
 
+/** comment by hy 2020-08-06
+ * # 分段上传的最大段数
+ */
     Option("rgw_multipart_part_upload_limit", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(10000)
     .set_description("Max number of parts in multipart upload"),
