@@ -1857,10 +1857,13 @@ def deploy_daemon(fsid, daemon_type, daemon_id, c, uid, gid,
                   config=None, keyring=None,
                   osd_fsid=None,
                   reconfig=False):
+    #看起来这个适合给mon调用,以及仅仅部署只是建立目录的服务类型使用
+    # 现在代码中调用的是启动时候mon服务,以及mgr服务
     # type: (str, str, Union[int, str], CephContainer, int, int, Optional[str], Optional[str], Optional[str], Optional[bool]) -> None
     data_dir = get_data_dir(fsid, daemon_type, daemon_id)
     if reconfig and not os.path.exists(data_dir):
         raise Error('cannot reconfig, data path %s does not exist' % data_dir)
+    # mon 操作
     if daemon_type == 'mon' and not os.path.exists(data_dir):
         assert config
         assert keyring
@@ -2458,11 +2461,14 @@ def is_ipv6(address):
 def command_bootstrap():
     # type: () -> int
 
+    # 设置 conf 文件
     if not args.output_config:
         args.output_config = os.path.join(args.output_dir, 'ceph.conf')
+    # 设置 admin 秘钥
     if not args.output_keyring:
         args.output_keyring = os.path.join(args.output_dir,
                                            'ceph.client.admin.keyring')
+    # 设置免密
     if not args.output_pub_ssh_key:
         args.output_pub_ssh_key = os.path.join(args.output_dir, 'ceph.pub')
 
@@ -2487,7 +2493,10 @@ def command_bootstrap():
     if '.' in hostname and not args.allow_fqdn_hostname:
         raise Error('hostname is a fully qualified domain name (%s); either fix (e.g., "sudo hostname %s" or similar) or pass --allow-fqdn-hostname' % (hostname, hostname.split('.')[0]))
     mon_id = args.mon_id or hostname
-    mgr_id = args.mgr_id or generate_service_id()
+    # modify begin by hy 2020-08-07
+    # mgr_id = 将默认的随机值 generate_service_id() 修改为 hostname
+    mgr_id = args.mgr_id or hostname
+    # modify end by hy 2020-08-07
     logging.info('Cluster fsid: %s' % fsid)
     ipv6 = False
 
@@ -2498,6 +2507,7 @@ def command_bootstrap():
     r = re.compile(r':(\d+)$')
     base_ip = None
     if args.mon_ip:
+        # ipv6 处理流程
         ipv6 = is_ipv6(args.mon_ip)
         hasport = r.findall(args.mon_ip)
         if hasport:
@@ -2537,6 +2547,7 @@ def command_bootstrap():
         raise Error('must specify --mon-ip or --mon-addrv')
     logger.debug('Base mon IP is %s, final addrv is %s' % (base_ip, addr_arg))
 
+    # 获得子网掩码
     mon_network = None
     if not args.skip_mon_network:
         # make sure IP is configured locally, and then figure out the
@@ -2552,6 +2563,7 @@ def command_bootstrap():
             raise Error('Failed to infer CIDR network for mon ip %s; pass '
                         '--skip-mon-network to configure it later' % base_ip)
 
+    # 写配置文件
     # config
     cp = read_config(args.config)
     if not cp.has_section('global'):
@@ -2559,6 +2571,9 @@ def command_bootstrap():
     cp.set('global', 'fsid', fsid);
     cp.set('global', 'mon host', addr_arg)
     cp.set('global', 'container_image', args.image)
+    # add begin 添加 可以删除pool的配置文件
+    cp.set('global', 'mon allow pool delete', True)
+    # add end
     cpf = StringIO()
     cp.write(cpf)
     config = cpf.getvalue()
@@ -2566,11 +2581,13 @@ def command_bootstrap():
     if not args.skip_pull:
         _pull_image(args.image)
 
+    # 从 /var/lib/ceph 属性中获取 用户信息和用户组信息
     logger.info('Extracting ceph user uid/gid from container image...')
     (uid, gid) = extract_uid_gid()
 
     # create some initial keys
     logger.info('Creating initial keys...')
+    # 使用容器执行命令
     mon_key = CephContainer(
         image=args.image,
         entrypoint='/usr/bin/ceph-authtool',
@@ -2744,6 +2761,8 @@ def command_bootstrap():
     logger.info('Creating mgr...')
     mgr_keyring = '[mgr.%s]\n\tkey = %s\n' % (mgr_id, mgr_key)
     mgr_c = get_container(fsid, 'mgr', mgr_id)
+    # mon 如果未格式化就格式化系统
+    # 其他 就创建目录
     deploy_daemon(fsid, 'mgr', mgr_id, mgr_c, uid, gid,
                   config=config, keyring=mgr_keyring)
 
@@ -4771,6 +4790,9 @@ def _get_parser():
         'command', nargs='*',
         help='additional journalctl args')
 
+    # !!! 第三步启动 adm 中的 mon
+    # !!! bootstrap --mon-ip 192.168.93.70 --mon-id hostname --mgr-id hostname
+    # !!! 实际安装第一个mon与mgr
     parser_bootstrap = subparsers.add_parser(
         'bootstrap', help='bootstrap a cluster (mon + mgr daemons)')
     parser_bootstrap.set_defaults(func=command_bootstrap)
@@ -4956,6 +4978,7 @@ def _get_parser():
         '--expect-hostname',
         help='Set hostname')
 
+    # 执行的第一步添加repo资源
     parser_add_repo = subparsers.add_parser(
         'add-repo', help='configure package repository')
     parser_add_repo.set_defaults(func=command_add_repo)
@@ -4984,6 +5007,7 @@ def _get_parser():
         'rm-repo', help='remove package repository configuration')
     parser_rm_repo.set_defaults(func=command_rm_repo)
 
+    # 第二步 安装软件
     parser_install = subparsers.add_parser(
         'install', help='install ceph package(s)')
     parser_install.set_defaults(func=command_install)
@@ -5009,6 +5033,23 @@ if __name__ == "__main__":
         av = injected_argv  # type: ignore
     except NameError:
         av = sys.argv[1:]
+    # 函数表
+    # 基本部署的流程
+    # add-repo
+    # install
+    # bootstrap --mon-ip 192.168.93.70
+    # 进入系统查看 shell
+    # 将主机加入集群
+    # ssh-copy-id -f -i /etc/ceph/ceph.pub root@node2
+    # ceph orch host add node2
+    # ceph orch host ls
+    # ceph config set mon public_network 10.1.2.0/24
+    # ceph orch host ls
+    # ceph orch host label add host1 mon
+    # host add 与 label add
+    # 原理是将 inventory 通过 mgr 保存 mgr.store()
+    #ceph orch apply mon label:mon
+    # orch apply mon 被映射为 _apply_misc
     args = _parse_args(av)
 
     if args.verbose:

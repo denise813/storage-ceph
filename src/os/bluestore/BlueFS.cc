@@ -3073,6 +3073,9 @@ void BlueFS::_flush_bdev_safely(FileWriter *h)
   std::array<bool, MAX_BDEV> flush_devs = h->dirty_devs;
   h->dirty_devs.fill(false);
 #ifdef HAVE_LIBAIO
+/** comment by hy 2020-08-11
+ * # 默认是关闭的
+ */
   if (!cct->_conf->bluefs_sync_write) {
     list<aio_t> completed_ios;
     _claim_completed_aios(h, &completed_ios);
@@ -3095,6 +3098,10 @@ void BlueFS::flush_bdev(std::array<bool, MAX_BDEV>& dirty_bdevs)
   // NOTE: this is safe to call without a lock.
   dout(20) << __func__ << dendl;
   for (unsigned i = 0; i < MAX_BDEV; i++) {
+/** comment by hy 2020-08-11
+ * # 这里的flush 是不是可以优化为非data
+     因为 data 使用了 libaio
+ */
     if (dirty_bdevs[i])
       bdev[i]->flush();
   }

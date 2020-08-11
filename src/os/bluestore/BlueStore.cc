@@ -12261,6 +12261,8 @@ void BlueStore::_kv_sync_thread()
  * # 刷数据到磁盘上
      KernelDevice::flush
      这里是最多的 0.004148904 = 240 IPOS
+     我认为已经使用了libaio
+     而不是posix aio所以这个flush就不必要了
  */
         begin_flush = mono_clock::now();
 	bdev->flush();
@@ -12438,7 +12440,7 @@ void BlueStore::_kv_sync_thread()
       {
 	auto finish = mono_clock::now();
 	ceph::timespan dur_flush = end_flush - begin_flush;
-	ceph::timespan dur_kv = end_kv - begin_flush;
+	ceph::timespan dur_kv = end_kv - begin_kv;
 	ceph::timespan dur = finish - start;
 	dout(20) << __func__ << " committed " << committing_size
 	  << " cleaned " << deferred_size

@@ -1023,6 +1023,7 @@ Usage:
   ceph orch apply -i <yaml spec>
   ceph orch apply <service_type> <placement> [--unmanaged]
         """
+        # --unmanaged 表示禁用自动monitor
         if inbuf:
             if service_type or placement or unmanaged:
                 raise OrchestratorValidationError(usage)
@@ -1030,6 +1031,7 @@ Usage:
             specs: List[GenericSpec] = [json_to_generic_spec(s) for s in content]
 
         else:
+            # 取得 主机标签和 IP或者网段
             placmentspec = PlacementSpec.from_string(placement)
             if not service_type:
                 raise OrchestratorValidationError(f'Error: Empty service_type\n{usage}')

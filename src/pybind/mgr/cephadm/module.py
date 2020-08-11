@@ -392,6 +392,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
 
     def _kick_serve_loop(self):
         self.log.debug('_kick_serve_loop')
+        # 调用者调用 sleep 由该方法唤醒
         self.event.set()
 
     def _check_host(self, host):
@@ -481,8 +482,10 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
 
                 # refresh daemons
                 self.log.debug('refreshing hosts and daemons')
+                # 刷新服务和对应的主机状态
                 self._refresh_hosts_and_daemons()
 
+                # 选择服务 以及对应服务中的host
                 self._check_for_strays()
 
                 self._update_paused_health()
@@ -490,13 +493,16 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
                 if not self.paused:
                     self.rm_util._remove_osds_bg()
 
+                    # Migrations
                     self.migration.migrate()
                     if self.migration.is_migration_ongoing():
                         continue
 
+                    # 应用服务 从spec_store 取数据
                     if self._apply_all_services():
                         continue  # did something, refresh
 
+                    # cache 里面的 daemons
                     self._check_daemons()
 
                     if self.upgrade.continue_upgrade():
@@ -1009,6 +1015,8 @@ you may want to run:
 
         :env_vars: in format -> [KEY=VALUE, ..]
         """
+        # 添加密码免检命令
+        #ssh-copy-id -f -i /etc/ceph/ceph.pub root@node2
         with self._remote_connection(host, addr) as tpl:
             conn, connr = tpl
             assert image or entity
@@ -1225,6 +1233,7 @@ you may want to run:
                 if r:
                     bad_hosts.append(r)
 
+        # 刷新服务状态
         refresh(self.cache.get_hosts())
 
         health_changed = False
@@ -1862,6 +1871,7 @@ you may want to run:
             return False
         self.log.debug('Applying service %s spec' % service_name)
 
+        # 配置函数
         config_func = self._config_fn(daemon_type)
 
         if daemon_type == 'osd':
@@ -2138,7 +2148,9 @@ you may want to run:
 
         self.log.info('Saving service %s spec with placement %s' % (
             spec.service_name(), spec.placement.pretty_str()))
+        # 这里放数据
         self.spec_store.save(spec)
+        # 唤醒对应的线程等待
         self._kick_serve_loop()
         return "Scheduled %s update..." % spec.service_name()
 
