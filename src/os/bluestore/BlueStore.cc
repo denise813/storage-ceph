@@ -12261,11 +12261,13 @@ void BlueStore::_kv_sync_thread()
  * # 刷数据到磁盘上
      KernelDevice::flush
      这里是最多的 0.004148904 = 240 IPOS
-     我认为已经使用了libaio
+     我认为已经使用了libaio,其他的情况下还是因为是写在缓冲中还是有必要的
      而不是posix aio所以这个flush就不必要了
  */
         begin_flush = mono_clock::now();
-	bdev->flush();
+/* modify begin by hy 2020-04-24 因为使用的是libaio 所以认为数据盘的下盘不需要再同步下盘了 */
+        //bdev->flush();
+/* modify end by hy 2020-04-24 */
         end_flush = mono_clock::now();
 
 	// if we flush then deferred done are now deferred stable

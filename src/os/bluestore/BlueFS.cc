@@ -3099,11 +3099,13 @@ void BlueFS::flush_bdev(std::array<bool, MAX_BDEV>& dirty_bdevs)
   dout(20) << __func__ << dendl;
   for (unsigned i = 0; i < MAX_BDEV; i++) {
 /** comment by hy 2020-08-11
- * # 这里的flush 是不是可以优化为非data
+ * # 这里的flush 是不是可以优化为非data 但是注意只针对于 libaio
      因为 data 使用了 libaio
  */
-    if (dirty_bdevs[i])
+/* modify begin by hy 2020-08-11 BDEV_SLOW 表示机械盘,因为已经使用了 libaio 它是直写模式 */ 
+    if (dirty_bdevs[i] && i != BDEV_SLOW)
       bdev[i]->flush();
+/* modify end by hy 2020-08-11 */
   }
 }
 
@@ -3112,6 +3114,14 @@ void BlueFS::flush_bdev()
   // NOTE: this is safe to call without a lock.
   dout(20) << __func__ << dendl;
   for (auto p : bdev) {
+/** comment by hy 2020-08-11
+ * 这里的flush 是不是可以优化为非data,但是注意只针对于 libaio
+ */
+/* modify begin by hy 2020-08-11 BDEV_SLOW 表示机械盘,因为已经使用了 libaio 它是直写模式 */
+    if (p == bdev[BDEV_SLOW])
+      continue;
+/* modify end by hy 2020-08-11 */
+
     if (p)
       p->flush();
   }

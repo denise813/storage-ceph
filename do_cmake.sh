@@ -5,16 +5,7 @@ git submodule update --init --recursive
 
 PWD=$(pwd)
 BUILD_DIR=${PWD}/build
-BUILD_INSTALL=${BUILD_DIR}/ceph_install
-
-# rpm 定义的变量在 /usr/lib/rpm/macros 可以查看
-_prefix=${BUILD_INSTALL}/usr
-_exec_prefix=${_prefix}
-_libdir=lib64
-_libexecdir=lib
-_localstatedir=${BUILD_INSTALL}/var
-_sysconfdir=${BUILD_INSTALL}/etc
-_includedir=include
+rm -rf ${BUILD_DIR}
 
 : ${CEPH_GIT_DIR:=..}
 
@@ -71,37 +62,16 @@ else
     CMAKE=cmake
 fi
 #${CMAKE} $ARGS "$@" $CEPH_GIT_DIR || exit 1
-${CMAKE} -DCMAKE_BUILD_TYPE=Debug -DWITH_TESTS=OFF \
-        -DWITH_MGR_DASHBOARD_FRONTEND=OFF \
-	-DCMAKE_INSTALL_PREFIX=${_prefix} \
-	-DCMAKE_INSTALL_LIBDIR=${_libdir} \
-	-DCMAKE_INSTALL_LIBEXECDIR=${_libexecdir} \
-	-DCMAKE_INSTALL_LOCALSTATEDIR=${_localstatedir} \
-	-DCMAKE_INSTALL_SYSCONFDIR=${_sysconfdir} \
-        -DCMAKE_INSTALL_INCLUDEDIR=${_includedir} \
-	-DWITH_MANPAGE=OFF \
-	-DWITH_PYTHON3=3.6 \
-	-DWITH_MGR_DASHBOARD_FRONTEND=OFF \
-	-DWITH_TESTS=OFF \
-	-DWITH_LEVELDB=OFF \
-	-DWITH_XFS=OFF \
-	-DWITH_LIBCEPHFS=OFF \
-	-DWITH_CEPHFS=OFF \
-	-DWITH_CEPHFS_JAVA=OFF \
-	-DWITH_SELINUX=OFF \
-	-DWITH_LTTNG=ON \
-	-DWITH_BABELTRACE=ON \
-	-DWITH_OCF=OFF \
-	-DWITH_BOOST_CONTEXT=ON \
-	-DWITH_CEPHFS_SHELL=OFF \
-	-DWITH_LIBRADOSSTRIPER=ON \
-	-DWITH_RADOSGW_AMQP_ENDPOINT=OFF \
-	-DWITH_RADOSGW_KAFKA_ENDPOINT=OFF \
-	-DBOOST_J=$CEPH_SMP_NCPUS \
-	-DWITH_GRAFANA=OFF \
-	-DALLOCATOR="libc" \
-	-DCMAKE_C_FLAGS="-W -Wall -Wfatal-errors -O0 -g3 -gdwarf-4" \
-	$ARGS "$@" $CEPH_GIT_DIR || exit 1
+${CMAKE} -DCMAKE_INSTALL_PREFIX=/usr \
+	-DCMAKE_INSTALL_LIBDIR=/usr/lib64 \
+	-DCMAKE_INSTALL_LIBEXECDIR=/usr/lib \
+	-DCMAKE_INSTALL_LOCALSTATEDIR=/var \
+	-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+	-DCMAKE_INSTALL_MANDIR=/usr/share/man \
+	-DCMAKE_INSTALL_DOCDIR=/usr/share/doc \
+	-DCMAKE_INSTALL_INCLUDEDIR=/usr/include \
+	-DCMAKE_BUILD_TYPE=Debug -DWITH_TESTS=OFF \
+	-DWITH_MGR_DASHBOARD_FRONTEND=OFF $ARGS "$@" $CEPH_GIT_DIR || exit 1
 set +x
 
 # minimal config to find plugins
@@ -123,4 +93,10 @@ if a performance sensitive build is required.
 ****
 EOF
 fi
+
+# 执行 build
+poshd ${BUILD_DIR}
+make -j2
+make install
+popd
 

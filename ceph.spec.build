@@ -81,6 +81,16 @@
 %endif
 %endif
 
+%bcond_with amqp_endpoint
+%bcond_with kafka_endpoint
+%bcond_with selinux
+%global weak_deps 0
+%bcond_with cephfs_java
+%bcond_with cephfs_shell
+%bcond_with make_check
+%bcond_with cmake_verbose_logging
+%bcond_with seastar
+
 %{!?_udevrulesdir: %global _udevrulesdir /lib/udev/rules.d}
 %{!?tmpfiles_create: %global tmpfiles_create systemd-tmpfiles --create}
 %{!?python3_pkgversion: %global python3_pkgversion 3}
@@ -92,15 +102,16 @@
 # unify libexec for all targets
 %global _libexecdir %{_exec_prefix}/lib
 
-# disable dwz which compresses the debuginfo
-%global _find_debuginfo_dwz_opts %{nil}
 
+# disable dwz which compresses the debuginfo
+#%global _find_debuginfo_dwz_opts %{nil}
+#%global debug_package %{nil}
 #################################################################################
 # main package definition
 #################################################################################
 Name:		ceph
-Version:	@PROJECT_VERSION@
-Release:	@RPM_RELEASE@%{?dist}
+Version:	15.2.4
+Release:	0%{?dist}
 %if 0%{?fedora} || 0%{?rhel}
 Epoch:		2
 %endif
@@ -115,8 +126,7 @@ License:	LGPL-2.1 and LGPL-3.0 and CC-BY-SA-3.0 and GPL-2.0 and BSL-1.0 and BSD-
 Group:		System/Filesystems
 %endif
 URL:		http://ceph.com/
-Source0:	%{?_remote_tarball_prefix}@TARBALL_BASENAME@.tar.bz2
-Source1:	@CEPH_SOURCE@
+Source0:	%{?_remote_tarball_prefix}ceph-15.2.4-3-g4a43167a41.tar.bz2
 %if 0%{?suse_version}
 # _insert_obs_source_lines_here
 ExclusiveArch:  x86_64 aarch64 ppc64le s390x
@@ -125,7 +135,7 @@ ExclusiveArch:  x86_64 aarch64 ppc64le s390x
 # dependencies that apply across all distro families
 #################################################################################
 Requires:       ceph-osd = %{_epoch_prefix}%{version}-%{release}
-Requires:       ceph-mds = %{_epoch_prefix}%{version}-%{release}
+#Requires:       ceph-mds = %{_epoch_prefix}%{version}-%{release}
 Requires:       ceph-mgr = %{_epoch_prefix}%{version}-%{release}
 Requires:       ceph-mon = %{_epoch_prefix}%{version}-%{release}
 Requires(post):	binutils
@@ -385,10 +395,10 @@ Provides:      ceph-test:/usr/bin/ceph-kvstore-tool
 Requires:      ceph-common = %{_epoch_prefix}%{version}-%{release}
 Requires:      librbd1 = %{_epoch_prefix}%{version}-%{release}
 Requires:      librados2 = %{_epoch_prefix}%{version}-%{release}
-Requires:      libcephfs2 = %{_epoch_prefix}%{version}-%{release}
-Requires:      librgw2 = %{_epoch_prefix}%{version}-%{release}
+#Requires:      libcephfs2 = %{_epoch_prefix}%{version}-%{release}
+#Requires:      librgw2 = %{_epoch_prefix}%{version}-%{release}
 %if 0%{with selinux}
-Requires:      ceph-selinux = %{_epoch_prefix}%{version}-%{release}
+#Requires:      ceph-selinux = %{_epoch_prefix}%{version}-%{release}
 %endif
 Requires:      cryptsetup
 Requires:      e2fsprogs
@@ -435,11 +445,11 @@ Group:		System/Filesystems
 %endif
 Requires:	librbd1 = %{_epoch_prefix}%{version}-%{release}
 Requires:	librados2 = %{_epoch_prefix}%{version}-%{release}
-Requires:	libcephfs2 = %{_epoch_prefix}%{version}-%{release}
+#Requires:	libcephfs2 = %{_epoch_prefix}%{version}-%{release}
 Requires:	python%{python3_pkgversion}-rados = %{_epoch_prefix}%{version}-%{release}
 Requires:	python%{python3_pkgversion}-rbd = %{_epoch_prefix}%{version}-%{release}
-Requires:	python%{python3_pkgversion}-cephfs = %{_epoch_prefix}%{version}-%{release}
-Requires:	python%{python3_pkgversion}-rgw = %{_epoch_prefix}%{version}-%{release}
+#Requires:	python%{python3_pkgversion}-cephfs = %{_epoch_prefix}%{version}-%{release}
+#Requires:	python%{python3_pkgversion}-rgw = %{_epoch_prefix}%{version}-%{release}
 Requires:	python%{python3_pkgversion}-ceph-argparse = %{_epoch_prefix}%{version}-%{release}
 Requires:	python%{python3_pkgversion}-ceph-common = %{_epoch_prefix}%{version}-%{release}
 %if 0%{?fedora} || 0%{?rhel}
@@ -498,9 +508,9 @@ Requires:       python%{python3_pkgversion}-six
 %if 0%{?weak_deps}
 Recommends:	ceph-mgr-dashboard = %{_epoch_prefix}%{version}-%{release}
 Recommends:	ceph-mgr-diskprediction-local = %{_epoch_prefix}%{version}-%{release}
-Recommends:	ceph-mgr-diskprediction-cloud = %{_epoch_prefix}%{version}-%{release}
-Recommends:	ceph-mgr-k8sevents = %{_epoch_prefix}%{version}-%{release}
-Recommends:	ceph-mgr-cephadm = %{_epoch_prefix}%{version}-%{release}
+#Recommends:	ceph-mgr-diskprediction-cloud = %{_epoch_prefix}%{version}-%{release}
+#Recommends:	ceph-mgr-k8sevents = %{_epoch_prefix}%{version}-%{release}
+#Recommends:	ceph-mgr-cephadm = %{_epoch_prefix}%{version}-%{release}
 Recommends:	python%{python3_pkgversion}-influxdb
 %endif
 %description mgr
@@ -516,8 +526,8 @@ BuildArch:      noarch
 Group:          System/Filesystems
 %endif
 Requires:       ceph-mgr = %{_epoch_prefix}%{version}-%{release}
-Requires:       ceph-grafana-dashboards = %{_epoch_prefix}%{version}-%{release}
-Requires:       ceph-prometheus-alerts = %{_epoch_prefix}%{version}-%{release}
+#Requires:       ceph-grafana-dashboards = %{_epoch_prefix}%{version}-%{release}
+#Requires:       ceph-prometheus-alerts = %{_epoch_prefix}%{version}-%{release}
 %if 0%{?fedora} || 0%{?rhel}
 Requires:       python%{python3_pkgversion}-cherrypy
 Requires:       python%{python3_pkgversion}-jwt
@@ -605,7 +615,7 @@ Requires:       python%{python3_pkgversion}-PyYAML
 Requires:       python%{python3_pkgversion}-Werkzeug
 %endif
 %if 0%{?weak_deps}
-Recommends:	ceph-mgr-rook = %{_epoch_prefix}%{version}-%{release}
+#Recommends:	ceph-mgr-rook = %{_epoch_prefix}%{version}-%{release}
 %endif
 %description mgr-modules-core
 ceph-mgr-modules-core provides a set of modules which are always
@@ -715,7 +725,7 @@ Group:		System/Filesystems
 %endif
 Requires:	ceph-base = %{_epoch_prefix}%{version}-%{release}
 %if 0%{with selinux}
-Requires:	ceph-selinux = %{_epoch_prefix}%{version}-%{release}
+#Requires:	ceph-selinux = %{_epoch_prefix}%{version}-%{release}
 %endif
 Requires:	librados2 = %{_epoch_prefix}%{version}-%{release}
 Requires:	librgw2 = %{_epoch_prefix}%{version}-%{release}
@@ -1120,14 +1130,13 @@ This package provides Ceph’s default alerts for Prometheus.
 #################################################################################
 # common
 #################################################################################
-%prep
+#%prep
 # 解压包
-%autosetup -p1 -n @TARBALL_BASENAME@
+#%autosetup -p1 -n ceph-15.2.4-3-g4a43167a41
 
 %build
 # LTO can be enabled as soon as the following GCC bug is fixed:
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=48200
-codes=@CEPH_SOURCE@
 %define _lto_cflags %{nil}
 
 %if 0%{?rhel} == 7
@@ -1175,9 +1184,38 @@ export CEPH_SMP_NCPUS
 export CEPH_MFLAGS_JOBS="-j$CEPH_SMP_NCPUS"
 
 env | sort
-cd $codes
-mkdir build
+
+cd /root/storage-ceph
+if [ !-x build ] ; then 
+    mkdir build
+fi
 cd build
+#echo "++++++++++++++++++++++++++++"
+#echo "prefix = %{_prefix}"
+#echo "libdir = %{_libdir}"
+#echo "libexecdir = %{_libexecdir}"
+#echo "localstatedir = %{_localstatedir}"
+#echo "mandir = %{_mandir}"
+#echo "docdir = %{_docdir}"
+#echo "includedir = %{_includedir}"
+echo "!ceph_test_package %{without ceph_test_package}"
+echo "cephfs_java %{with cephfs_java}"
+echo "selinux %{with selinux}"
+echo "lttng %{with lttng}"
+echo "osf %{with ocf}"
+echo "cephfs_shell %{with cephfs_shell}"
+echo "libradosstripe %{with libradosstripe}"
+echo "amqp_endpoint %{with amqp_endpoint}"
+echo "kafka_endpoint %{with kafka_endpoint}"
+echo "cmake_verbose_logging %{with cmake_verbose_logging}"
+echo "++++++++++++++++++++++++++++"
+# 添加修订参数
+%define _binaries_in_noarch_packages_terminate_build 0
+%bcond_without ceph_test_package 1
+%bcond_with cephfs_java 1
+%bcond_with selinux 1
+%bcond_with cephfs_shell 1
+
 %if 0%{?rhel} == 7
 CMAKE=cmake3
 %else
@@ -1256,14 +1294,14 @@ make "$CEPH_MFLAGS_JOBS"
 %if 0%{with make_check}
 %check
 # run in-tree unittests
-cd $codes
+cd /root/storage-ceph
 cd build
 ctest "$CEPH_MFLAGS_JOBS"
 %endif
 
 
 %install
-cd $codes
+cd /root/storage-ceph
 pushd build
 make DESTDIR=%{buildroot} install
 # we have dropped sysvinit bits
@@ -1387,23 +1425,23 @@ rm -rf %{buildroot}
 %dir %{python3_sitelib}/ceph_volume
 %{python3_sitelib}/ceph_volume/*
 %{python3_sitelib}/ceph_volume-*
-%{_mandir}/man8/ceph-deploy.8*
-%{_mandir}/man8/ceph-create-keys.8*
-%{_mandir}/man8/ceph-run.8*
-%{_mandir}/man8/crushtool.8*
-%{_mandir}/man8/osdmaptool.8*
-%{_mandir}/man8/monmaptool.8*
-%{_mandir}/man8/ceph-kvstore-tool.8*
+#%{_mandir}/man8/ceph-deploy.8*
+#%{_mandir}/man8/ceph-create-keys.8*
+#%{_mandir}/man8/ceph-run.8*
+#%{_mandir}/man8/crushtool.8*
+#%{_mandir}/man8/osdmaptool.8*
+#%{_mandir}/man8/monmaptool.8*
+#%{_mandir}/man8/ceph-kvstore-tool.8*
 #set up placeholder directories
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/crash
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/crash/posted
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/tmp
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-osd
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-mds
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-rgw
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-mgr
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-rbd
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/bootstrap-rbd-mirror
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/crash
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/crash/posted
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/tmp
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-osd
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-mds
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-rgw
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-mgr
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-rbd
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/bootstrap-rbd-mirror
 
 %post base
 /sbin/ldconfig
@@ -1447,23 +1485,15 @@ if [ $1 -ge 1 ] ; then
 fi
 
 %pre -n cephadm
-getent group cephadm >/dev/null || groupadd -r cephadm
-getent passwd cephadm >/dev/null || useradd -r -g cephadm -s /bin/bash -c "cephadm user for mgr/cephadm" -d %{_sharedstatedir}/cephadm cephadm
 exit 0
-
-%if ! 0%{?suse_version}
-%postun -n cephadm
-userdel -r cephadm || true
-exit 0
-%endif
-
+# 部署工具
 %files -n cephadm
 %{_sbindir}/cephadm
-%{_mandir}/man8/cephadm.8*
-%{_sysconfdir}/sudoers.d/cephadm
-%attr(0700,cephadm,cephadm) %dir %{_sharedstatedir}/cephadm
-%attr(0700,cephadm,cephadm) %dir %{_sharedstatedir}/cephadm/.ssh
-%attr(0600,cephadm,cephadm) %{_sharedstatedir}/cephadm/.ssh/authorized_keys
+#%{_mandir}/man8/cephadm.8*
+#%{_sysconfdir}/sudoers.d/cephadm
+%attr(0700,root,root) %dir %{_sharedstatedir}/cephadm
+%attr(0700,root,root) %dir %{_sharedstatedir}/cephadm/.ssh
+%attr(0600,root,root) %{_sharedstatedir}/cephadm/.ssh/authorized_keys
 
 %files common
 %dir %{_docdir}/ceph
@@ -1475,9 +1505,9 @@ exit 0
 %{_bindir}/ceph-dencoder
 %{_bindir}/ceph-rbdnamer
 %{_bindir}/ceph-syn
-%{_bindir}/cephfs-data-scan
-%{_bindir}/cephfs-journal-tool
-%{_bindir}/cephfs-table-tool
+#%{_bindir}/cephfs-data-scan
+#%{_bindir}/cephfs-journal-tool
+#%{_bindir}/cephfs-table-tool
 %{_bindir}/rados
 %{_bindir}/radosgw-admin
 %{_bindir}/rbd
@@ -1493,23 +1523,23 @@ exit 0
 %endif
 %{_bindir}/ceph-post-file
 %{_tmpfilesdir}/ceph-common.conf
-%{_mandir}/man8/ceph-authtool.8*
-%{_mandir}/man8/ceph-conf.8*
-%{_mandir}/man8/ceph-dencoder.8*
-%{_mandir}/man8/ceph-diff-sorted.8*
-%{_mandir}/man8/ceph-rbdnamer.8*
-%{_mandir}/man8/ceph-syn.8*
-%{_mandir}/man8/ceph-post-file.8*
-%{_mandir}/man8/ceph.8*
-%{_mandir}/man8/mount.ceph.8*
-%{_mandir}/man8/rados.8*
-%{_mandir}/man8/radosgw-admin.8*
-%{_mandir}/man8/rbd.8*
-%{_mandir}/man8/rbdmap.8*
-%{_mandir}/man8/rbd-replay.8*
-%{_mandir}/man8/rbd-replay-many.8*
-%{_mandir}/man8/rbd-replay-prep.8*
-%{_mandir}/man8/rgw-orphan-list.8*
+#%{_mandir}/man8/ceph-authtool.8*
+#%{_mandir}/man8/ceph-conf.8*
+#%{_mandir}/man8/ceph-dencoder.8*
+#%{_mandir}/man8/ceph-diff-sorted.8*
+#%{_mandir}/man8/ceph-rbdnamer.8*
+#%{_mandir}/man8/ceph-syn.8*
+#%{_mandir}/man8/ceph-post-file.8*
+#%{_mandir}/man8/ceph.8*
+#%{_mandir}/man8/mount.ceph.8*
+#%{_mandir}/man8/rados.8*
+#%{_mandir}/man8/radosgw-admin.8*
+#%{_mandir}/man8/rbd.8*
+#%{_mandir}/man8/rbdmap.8*
+#%{_mandir}/man8/rbd-replay.8*
+#%{_mandir}/man8/rbd-replay-many.8*
+#%{_mandir}/man8/rbd-replay-prep.8*
+#%{_mandir}/man8/rgw-orphan-list.8*
 %dir %{_datadir}/ceph/
 %{_datadir}/ceph/known_hosts_drop.ceph.com
 %{_datadir}/ceph/id_rsa_drop.ceph.com
@@ -1523,33 +1553,10 @@ exit 0
 %{_unitdir}/rbdmap.service
 %dir %{_udevrulesdir}
 %{_udevrulesdir}/50-rbd.rules
-%attr(3770,ceph,ceph) %dir %{_localstatedir}/log/ceph/
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/
+%attr(3770,root,root) %dir %{_localstatedir}/log/ceph/
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/
 
 %pre common
-CEPH_GROUP_ID=167
-CEPH_USER_ID=167
-%if 0%{?rhel} || 0%{?fedora}
-/usr/sbin/groupadd ceph -g $CEPH_GROUP_ID -o -r 2>/dev/null || :
-/usr/sbin/useradd ceph -u $CEPH_USER_ID -o -r -g ceph -s /sbin/nologin -c "Ceph daemons" -d %{_localstatedir}/lib/ceph 2>/dev/null || :
-%endif
-%if 0%{?suse_version}
-if ! getent group ceph >/dev/null ; then
-    CEPH_GROUP_ID_OPTION=""
-    getent group $CEPH_GROUP_ID >/dev/null || CEPH_GROUP_ID_OPTION="-g $CEPH_GROUP_ID"
-    groupadd ceph $CEPH_GROUP_ID_OPTION -r 2>/dev/null || :
-fi
-if ! getent passwd ceph >/dev/null ; then
-    CEPH_USER_ID_OPTION=""
-    getent passwd $CEPH_USER_ID >/dev/null || CEPH_USER_ID_OPTION="-u $CEPH_USER_ID"
-    useradd ceph $CEPH_USER_ID_OPTION -r -g ceph -s /sbin/nologin 2>/dev/null || :
-fi
-usermod -c "Ceph storage service" \
-        -d %{_localstatedir}/lib/ceph \
-        -g ceph \
-        -s /sbin/nologin \
-        ceph
-%endif
 exit 0
 
 %post common
@@ -1564,10 +1571,10 @@ fi
 
 %files mds
 %{_bindir}/ceph-mds
-%{_mandir}/man8/ceph-mds.8*
+#%{_mandir}/man8/ceph-mds.8*
 %{_unitdir}/ceph-mds@.service
 %{_unitdir}/ceph-mds.target
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/mds
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/mds
 
 %post mds
 %if 0%{?suse_version}
@@ -1620,7 +1627,7 @@ fi
 %endif
 %{_unitdir}/ceph-mgr@.service
 %{_unitdir}/ceph-mgr.target
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/mgr
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/mgr
 
 %post mgr
 %if 0%{?suse_version}
@@ -1754,6 +1761,7 @@ if [ $1 -eq 1 ] ; then
     /usr/bin/systemctl try-restart ceph-mgr.target >/dev/null 2>&1 || :
 fi
 
+# 运维工具
 %files mgr-cephadm
 %{_datadir}/ceph/mgr/cephadm
 
@@ -1770,10 +1778,10 @@ fi
 %files mon
 %{_bindir}/ceph-mon
 %{_bindir}/ceph-monstore-tool
-%{_mandir}/man8/ceph-mon.8*
+#%{_mandir}/man8/ceph-mon.8*
 %{_unitdir}/ceph-mon@.service
 %{_unitdir}/ceph-mon.target
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/mon
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/mon
 
 %post mon
 %if 0%{?suse_version}
@@ -1818,18 +1826,18 @@ fi
 
 %files fuse
 %{_bindir}/ceph-fuse
-%{_mandir}/man8/ceph-fuse.8*
+#%{_mandir}/man8/ceph-fuse.8*
 %{_sbindir}/mount.fuse.ceph
 %{_unitdir}/ceph-fuse@.service
 %{_unitdir}/ceph-fuse.target
 
 %files -n rbd-fuse
 %{_bindir}/rbd-fuse
-%{_mandir}/man8/rbd-fuse.8*
+#%{_mandir}/man8/rbd-fuse.8*
 
 %files -n rbd-mirror
 %{_bindir}/rbd-mirror
-%{_mandir}/man8/rbd-mirror.8*
+#%{_mandir}/man8/rbd-mirror.8*
 %{_unitdir}/ceph-rbd-mirror@.service
 %{_unitdir}/ceph-rbd-mirror.target
 
@@ -1876,7 +1884,7 @@ fi
 
 %files immutable-object-cache
 %{_bindir}/ceph-immutable-object-cache
-%{_mandir}/man8/ceph-immutable-object-cache.8*
+#%{_mandir}/man8/ceph-immutable-object-cache.8*
 %{_unitdir}/ceph-immutable-object-cache@.service
 %{_unitdir}/ceph-immutable-object-cache.target
 
@@ -1924,7 +1932,7 @@ fi
 
 %files -n rbd-nbd
 %{_bindir}/rbd-nbd
-%{_mandir}/man8/rbd-nbd.8*
+#%{_mandir}/man8/rbd-nbd.8*
 
 %files radosgw
 %{_bindir}/ceph-diff-sorted
@@ -1934,7 +1942,7 @@ fi
 %{_bindir}/radosgw-object-expirer
 %{_bindir}/rgw-orphan-list
 %{_libdir}/libradosgw.so*
-%{_mandir}/man8/radosgw.8*
+#%{_mandir}/man8/radosgw.8*
 %dir %{_localstatedir}/lib/ceph/radosgw
 %{_unitdir}/ceph-radosgw@.service
 %{_unitdir}/ceph-radosgw.target
@@ -1991,15 +1999,15 @@ fi
 %{_libexecdir}/ceph/ceph-osd-prestart.sh
 %{_sbindir}/ceph-volume
 %{_sbindir}/ceph-volume-systemd
-%{_mandir}/man8/ceph-clsinfo.8*
-%{_mandir}/man8/ceph-osd.8*
-%{_mandir}/man8/ceph-bluestore-tool.8*
-%{_mandir}/man8/ceph-volume.8*
-%{_mandir}/man8/ceph-volume-systemd.8*
+#%{_mandir}/man8/ceph-clsinfo.8*
+#%{_mandir}/man8/ceph-osd.8*
+#%{_mandir}/man8/ceph-bluestore-tool.8*
+#%{_mandir}/man8/ceph-volume.8*
+#%{_mandir}/man8/ceph-volume-systemd.8*
 %{_unitdir}/ceph-osd@.service
 %{_unitdir}/ceph-osd.target
 %{_unitdir}/ceph-volume@.service
-%attr(750,ceph,ceph) %dir %{_localstatedir}/lib/ceph/osd
+%attr(750,root,root) %dir %{_localstatedir}/lib/ceph/osd
 %config(noreplace) %{_sysctldir}/90-ceph-osd.conf
 %{_sysconfdir}/sudoers.d/ceph-osd-smartctl
 
@@ -2086,7 +2094,7 @@ fi
 %{_libdir}/librados_tp.so
 %endif
 %{_bindir}/librados-config
-%{_mandir}/man8/librados-config.8*
+#%{_mandir}/man8/librados-config.8*
 
 %files -n libradospp-devel
 %dir %{_includedir}/rados
@@ -2230,7 +2238,7 @@ fi
 %{_bindir}/ceph-coverage
 %{_bindir}/ceph-debugpack
 %{_bindir}/ceph-dedup-tool
-%{_mandir}/man8/ceph-debugpack.8*
+#%{_mandir}/man8/ceph-debugpack.8*
 %dir %{_libdir}/ceph
 %{_libdir}/ceph/ceph-monstore-update-crush.sh
 %endif
@@ -2259,7 +2267,7 @@ fi
 %files selinux
 %attr(0600,root,root) %{_datadir}/selinux/packages/ceph.pp
 %{_datadir}/selinux/devel/include/contrib/ceph.if
-%{_mandir}/man8/ceph_selinux.8*
+#%{_mandir}/man8/ceph_selinux.8*
 
 %post selinux
 # backup file_contexts before update
@@ -2348,8 +2356,8 @@ exit 0
 %endif
 %attr(0755,root,root) %dir %{_sysconfdir}/grafana/dashboards/ceph-dashboard
 %config %{_sysconfdir}/grafana/dashboards/ceph-dashboard/*
-%doc monitoring/grafana/dashboards/README
-%doc monitoring/grafana/README.md
+#%doc monitoring/grafana/dashboards/README
+#%doc monitoring/grafana/README.md
 
 %files prometheus-alerts
 %if 0%{?suse_version}
