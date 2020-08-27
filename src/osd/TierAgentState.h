@@ -32,6 +32,9 @@ struct TierAgentState {
   /// a few recent things we've seen that are clean
   list<hobject_t> recent_clean;
 
+/** comment by hy 2020-08-27
+ * # 下盘
+ */
   enum flush_mode_t {
     FLUSH_MODE_IDLE,   // nothing to flush
     FLUSH_MODE_LOW, // flush dirty objects with a low speed
@@ -49,6 +52,9 @@ struct TierAgentState {
     return get_flush_mode_name(flush_mode);
   }
 
+/** comment by hy 2020-08-27
+ * # 清理
+ */
   enum evict_mode_t {
     EVICT_MODE_IDLE,      // no need to evict anything
     EVICT_MODE_SOME,      // evict some things as we are near the target

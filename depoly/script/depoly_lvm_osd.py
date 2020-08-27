@@ -89,17 +89,18 @@ exec_cmd("lvdisplay")
 
 #exec_cmd("rm -rf /usr/lib64/ceph/")
 # 准备 osd磁盘
+i = 0
 for disk in ready_disks:
     exec_cmd("ceph-volume lvm prepare --bluestore "
         "--data ceph_vg_block_{hdd_name}/lv_{group_name}_{osd_id} "
         "--block.wal ceph_vg_db_{nvme_name}/lv_wal_{group_name}_{osd_id} "
         "--block.db ceph_vg_db_{nvme_name}/lv_db_{group_name}_{osd_id} "
-
-        "".format(
+        " ".format(
             hdd_name=disk['hdd'],
             group_name=disk['group'], 
             osd_id=disk['osd_id'],
             nvme_name=disk['nvme']) )
+    i = i + 1
     exec_cmd("sleep 1")
 
 # 激活 osd磁盘

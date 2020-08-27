@@ -2954,6 +2954,7 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     t.substr_of(bl, bloff, x_len);
 /** comment by hy 2020-06-25
  * # 设备写操作, bluefs_sync_write 默认为 false buffered 为 false
+     这里是写入缓存
  */
     if (cct->_conf->bluefs_sync_write) {
       bdev[p->bdev]->write(p->offset + x_off, t, buffered, h->write_hint);

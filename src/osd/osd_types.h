@@ -1278,6 +1278,9 @@ struct pg_pool_t {
   /// converts the acting/up vector to a set of pg shards
   void convert_to_pg_shards(const std::vector<int> &from, std::set<pg_shard_t>* to) const;
 
+/** comment by hy 2020-08-27
+ * # cache pool 的模式
+ */
   typedef enum {
     CACHEMODE_NONE = 0,                  ///< no caching
     CACHEMODE_WRITEBACK = 1,             ///< write to cache, flush later

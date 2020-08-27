@@ -98,7 +98,7 @@ EOF
 fi
 
 # 执行 build
-poshd ${BUILD_DIR}
+pushd ${BUILD_DIR}
 make -j2
 make install
 

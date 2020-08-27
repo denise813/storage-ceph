@@ -421,7 +421,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)
     monmap = os.path.join(path, 'activate.monmap')
 
-    system.chown(path)
+    # system.chown(path)
 
     base_command = [
         'ceph-osd',
@@ -446,13 +446,13 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
         base_command.extend(
             ['--bluestore-block-wal-path', wal]
         )
-        system.chown(wal)
+        # system.chown(wal)
 
     if db:
         base_command.extend(
             ['--bluestore-block-db-path', db]
         )
-        system.chown(db)
+        # system.chown(db)
 
     if get_osdspec_affinity():
         base_command.extend(['--osdspec-affinity', get_osdspec_affinity()])

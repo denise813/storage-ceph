@@ -1,78 +1,108 @@
 import os
-from depoly_tools import exec_cmd
-from depoly_tools import rpm_top_dir
-from depoly_tools import rpm_version
+from depoly_tools import remote_exec_cmd
+from depoly_tools import local_exec_cmd
 
-target=exec_cmd("hostname")
+target=remote_exec_cmd("hostname")
 hdds=('sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdh', 'sdi', 'sdj', 'sdk')
 nvmes=('nvme0n1', 'nvme1n1')
 
 devices={"hdds": hdds, 'nvmes':nvmes}
 cluster="ceph"
 
-bin_dir=rpm_top_dir
-'''exec_cmd("yum install -y {rpm_dir}/ceph-osd-{version} {rpm_dir}/ceph-common-{version} "
-    "{rpm_dir}/ceph-base-{version} "
-    "{rpm_dir}/librados2-{version} "
-    "{rpm_dir}/libradosstriper1-{version} "
-    "{rpm_dir}/librbd1-{version} "
-    "{rpm_dir}/python3-ceph-argparse-{version} "
-    "{rpm_dir}/python3-rados-{version} "
-    "{rpm_dir}/python3-rbd-{version}".format(version=rpm_version, rpm_dir=bin_dir) )
-'''
-
 # 清理磁盘 osd磁盘
 for i in range( len(devices['nvmes']) ):
- exec_cmd( "/usr/bin/dd if=/dev/zero of=/dev/{disk_name} bs=1M count=10 conv=fsync".format(
-     disk_name=devices['nvmes'][i]) )
+    remote_exec_cmd( "/usr/bin/dd if=/dev/zero of=/dev/{disk_name} bs=1M count=10 conv=fsync".format(
+        disk_name=devices['nvmes'][i]) )
 
 for i in range( len(devices['hdds']) ):
-    exec_cmd( "/usr/bin/dd if=/dev/zero of=/dev/{disk_name} bs=1M count=10 conv=fsync".format(
+    remote_exec_cmd( "/usr/bin/dd if=/dev/zero of=/dev/{disk_name} bs=1M count=10 conv=fsync".format(
         disk_name=devices['hdds'][i]) )
 
 # 进行分区
 for i in range( len(devices['nvmes']) ):
-    exec_cmd( "parted /dev/{disk_name} --script mktable gpt".format(disk_name=devices['nvmes'][i]) )
-    exec_cmd( "sleep 1")
+    remote_exec_cmd( "parted /dev/{disk_name} --script mktable gpt".format(disk_name=devices['nvmes'][i]) )
+    local_exec_cmd( "sleep 1")
 
+disk_id = 0
 ready_disks=[]
 for i in range( len(devices['nvmes']) ):
-    # 进行分区
-    internal = 200
+    # 进行db分区
+    db_internal = 200
+    wal_internal = 10
+    offt_start = 0
+    offt_end = 0
+    disk = {}
+    lv = 0
     for index in range(5):
-        offt_start = index * internal
-        offt_end = (index + 1) * internal
-        exec_cmd( "parted /dev/{disk_name} --script mkpart primary {start}G {end}G".format(
+        disk['data'] = "/dev/{disk_name}".format(disk_name=devices['hdds'][disk_id])
+        disk_id = disk_id + 1
+        lv = lv + 1
+        offt_start = offt_end;
+        offt_end = offt_start + wal_internal;
+        # 进行 wal 分区
+        print (lv)
+        remote_exec_cmd( "parted /dev/{disk_name} --script mkpart primary {start}G {end}G".format(
             disk_name=devices['nvmes'][i], start=offt_start, end=offt_end))
-    exec_cmd( "sleep 1")
+        disk['wal'] = "/dev/{disk_name}p{lv}".format(disk_name=devices['nvmes'][i], lv=lv)
+
+        # 进行 db 分区
+        lv = lv + 1
+        offt_start = offt_end;
+        offt_end = offt_start + db_internal;
+        print (lv)
+        remote_exec_cmd( "parted /dev/{disk_name} --script mkpart primary {start}G {end}G".format(
+            disk_name=devices['nvmes'][i], start=offt_start, end=offt_end))
+        disk['db'] = "/dev/{disk_name}p{lv}".format(disk_name=devices['nvmes'][i], lv=lv)
+        ready_disks.append(disk.copy())
+    local_exec_cmd( "sleep 1")
+    # 进程创建测试盘
+    offt_start = offt_end;
+    offt_end = offt_start + 300;
+    remote_exec_cmd( "parted /dev/{disk_name} --script mkpart primary {start}G {end}G".format(
+        disk_name=devices['nvmes'][i], start=offt_start, end=offt_end))
+    local_exec_cmd( "sleep 1")
 
 # 检查创建成功
-exec_cmd( "sleep 1")
-exec_cmd("parted -l")
+local_exec_cmd( "sleep 1")
+remote_exec_cmd("parted -l")
+
+for i in range( len(devices['hdds']) ):
+    print (i)
+    remote_exec_cmd("rm -rf /var/lib/ceph/osd/ceph-{osd_id}".format(osd_id=i) )
+    local_exec_cmd("sleep 1")
 
 # 准备 osd磁盘
+
 for i in range( len(devices['hdds']) ):
-    lv_index = (i % 5) + 1
-    disk_index = i % 2
-    exec_cmd("ceph-volume raw prepare --bluestore "
-        "--data /dev/{hdd_name} "
-        "--block.db /dev/{nvme_name}p{lv}".format(
-            hdd_name=devices['hdds'][i],
-            nvme_name=devices['nvmes'][disk_index],
-            lv=lv_index) )
-    exec_cmd("sleep 2")
+    print (i)
+    remote_exec_cmd("/bin/bash -c ulimit -n 32768;ceph-volume raw prepare --bluestore "
+        "--data {data_path} "
+        "--block.wal {wal_path} "
+        "--block.db {db_path} "
+        "--no-tmpfs "
+        "--osd_id {osd_id}".format(
+            data_path=ready_disks[i]['data'],
+            wal_path=ready_disks[i]['wal'],
+            db_path=ready_disks[i]['db'],
+            osd_id=i) )
+    local_exec_cmd("sleep 10")
 
 # 激活 osd磁盘
 # ceph-volume lvm activate -h
 for i in range( len(devices['hdds']) ):
-    lv_index = (i % 5) + 1
-    disk_index = i % 2
-    exec_cmd("ceph-volume raw activate "
-        "--device /dev/{hdd_name} "
-        "--block.db /dev/{nvme_name}p{lv} --no-tmpfs --no-systemd".format(
-            hdd_name=devices['hdds'][i],
-            nvme_name=devices['nvmes'][disk_index],
-            lv=lv_index) )
-    exec_cmd("sleep 2")
-    exec_cmd("systemctl start ceph-osd@{osd_id}".format(osd_id=i) )
-    exec_cmd("sleep 2")
+    print (i)
+    remote_exec_cmd("/bin/bash -c ulimit -n 32768;ceph-volume raw activate "
+        "--device {data_path} "
+        "--block.wal {wal_path} "
+        "--block.db {db_path} "
+        "--no-tmpfs --no-systemd".format(
+            data_path=ready_disks[i]['data'],
+            wal_path=ready_disks[i]['wal'],
+            db_path=ready_disks[i]['db']) )
+    local_exec_cmd("sleep 10")
+
+for i in range( len(devices['hdds']) ):
+    remote_exec_cmd("systemctl enable ceph-osd@{osd_id}".format(osd_id=i) )
+    local_exec_cmd("sleep 1")
+    remote_exec_cmd("systemctl start ceph-osd@{osd_id}".format(osd_id=i) )
+    local_exec_cmd("sleep 2")

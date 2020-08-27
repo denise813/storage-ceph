@@ -31,7 +31,9 @@ struct PGPool {
   epoch_t cached_epoch;
   int64_t id;
   string name;
-
+/** comment by hy 2020-08-27
+ * # 用来记录pool 信息
+ */
   pg_pool_t info;
   SnapContext snapc;   // the default pool snapc, ready to go.
 

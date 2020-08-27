@@ -589,6 +589,10 @@ void OSDService::agent_entry()
 	     << " agent_ops " << agent_ops
 	     << " flush_quota " << agent_flush_quota << dendl;
     agent_locker.unlock();
+/** comment by hy 2020-08-27
+ * # 缓存下盘和清理的过程
+     PrimaryLogPG::agent_work
+ */
     if (!pg->agent_work(max, agent_flush_quota)) {
       dout(10) << __func__ << " " << pg->pg_id
 	<< " no agent_work, delay for " << cct->_conf->osd_agent_delay_time

@@ -2372,7 +2372,8 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
 /** comment by hy 2020-04-08
- * # 处理缓存
+ * # 处理cache tire pool
+     如果是缓存层处理就返回
  */
   if (maybe_handle_cache(op,
 			 write_ordered,
@@ -2947,6 +2948,10 @@ PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_cache_detail(
     osd->logger->inc(l_osd_op_cache_hit);
     return cache_result_t::NOOP;
   }
+
+/** comment by hy 2020-08-27
+ * # 判断pg 是主
+ */
   if (!is_primary()) {
     dout(20) << __func__ << " cache miss; ask the primary" << dendl;
     osd->reply_op_error(op, -EAGAIN);
@@ -2967,20 +2972,36 @@ PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_cache_detail(
   OpRequestRef promote_op;
 
   switch (pool.info.cache_mode) {
+/** comment by hy 2020-08-27
+ * # 
+ */
   case pg_pool_t::CACHEMODE_WRITEBACK:
+/** comment by hy 2020-08-27
+ * # 状态是否已满,h或者处于清理模式
+ */
     if (agent_state &&
 	agent_state->evict_mode == TierAgentState::EVICT_MODE_FULL) {
       if (!op->may_write() && !op->may_cache() &&
 	  !write_ordered && !must_promote) {
 	dout(20) << __func__ << " cache pool full, proxying read" << dendl;
+/** comment by hy 2020-08-27
+ * # 读请求
+ */
 	do_proxy_read(op);
 	return cache_result_t::HANDLED_PROXY;
       }
+/** comment by hy 2020-08-27
+ * # 写请求直接将OP加入到
+ */
       dout(20) << __func__ << " cache pool full, waiting" << dendl;
       block_write_on_full_cache(missing_oid, op);
       return cache_result_t::BLOCKED_FULL;
     }
-
+/** comment by hy 2020-08-27
+ * # 未满的情况下判断是否必须进行promote
+     后端存储池读取一份数据到缓存中
+     完成之后再将当前请求加入OP队列
+ */
     if (must_promote || (!hit_set && !op->need_skip_promote())) {
       promote_object(obc, missing_oid, oloc, op, promote_obc);
       return cache_result_t::BLOCKED_PROMOTE;
@@ -3019,14 +3040,23 @@ PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_cache_detail(
     }
     ceph_abort_msg("unreachable");
     return cache_result_t::NOOP;
-
+/** comment by hy 2020-08-27
+ * # 所有的读请求，会先判断是否存在于cache tier存储池中，
+    如果存在就直接返回，否则会先调用Objecter从存储池读取一份数据
+ */
   case pg_pool_t::CACHEMODE_READONLY:
     // TODO: clean this case up
     if (!obc.get() && r == -ENOENT) {
       // we don't have the object and op's a read
+/** comment by hy 2020-08-27
+ * # 创建一个CopyOp对象，该对象保存了请求的参数
+ */
       promote_object(obc, missing_oid, oloc, op, promote_obc);
       return cache_result_t::BLOCKED_PROMOTE;
     }
+/** comment by hy 2020-08-27
+ * # 所有的写请求，都直接调用do_cache_redirect函数
+ */
     if (!r) { // it must be a write
       do_cache_redirect(op);
       return cache_result_t::HANDLED_REDIRECT;
@@ -3034,6 +3064,14 @@ PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_cache_detail(
     // crap, there was a failure of some kind
     return cache_result_t::NOOP;
 
+/** comment by hy 2020-08-27
+ * # 针对读写请求都会执行proxy，也就是作为一个代理向后端池发起请求
+     并返回给客户端，除非强制要求先进行promote操作
+     写请求调用do_proxy_write，则会直接调用会调用OSDService的Objecter
+     mutate方法，将写请求直接写入到后端的存储池中记录到
+     proxywrite_ops、in_progress_proxy_ops两个map
+     读写请求的对象的数据都不会在cache tier存储池中保存
+ */
   case pg_pool_t::CACHEMODE_FORWARD:
     // this mode is deprecated; proxy instead
   case pg_pool_t::CACHEMODE_PROXY:
@@ -4010,12 +4048,20 @@ void PrimaryLogPG::promote_object(ObjectContextRef obc,
                    CEPH_OSD_COPY_FROM_FLAG_IGNORE_CACHE |
                    CEPH_OSD_COPY_FROM_FLAG_MAP_SNAP_CLONE |
                    CEPH_OSD_COPY_FROM_FLAG_RWORDERED;
+/** comment by hy 2020-08-27
+ * # 创建一个CopyOp对象
+     最终调用OSDService的Objecter成员的read方法
+ */
   start_copy(cb, obc, src_hoid, my_oloc, 0, flags,
 	     obc->obs.oi.soid.snap == CEPH_NOSNAP,
 	     src_fadvise_flags, 0);
 
   ceph_assert(obc->is_blocked());
 
+/** comment by hy 2020-08-27
+ * # OP加入到内部维护的一个称为waiting_for_blocked_object的map结构中
+     start_copy 回调函数从维护的map结构中查询到之前的OP
+ */
   if (op)
     wait_for_blocked_object(obc->obs.oi.soid, op);
 
@@ -14482,9 +14528,15 @@ bool PrimaryLogPG::agent_work(int start_max, int agent_flush_quota)
       continue;
     }
 
+/** comment by hy 2020-08-27
+ * # 执行清理
+ */
     if (agent_state->evict_mode != TierAgentState::EVICT_MODE_IDLE &&
 	agent_maybe_evict(obc, false))
       ++started;
+/** comment by hy 2020-08-27
+ * # 执行下刷
+ */
     else if (agent_state->flush_mode != TierAgentState::FLUSH_MODE_IDLE &&
              agent_flush_quota > 0 && agent_maybe_flush(obc)) {
       ++started;
