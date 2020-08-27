@@ -217,6 +217,9 @@ int RocksDBStore::tryInterpret(const string &key, const string &val, rocksdb::Op
     int f = strict_iecstrtoll(val.c_str(), &err);
     if (!err.empty())
       return -EINVAL;
+/** comment by hy 2020-08-26
+ * # 设置压缩线程
+ */
     //Low priority threadpool is used for compaction
     opt.env->SetBackgroundThreads(f, rocksdb::Env::Priority::LOW);
   } else if (key == "flusher_threads") {
@@ -460,6 +463,12 @@ int RocksDBStore::load_rocksdb_options(bool create_if_missing, rocksdb::Options&
 				    std::bind(std::equal_to<std::string>(), _1,
 					      "two_level")))
     bbt_opts.index_type = rocksdb::BlockBasedTableOptions::IndexType::kTwoLevelIndexSearch;
+
+/* add begin by hy, 2020-08-26, BugId:123 原因: 添加no blockcache 以及 block_align */
+    bbt_opts.no_block_cache = g_conf().get_val<bool>("rocksdb_no_block_cache");
+    bbt_opts.block_align = g_conf().get_val<bool>("rocksdb_block_align");
+/* add end by hy, 2020-08-26 */
+
   if (!bbt_opts.no_block_cache) {
     bbt_opts.cache_index_and_filter_blocks =
         g_conf().get_val<bool>("rocksdb_cache_index_and_filter_blocks");
@@ -860,6 +869,9 @@ int RocksDBStore::submit_transaction(KeyValueDB::Transaction t)
 {
   utime_t start = ceph_clock_now();
   rocksdb::WriteOptions woptions;
+/** comment by hy 2020-08-20
+ * # 不是每条都刷盘
+ */
   woptions.sync = false;
 
   int result = submit_common(woptions, t);
@@ -876,8 +888,14 @@ int RocksDBStore::submit_transaction_sync(KeyValueDB::Transaction t)
   utime_t start = ceph_clock_now();
   rocksdb::WriteOptions woptions;
   // if disableWAL, sync can't set
+/** comment by hy 2020-08-20
+ * # 每条都刷盘
+ */
   woptions.sync = !disableWAL;
-  
+/* add begin by hy, 2020-08-26, BugId:123 原因: 降低 compaction 的优先级 */
+  woptions.low_pri = true;
+/* add end by hy, 2020-08-26 */
+
   int result = submit_common(woptions, t);
   
   utime_t lat = ceph_clock_now() - start;

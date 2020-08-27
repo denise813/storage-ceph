@@ -39,6 +39,8 @@ int aio_queue_t::submit_batch(aio_iter begin, aio_iter end,
 #if defined(HAVE_LIBAIO)
 /** comment by hy 2020-04-22
  * # 调用libaio相关的api提交io
+     起了一个单独的线程检查IO的完成情况
+     KernelDevice::_aio_thread
  */
     r = io_submit(ctx, std::min(left, max_iodepth), (struct iocb**)(piocb + done));
 #elif defined(HAVE_POSIXAIO)

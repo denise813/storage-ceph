@@ -399,8 +399,9 @@ int BlueFS::reclaim_blocks(unsigned id, uint64_t want,
       block_all[id].erase(p.offset, p.length);
       log_t.op_alloc_rm(id, p.offset, p.length);
     }
-
-    flush_bdev();
+/* modify begin by hy, 2020-08-27, BugId:123 原因: 这个可以对所有数据sync */
+    //flush_bdev();
+/* modify end by hy, 2020-08-27 */
     int r = _flush_and_sync_log(l);
     ceph_assert(r == 0);
   }
@@ -579,8 +580,14 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
  */
   super.log_fnode = log_file->fnode;
   super.memorized_layout = layout;
+/** comment by hy 2020-08-25
+ * # 写入超级块
+ */
   _write_super(BDEV_DB);
+/* modify begin by hy, 2020-08-26, BugId:123 原因: 
+   因为是直写所有去掉不必要的flush */
   flush_bdev();
+/* modify end by hy, 2020-08-26 */
 
   // clean up
   super = bluefs_super_t();
@@ -672,7 +679,7 @@ int BlueFS::mount()
   dout(1) << __func__ << dendl;
 
 /** comment by hy 2020-04-22
- * # 读取超级块
+ * # 读取超级块,并检查数据的有效性
  */
   int r = _open_super();
   if (r < 0) {
@@ -703,7 +710,8 @@ int BlueFS::mount()
      记录了日志文件的inode，
      异常情况下通过重新mount文件系统，读取超级块，
      定位到日志文件，然后读取日志进行回重建所有文件的内存映像(file_map)
-     遍历file_map，即可初始化Allocator的空间。
+     遍历file_map，即可初始化Allocator的空间
+     重要流程
  */
   r = _replay(false, false);
   if (r < 0) {
@@ -843,6 +851,9 @@ int BlueFS::_write_super(int dev)
   bl.append_zero(get_super_length() - bl.length());
 
   bdev[dev]->write(get_super_offset(), bl, false, WRITE_LIFE_SHORT);
+
+  //bdev[dev]->aio_write(get_super_offset(), bl, ioc[BDEV_DB],
+  //  false, WRITE_LIFE_SHORT);
   dout(20) << __func__ << " v " << super.version
            << " crc 0x" << std::hex << crc
            << " offset 0x" << get_super_offset() << std::dec
@@ -1145,6 +1156,9 @@ int BlueFS::_replay(bool noop, bool to_stdout)
                 << ": " << t << std::endl;
     }
 
+/** comment by hy 2020-08-25
+ * # 事件回放
+ */
     auto p = t.op_bl.cbegin();
     while (!p.end()) {
       __u8 op;
@@ -1963,6 +1977,9 @@ int BlueFS::_read_random(
     if (off < buf->bl_off || off >= buf->get_buf_end()) {
       s_lock.unlock();
       uint64_t x_off = 0;
+/** comment by hy 2020-08-15
+ * # db 设备
+ */
       auto p = h->file->fnode.seek(off, &x_off);
       uint64_t l = std::min(p->length - x_off, len);
       dout(20) << __func__ << " read random 0x"
@@ -2156,9 +2173,15 @@ uint64_t BlueFS::_estimate_log_size()
 void BlueFS::compact_log()
 {
   std::unique_lock l(lock);
+/** comment by hy 2020-08-26
+ * # bluefs_compact_log_sync 默认为 false
+ */
   if (cct->_conf->bluefs_compact_log_sync) {
      _compact_log_sync();
   } else {
+/** comment by hy 2020-08-26
+ * # 默认异步操作
+ */
     _compact_log_async(l);
   }
 }
@@ -2342,7 +2365,11 @@ void BlueFS::_rewrite_log_and_layout_sync(bool allocate_with_fallback,
     completed_ios.clear();
   }
 #endif
-  flush_bdev();
+/* modify begin by hy, 2020-08-27, BugId:123 原因: 
+   首先是直接写,可以不下盘,其实该函数后续也调用了不必要 
+   这么平凡 */
+  //flush_bdev();
+/* modify end by hy, 2020-08-27 */
 
   super.memorized_layout = layout;
   super.log_fnode = log_file->fnode;
@@ -2357,7 +2384,10 @@ void BlueFS::_rewrite_log_and_layout_sync(bool allocate_with_fallback,
 
   ++super.version;
   _write_super(super_dev);
+/* modify begin by hy, 2020-08-27, BugId:123 原因:
+   超级块没有备份,还是很危险的,做好不要去掉 */
   flush_bdev();
+/* modify end by hy, 2020-08-27 */
 
   dout(10) << __func__ << " release old log extents " << old_fnode.extents << dendl;
   for (auto& r : old_fnode.extents) {
@@ -2425,9 +2455,10 @@ void BlueFS::_compact_log_async(std::unique_lock<ceph::mutex>& l)
   // write the new entries
   log_t.op_file_update(log_file->fnode);
   log_t.op_jump(log_seq, old_log_jump_to);
-
-  flush_bdev();  // FIXME?
-
+/* modify begin by hy, 2020-08-27, BugId:123 原因: 
+       后续将下盘这个这个频繁调用好像没有意义 */
+  //flush_bdev();  // FIXME?
+/* modify end by hy, 2020-08-27 */
   _flush_and_sync_log(l, 0, old_log_jump_to);
 
   // 2. prepare compacted log
@@ -2469,7 +2500,7 @@ void BlueFS::_compact_log_async(std::unique_lock<ceph::mutex>& l)
   ceph_assert(r == 0);
 
   // 4. wait
-  _flush_bdev_safely(new_log_writer);
+  //_flush_bdev_safely(new_log_writer);
 
   // 5. update our log fnode
   // discard first old_log_jump_to extents
@@ -2652,6 +2683,9 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex>& l,
   log_t.seq = 0;  // just so debug output is less confusing
   log_flushing = true;
 
+/** comment by hy 2020-08-16
+ * # 下日志盘
+ */
   int r = _flush(log_writer, true);
   ceph_assert(r == 0);
 
@@ -2664,7 +2698,12 @@ int BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex>& l,
     vselector->add_usage(log_writer->file->vselector_hint, log_writer->file->fnode.size);
   }
 
-  _flush_bdev_safely(log_writer);
+/** comment by hy 2020-08-16
+ * # 日志安装下盘,因为使用aio 暂时不用安全下盘吧
+ */
+  /* modify begin by hy, 2020-08-16, BugId:123 原因:日志已经aio下盘 */
+  //_flush_bdev_safely(log_writer);
+  /* modify end by hy, 2020-08-16 */
 
   log_flushing = false;
   log_cond.notify_all();
@@ -2731,6 +2770,8 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
   ceph_assert(h->file->num_readers.load() == 0);
 /** comment by hy 2020-06-25
  * # 将 buffer list 放入
+     bluefs_buffered_io 读取进行缓冲读取配置选项,默认关闭
+     可能会引起内存问题
  */
   h->buffer_appender.flush();
 
@@ -2738,9 +2779,6 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
   if (h->file->fnode.ino == 1)
     buffered = false;
   else
-/** comment by hy 2020-06-25
- * # 读取进行缓冲读取配置选项,默认关闭
- */
     buffered = cct->_conf->bluefs_buffered_io;
 
   if (offset + length <= h->pos)
@@ -2915,14 +2953,23 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     bufferlist t;
     t.substr_of(bl, bloff, x_len);
 /** comment by hy 2020-06-25
- * # 设备写操作, bluefs_sync_write 默认为 false
+ * # 设备写操作, bluefs_sync_write 默认为 false buffered 为 false
  */
     if (cct->_conf->bluefs_sync_write) {
       bdev[p->bdev]->write(p->offset + x_off, t, buffered, h->write_hint);
     } else {
       bdev[p->bdev]->aio_write(p->offset + x_off, t, h->iocv[p->bdev], buffered, h->write_hint);
     }
-    h->dirty_devs[p->bdev] = true;
+/* modify begin by hy, 2020-08-27, BugId:123 原因: 
+   修改为如果使用buffer才进行标记 */
+    if (buffered == true)
+      h->dirty_devs[p->bdev] = true;
+/* modify end by hy, 2020-08-27 */
+
+/* modify begin by hy, 2020-08-26, BugId:123 原因:
+     记录设备启动后慢设备已经使用的空间 */
+    bdev[p->bdev]->some_used += t.length();
+/* modify end by hy, 2020-08-26 */
     if (p->bdev == BDEV_SLOW) {
       bytes_written_slow += t.length();
     }
@@ -2936,6 +2983,8 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
 /** comment by hy 2020-07-14
  * # 将文件写 buffer 按照设备分组
  */
+/* modify begin by hy, 2020-08-27, BugId:123 原因: */
+#if 1
   for (unsigned i = 0; i < MAX_BDEV; ++i) {
     if (bdev[i]) {
       if (h->iocv[i] && h->iocv[i]->has_pending_aios()) {
@@ -2943,6 +2992,15 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
       }
     }
   }
+#endif
+#if 0
+  if (bdev[p->bdev]) {
+    if (h->iocv[p->bdev] && h->iocv[p->bdev]->has_pending_aios()) {
+      bdev[p->bdev]->aio_submit(h->iocv[p->bdev]);
+    }
+  }
+#endif
+/* modify end by hy, 2020-08-27 */
   vselector->add_usage(h->file->vselector_hint, h->file->fnode);
   dout(20) << __func__ << " h " << h << " pos now 0x"
            << std::hex << h->pos << std::dec << dendl;
@@ -3050,17 +3108,28 @@ int BlueFS::_truncate(FileWriter *h, uint64_t offset)
 int BlueFS::_fsync(FileWriter *h, std::unique_lock<ceph::mutex>& l)
 {
   dout(10) << __func__ << " " << h << " " << h->file->fnode << dendl;
+/** comment by hy 2020-08-25
+ * # 下文件元数据
+ */
   int r = _flush(h, true);
   if (r < 0)
      return r;
   uint64_t old_dirty_seq = h->file->dirty_seq;
 
-  _flush_bdev_safely(h);
-
+/** comment by hy 2020-08-16
+ * # 文件对应的数据整体下盘
+     已经使用 aio 就不使用安全了吧?
+ */
+ /* modify begin by hy, 2020-08-16, BugId:123 原因: 已经使用aio */
+  //_flush_bdev_safely(h);
+/* modify end by hy, 2020-08-16 */
   if (old_dirty_seq) {
     uint64_t s = log_seq;
     dout(20) << __func__ << " file metadata was dirty (" << old_dirty_seq
 	     << ") on " << h->file->fnode << ", flushing log" << dendl;
+/** comment by hy 2020-08-16
+ * # 文件对应的元数据下日志盘
+ */
     _flush_and_sync_log(l, old_dirty_seq);
     ceph_assert(h->file->dirty_seq == 0 ||  // cleaned
 	   h->file->dirty_seq > s);    // or redirtied by someone else
@@ -3082,7 +3151,7 @@ void BlueFS::_flush_bdev_safely(FileWriter *h)
     lock.unlock();
     wait_for_aio(h);
     completed_ios.clear();
-    flush_bdev(flush_devs);
+    //flush_bdev(flush_devs);
     lock.lock();
   } else
 #endif
@@ -3318,7 +3387,11 @@ void BlueFS::sync_metadata(bool avoid_compact)
   } else {
     dout(10) << __func__ << dendl;
     utime_t start = ceph_clock_now();
-    flush_bdev(); // FIXME?
+/* modify begin by hy, 2020-08-27, BugId:123 原因: 
+   这个一般发生再创建目录文件的基础上,好像是pg的容器之间 
+  的关联 */
+    //flush_bdev(); // FIXME?
+/* modify end by hy, 2020-08-27 */
     _flush_and_sync_log(l);
     dout(10) << __func__ << " done in " << (ceph_clock_now() - start) << dendl;
   }

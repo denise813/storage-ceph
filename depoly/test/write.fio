@@ -1,0 +1,11 @@
+[write-4M]
+description="write test with block size of 4M"
+ioengine=rbd
+clientname=admin
+pool=pool0
+rbdname=rbd0
+iodepth=32
+thread=40
+runtime=10000
+rw=randwrite #write 表示顺序写，randwrite 表示随机写，read 表示顺序读，randread 表示随机读
+bs=4K

@@ -56,6 +56,9 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
   fd_buffereds.resize(WRITE_LIFE_MAX, -1);
 
   bool use_ioring = g_ceph_context->_conf.get_val<bool>("bluestore_ioring");
+/** comment by hy 2020-08-18
+ * # 默认1024
+ */
   unsigned int iodepth = cct->_conf->bdev_aio_max_queue_depth;
 
   if (use_ioring && ioring_queue_t::supported()) {
@@ -74,7 +77,10 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
 int KernelDevice::_lock()
 {
   dout(10) << __func__ << " " << fd_directs[WRITE_LIFE_NOT_SET] << dendl;
-  int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX | LOCK_NB);
+/* modify begin by hy, 2020-08-25, BugId:123 原因: 修改为阻塞模式*/
+  //int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX | LOCK_NB);
+  int r = ::flock(fd_directs[WRITE_LIFE_NOT_SET], LOCK_EX);
+/* modify end by hy, 2020-08-25 */
   if (r < 0) {
     derr << __func__ << " flock failed on " << path << dendl;
     return -errno;
@@ -667,6 +673,8 @@ void KernelDevice::_discard_thread()
     ceph_assert(discard_finishing.empty());
 /** comment by hy 2020-04-24
  * # 如果没有需要做Discard的Extent就等待
+     https://shimingyah.github.io/2019/07/%E6%B5%85%E8%B0%88%E5%88%86%E5%B8%83%E5%
+BC%8F%E5%AD%98%E5%82%A8%E4%B9%8BSSD%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86/
  */
     if (discard_queued.empty()) {
       if (discard_stop)
@@ -821,6 +829,7 @@ void KernelDevice::aio_submit(IOContext *ioc)
   int r, retries = 0;
 /** comment by hy 2020-04-22
  * # 批量提交aio
+     aio_queue_t::submit_batch
  */
   r = io_queue->submit_batch(ioc->running_aios.begin(), e,
 			     pending, priv, &retries);

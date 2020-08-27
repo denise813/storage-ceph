@@ -1599,6 +1599,9 @@ void BlueStore::BufferSpace::_finish_write(BufferCacheShard* cache, uint64_t seq
       ldout(cache->cct, 20) << __func__ << " added " << *b << dendl;
     }
   }
+/** comment by hy 2020-08-15
+ * # 执行 trim
+ */
   cache->_trim();
   cache->_audit("finish_write end");
 }
@@ -5403,8 +5406,15 @@ int BlueStore::_minimal_open_bluefs(bool create)
 
 /** comment by hy 2020-05-27
  * # 加载block数据
+     假如设备有独立的数据库
+     数据使用 slow
+     如果没有 数据和数据库 同磁盘 记录 DB
  */
   bfn = path + "/block.db";
+/** comment by hy 2020-08-19
+ * # 创建 db 设备以及对应的io上下文
+     bfn 是符号链接
+ */
   if (::stat(bfn.c_str(), &st) == 0) {
     r = bluefs->add_block_device(
       BlueFS::BDEV_DB, bfn,
@@ -5433,11 +5443,17 @@ int BlueStore::_minimal_open_bluefs(bool create)
       }
     }
     if (create) {
+/** comment by hy 2020-08-25
+ * # 添加对应的设备空间
+ */
       bluefs->add_block_extent(
 	BlueFS::BDEV_DB,
 	SUPER_RESERVED,
 	bluefs->get_block_device_size(BlueFS::BDEV_DB) - SUPER_RESERVED);
     }
+/** comment by hy 2020-08-11
+ * # 预留部分用于存放数据库
+ */
     bluefs_layout.shared_bdev = BlueFS::BDEV_SLOW;
     bluefs_layout.dedicated_db = true;
   } else {
@@ -5467,6 +5483,11 @@ int BlueStore::_minimal_open_bluefs(bool create)
   }
   if (create) {
     // note: we always leave the first SUPER_RESERVED (8k) of the device unused
+/** comment by hy 2020-08-19
+ * # bluestore_bluefs_min_ratio 比例 2%
+     bluestore_bluefs_gift_ratio 比例 2%
+     bluestore_bluefs_min 1G
+ */
     uint64_t initial =
       bdev->get_size() * (cct->_conf->bluestore_bluefs_min_ratio +
 			  cct->_conf->bluestore_bluefs_gift_ratio);
@@ -5594,11 +5615,14 @@ int BlueStore::_open_bluefs(bool create)
   }
   if (create) {
 /** comment by hy 2020-06-22
- * # 文件系统创建
+ * # 初始化文件系统
  */
     bluefs->mkfs(fsid, bluefs_layout);
   }
   bluefs->set_volume_selector(vselector);
+/** comment by hy 2020-08-25
+ * # 加载文件系统
+ */
   r = bluefs->mount();
   if (r < 0) {
     derr << __func__ << " failed bluefs mount: " << cpp_strerror(r) << dendl;
@@ -6518,6 +6542,10 @@ int BlueStore::mkfs()
 
   freelist_type = "bitmap";
 
+/** comment by hy 2020-08-25
+ * # 检查 osd_max_object_size 小于 4GB
+     BlueStore 限制在 4GB 之内
+ */
   r = _open_path();
   if (r < 0)
     return r;
@@ -6549,17 +6577,26 @@ int BlueStore::mkfs()
     fsid = old_fsid;
   }
 
+/** comment by hy 2020-08-19
+ * # 设备连接
+ */
   r = _setup_block_symlink_or_file("block", cct->_conf->bluestore_block_path,
 				   cct->_conf->bluestore_block_size,
 				   cct->_conf->bluestore_block_create);
   if (r < 0)
     goto out_close_fsid;
   if (cct->_conf->bluestore_bluefs) {
+/** comment by hy 2020-08-25
+ * # 创建 wal 符号链接文件
+ */
     r = _setup_block_symlink_or_file("block.wal", cct->_conf->bluestore_block_wal_path,
 	cct->_conf->bluestore_block_wal_size,
 	cct->_conf->bluestore_block_wal_create);
     if (r < 0)
       goto out_close_fsid;
+/** comment by hy 2020-08-25
+ * # 创建 db 符号链接文件
+ */
     r = _setup_block_symlink_or_file("block.db", cct->_conf->bluestore_block_db_path,
 	cct->_conf->bluestore_block_db_size,
 	cct->_conf->bluestore_block_db_create);
@@ -6567,6 +6604,9 @@ int BlueStore::mkfs()
       goto out_close_fsid;
   }
 
+/** comment by hy 2020-08-25
+ * # 创建设备
+ */
   r = _open_bdev(true);
   if (r < 0)
     goto out_close_fsid;
@@ -6594,12 +6634,20 @@ int BlueStore::mkfs()
     goto out_close_bdev;
   }
 
+/** comment by hy 2020-08-25
+ * # 初始化 BlueFS 文件系统
+            bluestore 的 rocksdb 环境
+      重要流程
+ */
   r = _open_db(true);
   if (r < 0)
     goto out_close_bdev;
 
   {
     KeyValueDB::Transaction t = db->get_transaction();
+/** comment by hy 2020-08-25
+ * # 初始化空闲分配管理模块
+ */
     r = _open_fm(t, true);
     if (r < 0)
       goto out_close_db;
@@ -9702,10 +9750,26 @@ int BlueStore::read(
       goto out;
     }
 
+/** comment by hy 2020-08-15
+ * # 读全部
+ */
     if (offset == length && offset == 0)
       length = o->onode.size;
 /** comment by hy 2020-07-12
  * # 处理数据
+ */
+/** comment by hy 2020-08-17
+ * # 1: (KernelDevice::aio_read(unsigned long, unsigned long, ceph::buffer::v15_2_0
+::list*, IOContext*)+0x1fc) [0x556c6a8c96d0]
+ 2: (()+0x2bed48f) [0x556c6a6f648f]
+ 3: (()+0x2c35975) [0x556c6a73e975]
+ 4: (BlueStore::_prepare_read_ioc(std::map<boost::intrusive_ptr<BlueStore::
+Blob>, std::__cxx11::list<BlueStore::read_req_t, std::allocator<BlueStore::
+read_req_t> >, std::less<boost::intrusive_ptr<BlueStore::Blob> >, std::
+allocator<std::pair<boost::intrusive_ptr<BlueStore::Blob> const, std::__cxx11
+::list<BlueStore::read_req_t, std::allocator<BlueStore::read_req_t> > > > >&, 
+std::vector<ceph::buffer::v15_2_0::list, std::allocator<ceph::buffer::v15_2_0
+::list> >*, IOContext*)+0x773) [0x556c6a6f6c47]
  */
     r = _do_read(c, o, offset, length, bl, op_flags);
     if (r == -EIO) {
@@ -10088,7 +10152,7 @@ int BlueStore::_do_read(
   vector<bufferlist> compressed_blob_bls;
   IOContext ioc(cct, NULL, true); // allow EIO
 /** comment by hy 2020-06-26
- * # 根据blob 信息 加载数据
+ * # 读数据 根据blob 信息 加载数据
  */
   r = _prepare_read_ioc(blobs2read, &compressed_blob_bls, &ioc);
   // we always issue aio for reading, so errors other than EIO are not allowed
@@ -10098,6 +10162,9 @@ int BlueStore::_do_read(
   int64_t num_ios = length;
 /** comment by hy 2020-06-26
  * # 写还没提交完成
+ */
+/** comment by hy 2020-08-16
+ * # 这里能没有提交完的数据就不管它不可以吗?
  */
   if (ioc.has_pending_aios()) {
     num_ios = -ioc.get_num_ios();
@@ -11391,7 +11458,14 @@ void BlueStore::_txc_calc_cost(TransContext *txc)
 {
   // one "io" for the kv commit
   auto ios = 1 + txc->ioc.get_num_ios();
+/** comment by hy 2020-08-15
+ * # 从配置文件中加载 cost
+     默认 hdd 670000
+          ssd 4000
+ */
+
   auto cost = throttle_cost_per_io.load();
+
   txc->cost = ios * cost + txc->bytes;
   txc->ios = ios;
   dout(10) << __func__ << " " << txc << " cost " << txc->cost << " ("
@@ -11439,8 +11513,17 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	     << " " << txc->get_state_name() << dendl;
 /** comment by hy 2020-02-05
  * # 事务状态机切换
+     https://blog.csdn.net/lzw06061139/article/details/86411292
  */
     switch (txc->state) {
+/** comment by hy 2020-08-15
+ * # 该阶段主要是io前的准备工作，如分配磁盘空间等；根据io
+     size的大小同步执行aio或者延迟io
+     如果是延迟io的metadata和data会先写入rocksdb
+     后面再延迟更新到OSD block设备上
+     如果是aio就更新状态为STATE_AIO_WAIT，并提交io
+     阶段延迟由bluestore_state_prepare_lat标识
+ */
     case TransContext::STATE_PREPARE:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_prepare_lat);
 /** comment by hy 2020-05-30
@@ -11462,7 +11545,14 @@ void BlueStore::_txc_state_proc(TransContext *txc)
  * # 继续往下执行到下一个状态
  */
       // ** fall-thru **
-
+/** comment by hy 2020-08-15
+ * # 如果是aio，等待aio完成（aio完成后，bluestore回调aio_cb）
+     更新状态为STATE_IO_DONE；很显然，deferred 
+     io是不需要等待aio的，所以通过上述osd perf 
+     dump看到的延迟通常都极小
+     该阶段延迟由bluestore_state_aio_wait_lat标识
+     其延迟受配置、设备性能等的影响
+ */
     case TransContext::STATE_AIO_WAIT:
       {
 	mono_clock::duration lat = throttle.log_state_latency(
@@ -11481,6 +11571,10 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       _txc_finish_io(txc);  // may trigger blocked txc's too
       return;
 
+/** comment by hy 2020-08-15
+ * # 结束io，将状态设置为STATE_KV_QUEUED，通知kv_sync线程同步io及metadata
+     该阶段的延迟也通常很小，延迟由l_bluestore_state_io_done_lat
+ */
     case TransContext::STATE_IO_DONE:
       ceph_assert(ceph_mutex_is_locked(txc->osr->qlock));  // see _txc_finish_io
       if (txc->had_ios) {
@@ -11491,6 +11585,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 /** comment by hy 2020-07-30
  * # sync之前的提交
      提交到缓冲中就唤醒下盘动作,既提交前将kv缓冲都下盘
+     默认关闭
  */
       if (cct->_conf->bluestore_sync_submit_transaction) {
 	if (txc->last_nid >= nid_max ||
@@ -11544,13 +11639,23 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	kv_throttle_costs += txc->cost;
       }
       return;
+/** comment by hy 2020-08-15
+ * # kv_sync中flush OSD block设备、提交kv transaction
+     如果是deferred io，还会进行kv的清理操作
+     kv_finalize完成线程执行后续的io收尾工作
+     bluestore_state_kv_queued_lat 标识，其延迟受设备性能、rocksdb等的影响
+ */
     case TransContext::STATE_KV_SUBMITTED:
 /** comment by hy 2020-02-05
- * # 记录一下
+ * # 记录一下,并调用注册的 commit 回调函数
  */
       _txc_committed_kv(txc);
       // ** fall-thru **
 
+/** comment by hy 2020-08-15
+ * # 是aio，将状态设置为STATE_FINISHING, 否则设置为
+     STATE_DEFERRED_QUEUED；该阶段延迟由bluestore_state_kv_done_lat标识
+ */
     case TransContext::STATE_KV_DONE:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_kv_done_lat);
 /** comment by hy 2020-05-30
@@ -11570,11 +11675,21 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->state = TransContext::STATE_FINISHING;
       break;
 
+/** comment by hy 2020-08-15
+ * # 延迟io的清理操作
+     事务上下文等的清理与aio一致
+     该阶段延迟由bluestore_state_deferred_cleanup_lat
+     其延迟通常都会很大
+ */
     case TransContext::STATE_DEFERRED_CLEANUP:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_deferred_cleanup_lat);
       txc->state = TransContext::STATE_FINISHING;
       // ** fall-thru **
 
+/** comment by hy 2020-08-15
+ * # 清理操作，如果满足条件，也会提交deferred io
+     该阶段延迟由bluestore_state_finishing_lat标识，其延迟通常很小
+ */
     case TransContext::STATE_FINISHING:
       throttle.log_state_latency(*txc, logger, l_bluestore_state_finishing_lat);
 /** comment by hy 2020-02-06
@@ -11806,7 +11921,7 @@ void BlueStore::_txc_apply_kv(TransContext *txc, bool sync_submit_transaction)
   }
 
 /** comment by hy 2020-08-01
- * # 唤醒对应的 flush
+ * # 唤醒对应的 BlueStore::Onode::flush
  */
   for (auto ls : { &txc->onodes, &txc->modified_objects }) {
     for (auto& o : *ls) {
@@ -12375,6 +12490,42 @@ void BlueStore::_kv_sync_thread()
       // submit synct synchronously (block and wait for it to commit)
 /** comment by hy 2020-04-24
  * # submit_transaction 同步kv，有设置bluefs_extents、删除wal两种操作
+     调用 submit_transaction_sync
+     不如快 submit_transaction
+     里面是不是可以上事务锁
+     调用堆栈为
+     
+  1: (KernelDevice::flush()+0x5e) [0x55edcc37dbd0]
+  2: (BlueFS::flush_bdev(std::array<bool, 5ul>&)+0x140) [0x55edcc32a0be]
+  3: (BlueFS::_flush_bdev_safely(BlueFS::FileWriter*)+0xe4) [0x55edcc329eb6]
+  4: (BlueFS::_flush_and_sync_log(std::unique_lock<ceph::mutex_debug_detail::
+ mutex_debug_impl<false> >&, unsigned long, unsigned long)+0x13aa) [
+ 0x55edcc324e5c]
+  5: (BlueFS::_fsync(BlueFS::FileWriter*, std::unique_lock<ceph::
+ mutex_debug_detail::mutex_debug_impl<false> >&)+0x315) [0x55edcc329d35]
+  6: (BlueFS::fsync(BlueFS::FileWriter*)+0x4e) [0x55edcc353e6e]
+  7: (BlueRocksWritableFile::Sync()+0x3a) [0x55edcc354a46]
+  8: (rocksdb::WritableFileWriter::SyncInternal(bool)+0x1b4) [0x55edcccb6a74]
+  9: (rocksdb::WritableFileWriter::Sync(bool)+0x18c) [0x55edcccb64de]
+  10: (rocksdb::DBImpl::WriteToWAL(rocksdb::WriteThread::WriteGroup const&, 
+ rocksdb::log::Writer*, unsigned long*, bool, bool, unsigned long)+0x363) [
+ 0x55edccab808d]
+  11: (rocksdb::DBImpl::WriteImpl(rocksdb::WriteOptions const&, rocksdb::
+ WriteBatch*, rocksdb::WriteCallback*, unsigned long*, unsigned long, bool, 
+ unsigned long*, unsigned long, rocksdb::PreReleaseCallback*)+0xf31) [
+ 0x55edccab4c93]
+  12: (rocksdb::DBImpl::Write(rocksdb::WriteOptions const&, rocksdb::WriteBatch
+ *)+0x4a) [0x55edccab3cfe]
+  13: (RocksDBStore::submit_common(rocksdb::WriteOptions&, std::shared_ptr<
+ KeyValueDB::TransactionImpl>)+0x217) [0x55edcca33fcd]
+  14: (RocksDBStore::submit_transaction_sync(std::shared_ptr<KeyValueDB::
+ TransactionImpl>)+0x70) [0x55edcca345e4]
+  15: (BlueStore::_kv_sync_thread()+0x1ce4) [0x55edcc1d05ba]
+  16: (BlueStore::KVSyncThread::entry()+0x1c) [0x55edcc20e77a]
+  17: (Thread::entry_wrapper()+0x78) [0x55edcc42b676]
+  18: (Thread::_entry_func(void*)+0x18) [0x55edcc42b5f4]
+  19: (()+0x82de) [0x7f57169342de]
+  20: (clone()+0x43) [0x7f571566be83]
  */
       auto begin_kv = mono_clock::now();
       int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction_sync(synct);
@@ -12405,6 +12556,9 @@ void BlueStore::_kv_sync_thread()
  * # 记录到最终容器中
  */
       {
+/** comment by hy 2020-08-15
+ * # _kv_finalize_thread去处理
+ */
 	std::unique_lock m{kv_finalize_lock};
 	if (kv_committing_to_finalize.empty()) {
 	  kv_committing_to_finalize.swap(kv_committing);
@@ -12941,6 +13095,9 @@ int BlueStore::queue_transactions(
     dout(10) << __func__ << " failed get throttle_deferred_bytes, aggressive"
 	     << dendl;
     ++deferred_aggressive;
+/** comment by hy 2020-08-15
+ * # 
+ */
     deferred_try_submit();
     {
       // wake up any previously finished deferred events
@@ -13553,10 +13710,14 @@ void BlueStore::_do_write_small(
 
   bufferlist bl;
 /** comment by hy 2020-02-04
- * # 为什么是copy
+ * # https://www.freesion.com/article/9479730359/
+     为什么是copy
  */
   blp.copy(length, bl);
 
+/** comment by hy 2020-08-15
+ * # 在对象内按照alloc_len对齐的逻辑地址
+ */
   auto max_bsize = std::max(wctx->target_blob_size, min_alloc_size);
   auto min_off = offset >= max_bsize ? offset - max_bsize : 0;
   uint32_t alloc_len = min_alloc_size;
@@ -13572,6 +13733,9 @@ void BlueStore::_do_write_small(
   o->extent_map.fault_range(db, min_off, offset + max_bsize - min_off);
 
   // Look for an existing mutable blob we can use.
+/** comment by hy 2020-08-15
+ * # 对应blob开始处所代表的对象内逻辑偏移
+ */
   auto begin = o->extent_map.extent_map.begin();
   auto end = o->extent_map.extent_map.end();
 /** comment by hy 2020-02-04

@@ -153,6 +153,11 @@ public:
       exclusive_lock_policy = new exclusive_lock::StandardPolicy(this);
     }
     journal_policy = new journal::StandardPolicy<ImageCtx>(this);
+
+/** comment by hy 2020-08-19
+ * # 我想在这添加 PerfCountersBuilder 统计
+     pcb(g_ceph_context, "paxos", l_paxos_first, l_paxos_last)
+ */
   }
 
   ImageCtx::ImageCtx(const string &image_name, const string &image_id,
@@ -752,6 +757,9 @@ public:
     ldout(cct, 20) << __func__ << dendl;
 
     // reset settings back to global defaults
+/** comment by hy 2020-08-17
+ * # 读取配置文件,并加载到配置文件中
+ */
     for (auto& key : config_overrides) {
       std::string value;
       int r = cct->_conf.get_val(key, &value);
@@ -775,6 +783,9 @@ public:
         continue;
       }
 
+/** comment by hy 2020-08-17
+ * # 将元数据加载到配送文件中
+ */
       if (config.find_option(key) != nullptr) {
         std::string val(meta_pair.second.c_str(), meta_pair.second.length());
         int r = config.set_val(key, val);

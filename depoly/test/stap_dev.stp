@@ -1,0 +1,70 @@
+#!/usr/bin/env stap
+#
+##stap -l 'process("/usr/bin/ceph-osd").function("*read*")'
+##stap -g cc_stap_set_var.stp -c './cc_stap_test'
+#
+##global device_of_interest
+#
+##probe begin {
+##       device_of_interest = $1
+##       printf ("device of interest: 0x%x\n", device_of_interest)
+##}
+#
+##probe kernel.function("submit_bio") {
+##       dev = $bio->bi_bdev->bd_dev
+##       if (dev == device_of_interest)
+##               printf ("[%s](%d) dev:0x%x rw:%d size:%d\n",execname(), pid(), dev, $rw, $bio->bi_size)
+##}
+#
+##probe module("hello").function("test")
+##{
+##       print("Hello Systemtap!\n")
+##}
+#
+##probe kernel.function("netif_receive_skb") 
+##{ 
+##       printf("--------------------------------------------------------\n"); 
+##       print_backtrace(); 
+##       printf("--------------------------------------------------------\n"); 
+##}
+#
+##probe process("./cc_stap_test").statement("main@./cc_stap_test.c:22")
+##{
+##       $p->id == 222;
+##       printf("$p$: %s, $p$$: %s\n", $p$, $p$$);
+##}
+#
+#
+##probe process("/usr/bin/ceph-osd").function("*").call
+##{
+##           printf("%s -> %s\n", thread_indent(4), ppfunc());
+##}
+#
+##probe process("/usr/bin/ceph-osd").function("*").return
+##{
+##           printf("%s <- %s\n", thread_indent(-4), ppfunc());
+##}
+#
+#probe begin
+#{
+#        printf("begin\n")
+#}
+#
+#probe kernel.statement("__tcp_ack_snd_check@/build/buildd/linux-lts-trusty-3.13.0/net/ipv4/tcp_input.c:*")
+##{
+##           printf("%s\n", pp());
+##}
+#
+
+probe nd_syscall.*
+{
+	procname = execname();
+	if (procname =~ "ceph-osd*") {
+		printf("%s[%d]: %s\n", procname, pid(), name);
+	}
+
+	if (target() == pid()) {
+		printf("%s <- %s\n", thread_indent(-4), ppfunc())
+	}
+}
+

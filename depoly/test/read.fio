@@ -1,0 +1,8 @@
+[READ]
+description="write test with block size of 4M"
+filename=/dev/sdh   #注：/dev/vdb是目标测试磁盘的设备名称
+iodepth=32
+thread=40
+runtime=10000
+rw=randread #write 表示顺序写，randwrite 表示随机写，read 表示顺序读，randread 表示随机读
+bs=4K

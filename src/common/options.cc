@@ -874,7 +874,7 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
 /** comment by hy 2020-06-30
- * # 大业支持
+ * # 大页面支持
  */
     Option("thp", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
@@ -3742,6 +3742,9 @@ std::vector<Option> get_global_options() {
     .set_default(2)
     .set_description(""),
 
+/** comment by hy 2020-08-26
+ * # rocksdb 中 leveldb 的参数
+ */
     Option("leveldb_log_to_ceph_log", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description(""),
@@ -3782,6 +3785,9 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description(""),
 
+/** comment by hy 2020-08-26
+ * # rocksdb 的一些参数
+ */
     Option("rocksdb_log_to_ceph_log", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description(""),
@@ -3810,6 +3816,15 @@ std::vector<Option> get_global_options() {
 /** comment by hy 2020-07-28
  * # rocks 统计数据
  */
+/* add begin by hy, 2020-08-26, BugId:123 原因: 添加cache 开关 */
+    Option("rocksdb_no_block_cache", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description("Whether to cache the block chche."),
+    Option("rocksdb_block_align", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description("Whether to align the block."),
+/* add end by hy, 2020-08-26 */
+
     Option("rocksdb_perf", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description(""),
@@ -4611,7 +4626,8 @@ std::vector<Option> get_global_options() {
     .set_description("max duration to force deferred submit"),
 
 /** comment by hy 2020-06-08
- * # write_buffer_size -
+ * # 
+     write_buffer_size -
          控制memtable的大小，ceph默认是256MB
    # max_write_buffer_number -
          控制内存中memtable的最大数量，根据内存大小来设置
@@ -4715,6 +4731,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_RUNTIME)
     .set_description("Maximum bytes for deferred writes before we throttle IO submission"),
 
+/** comment by hy 2020-08-15
+ * # 这是为了聚合使用与延迟一起进行操作
+ */
     Option("bluestore_throttle_cost_per_io", Option::TYPE_SIZE, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_flag(Option::FLAG_RUNTIME)

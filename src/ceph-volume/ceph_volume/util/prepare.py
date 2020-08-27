@@ -413,7 +413,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
                    --osd-data /var/lib/ceph/osd/ceph-0 \
                    --osd-uuid 8d208665-89ae-4733-8888-5d3bfbeeec6c \
                    --keyring /var/lib/ceph/osd/ceph-0/keyring \
-                   --setuser ceph --setgroup ceph
+                   --setuser root --setgroup root
 
     In some cases it is required to use the keyring, when it is passed in as
     a keyword argument it is used as part of the ceph-osd command
@@ -421,7 +421,7 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)
     monmap = os.path.join(path, 'activate.monmap')
 
-    # system.chown(path)
+    system.chown(path)
 
     base_command = [
         'ceph-osd',
@@ -446,13 +446,13 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
         base_command.extend(
             ['--bluestore-block-wal-path', wal]
         )
-        # system.chown(wal)
+        system.chown(wal)
 
     if db:
         base_command.extend(
             ['--bluestore-block-db-path', db]
         )
-        # system.chown(db)
+        system.chown(db)
 
     if get_osdspec_affinity():
         base_command.extend(['--osdspec-affinity', get_osdspec_affinity()])
@@ -474,7 +474,7 @@ def osd_mkfs_filestore(osd_id, fsid, keyring):
                    --osd-journal /var/lib/ceph/osd/ceph-0/journal \
                    --osd-uuid 8d208665-89ae-4733-8888-5d3bfbeeec6c \
                    --keyring /var/lib/ceph/osd/ceph-0/keyring \
-                   --setuser ceph --setgroup ceph
+                   --setuser root --setgroup root
 
     """
     path = '/var/lib/ceph/osd/%s-%s/' % (conf.cluster, osd_id)

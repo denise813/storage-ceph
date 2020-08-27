@@ -148,6 +148,9 @@ bool ImageDispatchSpec<I>::is_write_op() const {
 
 template <typename I>
 bool ImageDispatchSpec<I>::tokens_requested(uint64_t flag, uint64_t *tokens) {
+/** comment by hy 2020-08-17
+ * # boost::apply_visitor 只是安全检查包装
+ */
   return boost::apply_visitor(TokenRequestedVisitor{this, flag, tokens},
                               m_request);
 }

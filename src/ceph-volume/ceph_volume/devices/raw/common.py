@@ -46,4 +46,9 @@ def create_parser(prog, description):
         action='store_true',
         help='Enable device encryption via dm-crypt',
     )
+    parser.add_argument(
+        '--osd_id',
+        dest='osd_id',
+        help='specify id of object storage daemon sevice',
+    )
     return parser

@@ -4123,7 +4123,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   }
 
 /** comment by hy 2020-04-08
- * # 调用该函数 异步读取
+ * # 调用该函数 异步读取,异步读只有纠删码才出现不为空
  */
   bool pending_async_reads = !ctx->pending_async_reads.empty();
   if (result == -EINPROGRESS || pending_async_reads) {
@@ -4174,15 +4174,16 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 	   << " result " << result << dendl;
 
   // read or error?
+/** comment by hy 2020-08-17
+ * # 处理读和异常
+     !update_log_only 表示读
+ */
   if ((ctx->op_t->empty() || result < 0) && !ctx->update_log_only) {
     // finish side-effects
     if (result >= 0)
-/** comment by hy 2020-03-21
- * # 
- */
       do_osd_op_effects(ctx, m->get_connection());
 /** comment by hy 2020-04-09
- * # 同步读取
+ * # 同步读取,应答的结构体已经在上下文中
  */
     complete_read_ctx(result, ctx);
     return;
@@ -5755,6 +5756,9 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
     if (oi.is_data_digest() && op.extent.offset == 0 &&
         op.extent.length >= oi.size)
       maybe_crc = oi.data_digest;
+/** comment by hy 2020-08-17
+ * # 放入异步读队列
+ */
     ctx->pending_async_reads.push_back(
       make_pair(
         boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
@@ -8773,6 +8777,9 @@ int PrimaryLogPG::prepare_transaction(OpContext *ctx)
 
   // read-op?  write-op noop? done?
   if (ctx->op_t->empty() && !ctx->modify) {
+/** comment by hy 2020-08-17
+ * # 纠删码才不为空
+ */
     if (ctx->pending_async_reads.empty())
       unstable_stats.add(ctx->delta_stats);
     if (ctx->op->may_write() &&
@@ -8973,6 +8980,9 @@ void PrimaryLogPG::complete_read_ctx(int result, OpContext *ctx)
   }
   ctx->reply->get_header().data_off = (ctx->data_off ? *ctx->data_off : 0);
 
+/** comment by hy 2020-08-17
+ * # 转移应答体
+ */
   MOSDOpReply *reply = ctx->reply;
   ctx->reply = nullptr;
 

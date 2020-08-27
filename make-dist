@@ -147,9 +147,9 @@ for spec in lenovo.spec.in alpine/APKBUILD.in; do
     cat $spec |
         sed "s/@PROJECT_VERSION@/$rpm_version/g" |
 	sed "s/@RPM_RELEASE@/$rpm_release/g" |
-	sed "s/@CEPH_SOURCE@/$topdir/g" |
+	sed "s#@CEPH_SOURCE@#$topdir#g" |
 	sed "s/@TARBALL_BASENAME@/ceph-$version/g" > `echo $spec | sed 's/.in$//'`
-    done
+done
 ln -s . $outfile
 tar cvf $outfile.version.tar $outfile/src/.git_version $outfile/ceph.spec $outfile/alpine/APKBUILD
 # NOTE: If you change this version number make sure the package is available

@@ -124,6 +124,10 @@ class Prepare(object):
         self.osd_id = prepare_utils.create_id(
             osd_fsid, json.dumps(secrets))
 
+        #  specify osd_id by args
+        if self.args.osd_id != None:
+            self.osd_id = self.args.osd_id
+
         prepare_bluestore(
             self.args.data,
             wal,
@@ -142,11 +146,11 @@ class Prepare(object):
         Once the OSD is ready, an ad-hoc systemd unit will be enabled so that
         it can later get activated and the OSD daemon can get started.
 
-            ceph-volume raw prepare --bluestore --data {device}
+            ceph-volume raw prepare --bluestore --data {device} [--osd_id id]
 
         DB and WAL devices are supported.
 
-            ceph-volume raw prepare --bluestore --data {device} --block.db {device} --block.wal {device}
+            ceph-volume raw prepare --bluestore --data {device} --block.db {device} --block.wal {device} [--osd_id id]
 
         """)
         parser = create_parser(

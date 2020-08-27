@@ -72,6 +72,7 @@ def to_format(what, format: str, many: bool, cls):
 
 @six.add_metaclass(CLICommandMeta)
 class OrchestratorCli(OrchestratorClientMixin, MgrModule):
+    # 我想在这加上ssh
     MODULE_OPTIONS = [
         {
             'name': 'orchestrator',

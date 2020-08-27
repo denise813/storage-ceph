@@ -159,7 +159,14 @@ struct aio_queue_t final : public io_queue_t {
     }
   }
 
+/** comment by hy 2020-08-25
+ * # 提交IO
+ */
   int submit_batch(aio_iter begin, aio_iter end, uint16_t aios_size,
 		   void *priv, int *retries) final;
+
+/** comment by hy 2020-08-25
+ * # 收割完成的IO
+ */
   int get_next_completed(int timeout_ms, aio_t **paio, int max) final;
 };

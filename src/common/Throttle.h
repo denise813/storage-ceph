@@ -412,6 +412,9 @@ class TokenBucketThrottle {
   // minimum of the filling period.
   uint64_t m_tick_min = 50;
   // tokens filling period, its unit is millisecond.
+/** comment by hy 2020-08-17
+ * # 多少毫秒产生令牌
+ */
   uint64_t m_tick = 0;
   /**
    * These variables are used to calculate how many tokens need to be put into
@@ -461,12 +464,20 @@ public:
 
   template <typename T, typename I, void(T::*MF)(int, I*, uint64_t)>
   void add_blocker(uint64_t c, T *handler, I *item, uint64_t flag) {
+/** comment by hy 2020-08-17
+ * # 异步回调
+ */
     Context *ctx = new LambdaContext([handler, item, flag](int r) {
       (handler->*MF)(r, item, flag);
       });
     m_blockers.emplace_back(c, ctx);
   }
 
+/** comment by hy 2020-08-17
+ * # ImageRequestWQ<I>,
+     ImageDispatchSpec<I>,
+     &ImageRequestWQ<I>::handle_throttle_ready
+ */
   template <typename T, typename I, void(T::*MF)(int, I*, uint64_t)>
   bool get(uint64_t c, T *handler, I *item, uint64_t flag) {
     bool wait = false;
@@ -479,6 +490,9 @@ public:
       if (0 == m_throttle.max || 0 == m_avg)
         return false;
 
+/** comment by hy 2020-08-17
+ * # 从桶中获取数量
+ */
       got = m_throttle.get(c);
       if (got < c) {
         // Not enough tokens, add a blocker for it.
@@ -486,6 +500,9 @@ public:
       }
     }
 
+/** comment by hy 2020-08-17
+ * # 记录到阻塞中
+ */
     if (wait)
       add_blocker<T, I, MF>(c - got, handler, item, flag);
 

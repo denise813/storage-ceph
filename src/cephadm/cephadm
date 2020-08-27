@@ -5035,7 +5035,8 @@ if __name__ == "__main__":
         av = sys.argv[1:]
     # 函数表
     # 基本部署的流程
-    # add-repo
+    # ./cephadm add-repo --release octopus
+    # eg add-repo --repo-url
     # install
     # bootstrap --mon-ip 192.168.93.70
     # 进入系统查看 shell

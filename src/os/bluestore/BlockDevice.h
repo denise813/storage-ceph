@@ -151,6 +151,7 @@ protected:
   bool lock_exclusive = true;
 
 public:
+  uint64_t some_used = 0;
   aio_callback_t aio_callback;
   void *aio_callback_priv;
   BlockDevice(CephContext* cct, aio_callback_t cb, void *cbpriv)

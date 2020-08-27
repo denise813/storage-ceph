@@ -862,6 +862,9 @@ void ImageRequestWQ<I>::handle_throttle_ready(int r, ImageDispatchSpec<I> *item,
 
   ceph_assert(m_io_throttled.load() > 0);
   item->set_throttled(flag);
+/** comment by hy 2020-08-17
+ * # 
+ */
   if (item->were_all_throttled()) {
     this->requeue_back(item);
     --m_io_throttled;
@@ -880,12 +883,15 @@ bool ImageRequestWQ<I>::needs_throttle(ImageDispatchSpec<I> *item) {
     flag = t.first;
 /** comment by hy 2020-03-21
  * # 判断该类型的qos控制是否已经放行
+     如果限制了对应的类型则继续判断
+     flag = 当前限流类型
+     item = image
  */
     if (item->was_throttled(flag))
       continue;
 
 /** comment by hy 2020-03-21
- * # 设置flag，表示该类型的qos控制放行
+ * # 设置qos 不匹配，表示该类型的qos控制放行
  */
     if (!(m_qos_enabled_flag & flag)) {
       item->set_throttled(flag);
@@ -895,7 +901,14 @@ bool ImageRequestWQ<I>::needs_throttle(ImageDispatchSpec<I> *item) {
 /** comment by hy 2020-03-21
  * # 判断是否有足够令牌，不足则将请求放入阻塞队列
  */
+/** comment by hy 2020-08-17
+ * # 获取限流描述
+ */
     throttle = t.second;
+/** comment by hy 2020-08-17
+ * # tokens_requested 创建 token 的观察者
+     一开始为0
+ */
     if (item->tokens_requested(flag, &tokens) &&
         throttle->get<ImageRequestWQ<I>, ImageDispatchSpec<I>,
 	      &ImageRequestWQ<I>::handle_throttle_ready>(
@@ -919,17 +932,23 @@ void *ImageRequestWQ<I>::_void_dequeue() {
   }
 
 /** comment by hy 2020-03-21
- * # 
+ * # 判断是否要限流
  */
   if (needs_throttle(peek_item)) {
     ldout(cct, 15) << "throttling IO " << peek_item << dendl;
 
     ++m_io_throttled;
     // dequeue the throttled item
+/** comment by hy 2020-08-17
+ * # 重新操作
+ */
     ThreadPool::PointerWQ<ImageDispatchSpec<I> >::_void_dequeue();
     return nullptr;
   }
 
+/** comment by hy 2020-08-17
+ * # 通过限流
+ */
   bool lock_required;
   bool refresh_required = m_image_ctx.state->is_refresh_required();
   {

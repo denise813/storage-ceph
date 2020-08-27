@@ -808,6 +808,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
     m_avg = average;
     m_burst = burst;
 
+/** comment by hy 2020-08-17
+ * # m_tick 表示多少毫秒产生令牌
+ */
     if (0 == average) {
       // The limit is not set, and no tokens will be put into the bucket.
       // So, we can schedule the timer slowly, or even cancel it.
@@ -820,6 +823,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
       }
 
       // this is for the number(avg) can not be divisible.
+/** comment by hy 2020-08-17
+ * # 数值
+ */
       m_ticks_per_second = 1000 / m_tick;
       m_current_tick = 0;
 
@@ -831,6 +837,9 @@ int TokenBucketThrottle::set_limit(uint64_t average, uint64_t burst) {
   }
 
   // The schedule period will be changed when the average rate is set.
+/** comment by hy 2020-08-17
+ * # 定时线程用于添加令牌
+ */
   {
     std::lock_guard timer_locker{*m_timer_lock};
     cancel_timer();
@@ -867,19 +876,35 @@ void TokenBucketThrottle::add_tokens() {
   {
     std::lock_guard lock(m_lock);
     // put tokens into bucket.
+/** comment by hy 2020-08-21
+ * # 定时增加
+ */
     m_throttle.put(tokens_this_tick());
+
+/** comment by hy 2020-08-17
+ * # 不限制带宽
+ */
     if (0 == m_avg || 0 == m_throttle.max)
       tmp_blockers.swap(m_blockers);
     // check the m_blockers from head to tail, if blocker can get
     // enough tokens, let it go.
+/** comment by hy 2020-08-17
+ * # 完成的放到临时容器中
+ */
     while (!m_blockers.empty()) {
       Blocker &blocker = m_blockers.front();
+/** comment by hy 2020-08-17
+ * # 申请对应的量
+ */
       uint64_t got = m_throttle.get(blocker.tokens_requested);
       if (got == blocker.tokens_requested) {
         // got enough tokens for front.
         tmp_blockers.splice(tmp_blockers.end(), m_blockers, m_blockers.begin());
       } else {
         // there is no more tokens.
+/** comment by hy 2020-08-17
+ * # 更新剩余的数据
+ */
         blocker.tokens_requested -= got;
         break;
       }
@@ -898,6 +923,9 @@ void TokenBucketThrottle::schedule_timer() {
       });
   m_timer->add_event_after(m_schedule_tick, m_token_ctx);
 
+/** comment by hy 2020-08-17
+ * # 添加令牌
+ */
   add_tokens();
 }
 
