@@ -75,7 +75,7 @@ def get_ceph_user_ids():
     Return the id and gid of the ceph user
     """
     try:
-        user = pwd.getpwnam('ceph')
+        user = pwd.getpwnam('root')
     except KeyError:
         # is this even possible?
         raise RuntimeError('"ceph" user is not available in the current system')
@@ -117,10 +117,10 @@ def chown(path, recursive=True):
     """
     uid, gid = get_ceph_user_ids()
     if os.path.islink(path):
-        process.run(['chown', '-h', 'ceph:ceph', path])
+        process.run(['chown', '-h', 'root:root', path])
         path = os.path.realpath(path)
     if recursive:
-        process.run(['chown', '-R', 'ceph:ceph', path])
+        process.run(['chown', '-R', 'root:root', path])
     else:
         os.chown(path, uid, gid)
 

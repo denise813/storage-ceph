@@ -11,7 +11,7 @@ x86_rpm_array=["ceph-base", "ceph-common",
         "ceph-mgr-modules-core",
         "librbd1", "python3-ceph-argparse",
         "python3-rados",
-        "python3-rbd",
+        "python3-rbd", "python3-ceph-common"
         ]
 
 # 安装软件
