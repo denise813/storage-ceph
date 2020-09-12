@@ -521,6 +521,9 @@ public:
   typedef boost::intrusive_ptr<SharedBlob> SharedBlobRef;
 
   /// a lookup table of SharedBlobs
+/** comment by hy 2020-09-09
+ * # 公用的blob 集合
+ */
   struct SharedBlobSet {
     /// protect lookup, insertion, removal
     ceph::mutex lock = ceph::make_mutex("BlueStore::SharedBlobSet::lock");
@@ -939,6 +942,9 @@ public:
       size_t mid, left = 0;
       size_t right = end; // one passed the right end
 
+/** comment by hy 2020-09-01
+ * # 二分查找范围
+ */
       while (left < right) {
         mid = left + (right - left) / 2;
         if (offset >= shards[mid].shard_info->offset) {
@@ -2056,6 +2062,12 @@ private:
  * # block 数据设备
  */
   BlockDevice *bdev = nullptr;
+/** comment by hy 2020-09-09
+ * # 添加 cache 数据设备
+ */
+  BlockDevice *cachedev = nullptr;
+
+
   std::string freelist_type;
   FreelistManager *fm = nullptr;
   Allocator *alloc = nullptr;
@@ -2804,6 +2816,7 @@ private:
     bool* csum_error,
     bufferlist& bl);
 
+/* modify begin by hy, 2020-09-07, BugId:123 原因: */
   int _do_read(
     Collection *c,
     OnodeRef o,
@@ -2812,6 +2825,7 @@ private:
     bufferlist& bl,
     uint32_t op_flags = 0,
     uint64_t retry_count = 0);
+/* modify end by hy, 2020-09-07 */
 
   int _do_readv(
     Collection *c,

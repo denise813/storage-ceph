@@ -73,6 +73,18 @@ class KernelDevice : public BlockDevice {
  */
   interval_set<uint64_t> discard_finishing;
 
+/** comment by hy 2020-08-29
+ * # aio 条件变量
+ */
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 1
+  ceph::mutex aio_lock = ceph::make_mutex("aio::lock");
+  ceph::condition_variable aio_queue_cond;
+  std::atomic<uint64_t> submit_counter = {0};
+  bool aio_submitting = false;
+#endif
+/* modify end by hy, 2020-09-02 */
+
   struct AioCompletionThread : public Thread {
 /** comment by hy 2020-04-22
  * # Libaio线程 收割完成的事件

@@ -215,6 +215,11 @@ int KernelDevice::open(const string& p)
       rotational = blkdev_buffered.is_rotational();
       support_discard = blkdev_buffered.support_discard();
       this->devname = devname;
+/** comment by hy 2020-08-31
+ * # 检查 VDO 设备 vdo 
+     设备是重删技术的磁盘,是红帽开发的在centos 8
+     yum install vdo
+ */
       _detect_vdo();
     }
   }
@@ -225,6 +230,9 @@ int KernelDevice::open(const string& p)
   if (r < 0) {
     goto out_fail;
   }
+/** comment by hy 2020-09-05
+ * # 开启 discard 线程
+ */
   _discard_start();
 
   // round size down to an even block
@@ -477,6 +485,14 @@ void KernelDevice::_aio_stop()
   if (aio) {
     dout(10) << __func__ << dendl;
     aio_stop = true;
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+    {
+      if (aio_submitting == false) {
+        std::lock_guard l(aio_lock);
+        aio_queue_cond.notify_one();
+      }
+    }
+/* modify end by hy, 2020-09-02 */
     aio_thread.join();
     aio_stop = false;
     io_queue->shutdown();
@@ -535,19 +551,37 @@ void KernelDevice::_aio_thread()
 {
   dout(10) << __func__ << " start" << dendl;
   int inject_crash_count = 0;
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+  std::unique_lock l(aio_lock);
   while (!aio_stop) {
     dout(40) << __func__ << " polling" << dendl;
+/** comment by hy 2020-08-28
+ * # bdev_aio_reap_max = 16
+ */
     int max = cct->_conf->bdev_aio_reap_max;
     aio_t *aio[max];
 /** comment by hy 2020-04-22
  * # 获取完成的aio 调用libaio相关的api，检查io是否完成
+     bdev_aio_poll_ms 250 ms
  */
-    int r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
+
+    int  r = 0;
+    {
+      aio_submitting = true;
+      if (submit_counter == 0) {
+        aio_submitting = false;
+        aio_queue_cond.wait(l);
+      }
+      aio_submitting = true;
+      r = io_queue->get_next_completed(cct->_conf->bdev_aio_poll_ms,
 					 aio, max);
-    if (r < 0) {
-      derr << __func__ << " got " << cpp_strerror(r) << dendl;
-      ceph_abort_msg("got unexpected error from io_getevents");
+      if (r < 0) {
+        derr << __func__ << " got " << cpp_strerror(r) << dendl;
+        ceph_abort_msg("got unexpected error from io_getevents");
+      }
     }
+/* modify end by hy, 2020-09-02 */
     if (r > 0) {
       dout(30) << __func__ << " got " << r << " completed aios" << dendl;
       for (int i = 0; i < r; ++i) {
@@ -565,7 +599,9 @@ void KernelDevice::_aio_thread()
 	// flag, but that also ensures that the IO will be stable before the
 	// later flush() occurs.
 /** comment by hy 2020-04-24
- * # 设置 io_since_flush 为true，等待元数据写完的时候一起做 fdatasync
+ * # 设置 io_since_flush 为true，既表示数据写
+     元数据写 需要这个标志位完成设的时候一起做
+     fdatasync
  */
 	io_since_flush.store(true);
 
@@ -614,14 +650,25 @@ void KernelDevice::_aio_thread()
 	// NOTE: once num_running and we either call the callback or
 	// call aio_wake we cannot touch ioc or aio[] as the caller
 	// may free it.
+/** comment by hy 2020-09-02
+ * # 取得对应的值
+ */
 	if (ioc->priv) {
+/** comment by hy 2020-09-02
+ * # 已经运行内存
+ */
+          --submit_counter;
 	  if (--ioc->num_running == 0) {
 /** comment by hy 2020-04-22
- * # 调用aio完成的回调函数
+ * # 调用aio完成的回调函数,这里处理延迟写的回调
+      既调用 aio_cb
  */
 	    aio_callback(aio_callback_priv, ioc->priv);
 	  }
 	} else {
+/** comment by hy 2020-09-02
+ * # 继续执行io_summit,进这一个放入到 submit 中
+ */
           ioc->try_aio_wake();
 	}
       }
@@ -811,6 +858,9 @@ void KernelDevice::aio_submit(IOContext *ioc)
   ioc->running_aios.splice(e, ioc->pending_aios);
 
   int pending = ioc->num_pending.load();
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+  submit_counter += pending;
+/* modify end by hy, 2020-09-02 */
   ioc->num_running += pending;
   ioc->num_pending -= pending;
   ceph_assert(ioc->num_pending.load() == 0);  // we should be only thread doing this
@@ -840,6 +890,17 @@ void KernelDevice::aio_submit(IOContext *ioc)
     derr << " aio submit got " << cpp_strerror(r) << dendl;
     ceph_assert(r == 0);
   }
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 1
+  {
+    if (aio_submitting == false) {
+      std::lock_guard l(aio_lock);
+      aio_queue_cond.notify_one();
+    }
+  }
+#endif
+/* modify end by hy, 2020-09-02 */
 }
 
 int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int write_hint)
@@ -1017,7 +1078,7 @@ int KernelDevice::aio_write(
 	bl.prepare_iov(&aio.iov);
 	aio.bl.claim_append(bl);
 /** comment by hy 2020-02-05
- * # aio_t::pwritev 包装数据
+ * # 调用 io_prep_pwrite
  */
 	aio.pwritev(off, len);
 	dout(30) << aio << dendl;
@@ -1046,7 +1107,7 @@ int KernelDevice::aio_write(
 	  tmp.prepare_iov(&aio.iov);
 	  aio.bl.claim_append(tmp);
 /** comment by hy 2020-04-22
- * # 写buffer
+ * # 调用 libaio io_prep_pwrite
  */
 	  aio.pwritev(off + prev_len, len);
 	  dout(30) << aio << dendl;
@@ -1100,6 +1161,9 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
   auto start1 = mono_clock::now();
 
   auto p = buffer::ptr_node::create(buffer::create_small_page_aligned(len));
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
   int r = ::pread(buffered ? fd_buffereds[WRITE_LIFE_NOT_SET] : fd_directs[WRITE_LIFE_NOT_SET],
 		  p->c_str(), len, off);
   auto age = cct->_conf->bdev_debug_aio_log_age;
@@ -1191,6 +1255,9 @@ int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
     goto out;
   }
   ceph_assert((uint64_t)r == aligned_len);
+/** comment by hy 2020-09-09
+ * # 拷贝其内容
+ */
   memcpy(buf, p.c_str() + (off - aligned_off), len);
 
   dout(40) << __func__ << " data: ";
@@ -1228,6 +1295,9 @@ int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
     char *t = buf;
     uint64_t left = len;
     while (left > 0) {
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
       r = ::pread(fd_buffereds[WRITE_LIFE_NOT_SET], t, left, off);
       if (r < 0) {
 	r = -errno;
@@ -1248,6 +1318,9 @@ int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
     }
   } else {
     //direct and aligned read
+/** comment by hy 2020-09-09
+ * # 这里要是变成异步会提高性能
+ */
     r = ::pread(fd_directs[WRITE_LIFE_NOT_SET], buf, len, off);
     if (mono_clock::now() - start1 >= make_timespan(age)) {
       derr << __func__ << " stalled read "

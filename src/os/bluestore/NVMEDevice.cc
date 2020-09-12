@@ -701,6 +701,9 @@ void io_complete(void *t, const struct spdk_nvme_cpl *completion)
     // check waiting count before doing callback (which may
     // destroy this ioc).
     if (ctx->priv) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+      --submit_counter;
+/* modify end by hy, 2020-09-02 */
       if (!--ctx->num_running) {
         task->device->aio_callback(task->device->aio_callback_priv, ctx->priv);
       }
@@ -718,6 +721,9 @@ void io_complete(void *t, const struct spdk_nvme_cpl *completion)
     // read submitted by AIO
     if (!task->return_code) {
       if (ctx->priv) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+        --submit_counter;
+/* modify end by hy, 2020-09-02 */
 	if (!--ctx->num_running) {
           task->device->aio_callback(task->device->aio_callback_priv, ctx->priv);
 	}
@@ -733,6 +739,8 @@ void io_complete(void *t, const struct spdk_nvme_cpl *completion)
       } else {
 	  task->return_code = 0;
       }
+      --submit_counter;
+/* modify end by hy, 2020-09-02 */
       --ctx->num_running;
     }
   } else {
@@ -839,6 +847,9 @@ void NVMEDevice::aio_submit(IOContext *ioc)
  */
   Task *t = static_cast<Task*>(ioc->nvme_task_first);
   if (pending && t) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+    submit_counter += pending;
+/* modify end by hy, 2020-09-02 */
     ioc->num_running += pending;
     ioc->num_pending -= pending;
     ceph_assert(ioc->num_pending.load() == 0);  // we should be only thread doing this
@@ -980,7 +991,11 @@ int NVMEDevice::write(uint64_t off, bufferlist &bl, bool buffered, int write_hin
   write_split(this, off, bl, &ioc);
   dout(5) << __func__ << " " << off << "~" << len << dendl;
   aio_submit(&ioc);
-  ioc.aio_wait();
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+  if (ioc.num_running) {
+    ioc.aio_wait();
+  }
+/* modify end by hy, 2020-09-02 */
   return 0;
 }
 

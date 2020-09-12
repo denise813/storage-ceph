@@ -1779,6 +1779,9 @@ void PrimaryLogPG::do_request(
       return;
     }
     switch (msg_type) {
+/** comment by hy 2020-09-04
+ * # 对象流程
+ */
     case CEPH_MSG_OSD_OP:
       // verify client features
       if ((pool.info.has_tiers() || pool.info.is_tier()) &&
@@ -1789,6 +1792,7 @@ void PrimaryLogPG::do_request(
 /** comment by hy 2020-01-30
  * # 执行对象处理
      PrimaryLogPG::do_op
+     解决大锁的地方
  */
       do_op(op);
       break;
@@ -2273,6 +2277,14 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 /** comment by hy 2020-04-08
  * # 开始加载一个对象操作,加载时会检查对象相关的内容,如 snap 信息
  */
+/** comment by hy 2020-09-06
+ * # 这个地方并发处理
+ */
+/** comment by hy 2020-09-06
+ * # 输入 参数 oid can_create m write_ordered
+     内部变量 obc missing_oid r
+     一定需要放在其函数中
+ */
   int r = find_object_context(
     oid, &obc, can_create,
     m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE),
@@ -2352,7 +2364,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
   if (agent_state) {
 /** comment by hy 2020-04-08
- * # 
+ * # 处理 trier pool
  */
     if (agent_choose_mode(false, op))
       return;
@@ -2510,6 +2522,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
 /** comment by hy 2020-01-30
  * # 核心执行语句
+     异步操作
  */
   execute_ctx(ctx);
   utime_t prepare_latency = ceph_clock_now();
@@ -4170,6 +4183,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 
 /** comment by hy 2020-04-08
  * # 调用该函数 异步读取,异步读只有纠删码才出现不为空
+     我可以将副本页使用异步
  */
   bool pending_async_reads = !ctx->pending_async_reads.empty();
   if (result == -EINPROGRESS || pending_async_reads) {
@@ -4293,7 +4307,9 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   // no need to capture PG ref, repop cancel will handle that
   // Can capture the ctx by pointer, it's owned by the repop
 /** comment by hy 2020-04-08
- * # 
+ * # 这里 写 commit 完成是在所有副本 向 osd 客户端返回结果
+      什么时候调用呢?是收到3副本应答
+     这里对响应的延迟时间进行处理
  */
   ctx->register_on_commit(
     [m, ctx, this](){
@@ -4311,7 +4327,8 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
       }
     });
 /** comment by hy 2020-03-21
- * # 回调函数
+ * # 回调函数,完成 watch 等行为
+     在 eval_repop 中进行调用
  */
   ctx->register_on_success(
     [ctx, this]() {
@@ -4321,7 +4338,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 	ConnectionRef());
     });
 /** comment by hy 2020-04-08
- * # 
+ * # 整个操作结束后
  */
   ctx->register_on_finish(
     [ctx]() {
@@ -4335,12 +4352,14 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
  */
   RepGather *repop = new_repop(ctx, obc, rep_tid);
 /** comment by hy 2020-04-08
- * # 向各个副本发送同步操作请求, 在其中会调用 commit
+ * # 主本进行操作,也可以认为是该副本
+     并向副本发送操作
  */
   issue_repop(repop, ctx);
 /** comment by hy 2020-04-08
  * # 检查发向各个副本的同步操作请求是否已经reply,并更新
      这里调用 on_finish,与 on_success
+     等待副本进行操作
  */
   eval_repop(repop);
   repop->put();
@@ -5793,6 +5812,9 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
     // a read operation of 0 bytes does *not* do nothing, this is why
     // the trimmed_read boolean is needed
   } else if (pool.info.is_erasure()) {
+/** comment by hy 2020-09-06
+ * # 纠删pool
+ */
     // The initialisation below is required to silence a false positive
     // -Wmaybe-uninitialized warning
     std::optional<uint32_t> maybe_crc;
@@ -5803,7 +5825,7 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
         op.extent.length >= oi.size)
       maybe_crc = oi.data_digest;
 /** comment by hy 2020-08-17
- * # 放入异步读队列
+ * # 放入异步读队列 后续调用 pg 对应的 objects_read_async
  */
     ctx->pending_async_reads.push_back(
       make_pair(
@@ -5814,6 +5836,11 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
 					 osd, soid, op.flags))));
     dout(10) << " async_read noted for " << soid << dendl;
 
+/** comment by hy 2020-09-06
+ * # 等待完成?
+     完成即获得返回值
+     ReadFinisher.execute()
+ */
     ctx->op_finishers[ctx->current_osd_subop_num].reset(
       new ReadFinisher(osd_op));
   } else {
@@ -6748,7 +6775,8 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	} else {
 /** comment by hy 2020-06-26
  * # PGTransaction::write 调用
-     封装 ObjectOperation::BufferUpdate::Write 内容
+     生成 封装 ObjectOperation::BufferUpdate::Write 实例
+     放入 buffer_updates 缓存中
  */
 	  t->write(
 	    soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
@@ -8808,7 +8836,8 @@ int PrimaryLogPG::prepare_transaction(OpContext *ctx)
   // prepare the actual mutation
 /** comment by hy 2020-06-26
  * # 写入 PGTransaction 事务缓存中
-     即操作对象的buffer write 实例
+     即操作对象的buffer write 实例 放入 op.buffer_updates
+     读写等所有osd op 的操作
  */
   int result = do_osd_ops(ctx, *ctx->ops);
   if (result < 0) {
@@ -10932,7 +10961,7 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
     ctx->op_t->add_obc(ctx->head_obc);
   }
 /** comment by hy 2020-05-31
- * # 副本
+ * # 等待副本完成
  */
   Context *on_all_commit = new C_OSD_RepopCommit(this, repop);
   if (!(ctx->log.empty())) {
@@ -10957,6 +10986,7 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
  * # 将事务发送到OSD处理，对于不同的PG实现
      把更新请求发送给从OSD，并调用 queue_transactions 函数
      对该PG的主OSD上的实现更改
+     on_all_commit 表示副本完成
 
      ReplicatedBackend::submit_transaction
      ECBackend::submit_transaction

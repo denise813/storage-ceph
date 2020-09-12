@@ -197,7 +197,14 @@ public:
     int write_hint = WRITE_LIFE_NOT_SET;
 
     ceph::mutex lock = ceph::make_mutex("BlueFS::FileWriter::lock");
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
     std::array<IOContext*,MAX_BDEV> iocv; ///< for each bdev
+#else
+    std::array<IOContext*,MAX_BDEV> writer_iocv; ///< for each bdev
+    std::array<IOContext*,MAX_BDEV> reader_iocv; ///< for each bdev
+#endif
+/* modify end by hy, 2020-09-02 */
     std::array<bool, MAX_BDEV> dirty_devs;
 
     FileWriter(FileRef f)
@@ -205,7 +212,14 @@ public:
 	buffer_appender(buffer.get_page_aligned_appender(
 			  g_conf()->bluefs_alloc_size / CEPH_PAGE_SIZE)) {
       ++file->num_writers;
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
       iocv.fill(nullptr);
+#else
+      writer_iocv.fill(nullptr);
+      reader_iocv.fill(nullptr);
+#endif
+/* modify end by hy, 2020-09-02 */
       dirty_devs.fill(false);
       if (file->fnode.ino == 1) {
 	write_hint = WRITE_LIFE_MEDIUM;
@@ -350,7 +364,14 @@ private:
 /** comment by hy 2020-04-22
  * # bdev对应的IOContext
  */
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 分离读写 */
+#if 0
   vector<IOContext*> ioc;                     ///< IOContexts for bdevs
+#else
+  vector<IOContext*> writer_ioc;
+  vector<IOContext*> reader_ioc;                     ///< IOContexts for bdevs
+#endif
+/* modify end by hy, 2020-09-02 */
 /** comment by hy 2020-04-22
  * # bdev对应的磁盘空间
  */

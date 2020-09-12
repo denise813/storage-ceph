@@ -125,7 +125,14 @@ private:
 BlueFS::BlueFS(CephContext* cct)
   : cct(cct),
     bdev(MAX_BDEV),
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
     ioc(MAX_BDEV),
+#else
+    writer_ioc(MAX_BDEV),
+    reader_ioc(MAX_BDEV),
+#endif
+/* modify end by hy, 2020-09-02 */
     block_all(MAX_BDEV)
 {
   discard_cb[BDEV_WAL] = wal_discard_cb;
@@ -137,19 +144,48 @@ BlueFS::BlueFS(CephContext* cct)
 BlueFS::~BlueFS()
 {
   delete asok_hook;
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
   for (auto p : ioc) {
     if (p)
       p->aio_wait();
   }
+#else
+  for (auto p : writer_ioc) {
+    if (p && (p->num_pending || p->num_running))
+      p->aio_wait();
+  }
+
+  for (auto p : reader_ioc) {
+    if (p && (p->num_pending || p->num_running))
+      p->aio_wait();
+  }
+#endif
+/* modify end by hy, 2020-09-02 */
+
   for (auto p : bdev) {
     if (p) {
       p->close();
       delete p;
     }
   }
+
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
   for (auto p : ioc) {
     delete p;
   }
+#else
+  for (auto p : writer_ioc) {
+    delete p;
+  }
+
+  for (auto p : reader_ioc) {
+    delete p;
+  }
+#endif
+/* modify end by hy, 2020-09-02 */
 }
 
 void BlueFS::_init_logger()
@@ -306,7 +342,16 @@ int BlueFS::add_block_device(unsigned id, const string& path, bool trim,
   dout(1) << __func__ << " bdev " << id << " path " << path
 	  << " size " << byte_u_t(b->get_size()) << dendl;
   bdev[id] = b;
+/* modify begin by hy, 2020-09-02, BugId:123
+   原因:使用读写分流后的io上下文
+ */
+#if 0
   ioc[id] = new IOContext(cct, NULL);
+#else
+  writer_ioc[id] = new IOContext(cct, NULL);
+  reader_ioc[id] = new IOContext(cct, NULL);
+#endif
+/* modify end by hy, 2020-09-02 */
   return 0;
 }
 
@@ -870,8 +915,16 @@ int BlueFS::_open_super()
   int r;
 
   // always the second block
+/* modify begin by hy, 2020-09-02, BugId:123
+   原因:使用读写分流后的io上下文
+ */
+#if 0
   r = bdev[BDEV_DB]->read(get_super_offset(), get_super_length(),
 			  &bl, ioc[BDEV_DB], false);
+#endif
+  r = bdev[BDEV_DB]->read(get_super_offset(), get_super_length(),
+			  &bl, reader_ioc[BDEV_DB], false);
+/* modify end by hy, 2020-09-02 */
   if (r < 0)
     return r;
 
@@ -1985,6 +2038,9 @@ int BlueFS::_read_random(
       dout(20) << __func__ << " read random 0x"
 	       << std::hex << x_off << "~" << l << std::dec
 	       << " of " << *p << dendl;
+/** comment by hy 2020-09-04
+ * # 随机调用
+ */
       int r = bdev[p->bdev]->read_random(p->offset + x_off, l, out,
 					 cct->_conf->bluefs_buffered_io);
       ceph_assert(r == 0);
@@ -2092,8 +2148,17 @@ int BlueFS::_read(
         dout(20) << __func__ << " fetching 0x"
                  << std::hex << x_off << "~" << l << std::dec
                  << " of " << *p << dendl;
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 
+   读写分流后使用读io上下文
+ */
+#if 0
         int r = bdev[p->bdev]->read(p->offset + x_off, l, &buf->bl, ioc[p->bdev],
 				    cct->_conf->bluefs_buffered_io);
+#else
+        int r = bdev[p->bdev]->read(p->offset + x_off, l, &buf->bl, reader_ioc[p->bdev],
+				    cct->_conf->bluefs_buffered_io);
+#endif
+/* modify end by hy, 2020-09-02 */
         ceph_assert(r == 0);
       }
       u_lock.unlock();
@@ -2888,11 +2953,21 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     offset -= partial;
     length += partial;
     dout(20) << __func__ << " waiting for previous aio to complete" << dendl;
+/* modify begin by hy, 2020-09-07, BugId:123 原因: */
+#if 0
     for (auto p : h->iocv) {
       if (p) {
 	p->aio_wait();
       }
     }
+#else
+    for (auto p : h->writer_iocv) {
+        if (p && p->num_running) {
+            p->aio_wait();
+        }
+    }
+#endif
+/* modify end by hy, 2020-09-07 */
   }
   if (length == partial + h->buffer.length() || clear_upto != 0) {
     /* in case of inital allocation and need to zero, limited flush is unacceptable */
@@ -2959,7 +3034,13 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
     if (cct->_conf->bluefs_sync_write) {
       bdev[p->bdev]->write(p->offset + x_off, t, buffered, h->write_hint);
     } else {
+/* add begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
       bdev[p->bdev]->aio_write(p->offset + x_off, t, h->iocv[p->bdev], buffered, h->write_hint);
+#else
+      bdev[p->bdev]->aio_write(p->offset + x_off, t, h->writer_iocv[p->bdev], buffered, h->write_hint);
+#endif
+/* add end by hy, 2020-09-02 */
     }
 /* modify begin by hy, 2020-08-27, BugId:123 原因: 
    修改为如果使用buffer才进行标记 */
@@ -2984,8 +3065,8 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
 /** comment by hy 2020-07-14
  * # 将文件写 buffer 按照设备分组
  */
-/* modify begin by hy, 2020-08-27, BugId:123 原因: */
-#if 1
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
   for (unsigned i = 0; i < MAX_BDEV; ++i) {
     if (bdev[i]) {
       if (h->iocv[i] && h->iocv[i]->has_pending_aios()) {
@@ -2993,15 +3074,16 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
       }
     }
   }
-#endif
-#if 0
-  if (bdev[p->bdev]) {
-    if (h->iocv[p->bdev] && h->iocv[p->bdev]->has_pending_aios()) {
-      bdev[p->bdev]->aio_submit(h->iocv[p->bdev]);
+#else
+  for (unsigned i = 0; i < MAX_BDEV; ++i) {
+    if (bdev[i]) {
+      if (h->writer_iocv[i] && h->writer_iocv[i]->has_pending_aios()) {
+        bdev[i]->aio_submit(h->writer_iocv[i]);
+      }
     }
   }
 #endif
-/* modify end by hy, 2020-08-27 */
+/* modify end by hy, 2020-09-02 */
   vselector->add_usage(h->file->vselector_hint, h->file->fnode);
   dout(20) << __func__ << " h " << h << " pos now 0x"
            << std::hex << h->pos << std::dec << dendl;
@@ -3013,11 +3095,21 @@ int BlueFS::_flush_range(FileWriter *h, uint64_t offset, uint64_t length)
 // memory indefinitely (along with their bufferlist refs).
 void BlueFS::_claim_completed_aios(FileWriter *h, list<aio_t> *ls)
 {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
   for (auto p : h->iocv) {
     if (p) {
       ls->splice(ls->end(), p->running_aios);
     }
   }
+#else
+  for (auto p : h->writer_iocv) {
+    if (p) {
+      ls->splice(ls->end(), p->running_aios);
+    }
+  }
+#endif
+/* modify end by hy, 2020-09-02 */
   dout(10) << __func__ << " got " << ls->size() << " aios" << dendl;
 }
 
@@ -3027,11 +3119,21 @@ void BlueFS::wait_for_aio(FileWriter *h)
   // stable.
   dout(10) << __func__ << " " << h << dendl;
   utime_t start = ceph_clock_now();
+/* modify begin by hy, 2020-09-07, BugId:123 原因: 读写分离 */
+#if 0
   for (auto p : h->iocv) {
     if (p) {
       p->aio_wait();
     }
   }
+#else
+  for (auto p : h->writer_iocv) {
+    if (p && p->num_running) {
+      p->aio_wait();
+    }
+  }
+#endif
+/* modify end by hy, 2020-09-07 */
   dout(10) << __func__ << " " << h << " done in " << (ceph_clock_now() - start) << dendl;
 }
 #endif
@@ -3502,7 +3604,14 @@ BlueFS::FileWriter *BlueFS::_create_writer(FileRef f)
   FileWriter *w = new FileWriter(f);
   for (unsigned i = 0; i < MAX_BDEV; ++i) {
     if (bdev[i]) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
       w->iocv[i] = new IOContext(cct, NULL);
+#else
+      w->writer_iocv[i] = new IOContext(cct, NULL);
+      w->reader_iocv[i] = new IOContext(cct, NULL);
+#endif
+/* modify end by hy, 2020-09-02 */
     }
   }
   return w;
@@ -3513,10 +3622,21 @@ void BlueFS::_close_writer(FileWriter *h)
   dout(10) << __func__ << " " << h << " type " << h->writer_type << dendl;
   for (unsigned i=0; i<MAX_BDEV; ++i) {
     if (bdev[i]) {
+/* modify begin by hy, 2020-09-02, BugId:123 原因: 添加 读写分流 */
+#if 0
       if (h->iocv[i]) {
 	h->iocv[i]->aio_wait();
 	bdev[i]->queue_reap_ioc(h->iocv[i]);
       }
+#else
+      if (h->writer_iocv[i] &&
+              (h->writer_iocv[i]->num_running ||
+              h->writer_iocv[i]->num_pending)) {
+	h->writer_iocv[i]->aio_wait();
+	bdev[i]->queue_reap_ioc(h->writer_iocv[i]);
+      }
+#endif
+/* modify end by hy, 2020-09-02 */
     }
   }
   delete h;

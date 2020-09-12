@@ -647,6 +647,9 @@ public:
   void handle_conf_change(const ConfigProxy& conf, const std::set<std::string>& changed) override;
 
   void dump_sessions(const SessionFilter &filter, Formatter *f) const;
+/** comment by hy 2020-09-02
+ * # 剔除用户
+ */
   void evict_clients(const SessionFilter &filter,
 		     std::function<void(int,const std::string&,bufferlist&)> on_finish);
 

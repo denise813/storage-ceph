@@ -27,6 +27,9 @@ int CacheController::init() {
   ldout(m_cct, 20) << dendl;
 
   m_object_cache_store = new ObjectCacheStore(m_cct);
+/** comment by hy 2020-09-09
+ * # 初始化流程主要负责的是连接集群
+ */
   // TODO(dehao): make this configurable
   int r = m_object_cache_store->init(true);
   if (r < 0) {
@@ -34,6 +37,9 @@ int CacheController::init() {
     return r;
   }
 
+/** comment by hy 2020-09-09
+ * # 初始化缓冲目录
+ */
   r = m_object_cache_store->init_cache();
   if (r < 0) {
     lderr(m_cct) << "init error\n" << dendl;
@@ -70,10 +76,18 @@ void CacheController::run() {
       m_cct->_conf.get_val<std::string>("immutable_object_cache_sock");
     std::remove(controller_path.c_str());
 
+/** comment by hy 2020-09-09
+ * # 创建服务,以及服务处理函数
+ */
     m_cache_server = new CacheServer(m_cct, controller_path,
       std::bind(&CacheController::handle_request, this,
                 std::placeholders::_1, std::placeholders::_2));
 
+/** comment by hy 2020-09-09
+ * # 网络准备,用于监听, 并启动 io_service
+     boost::asio::io_service 框架
+     https://blog.csdn.net/guotianqing/article/details/100730340
+ */
     int ret = m_cache_server->run();
     if (ret != 0) {
       throw std::runtime_error("io serivce run error");

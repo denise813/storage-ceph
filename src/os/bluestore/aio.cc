@@ -41,6 +41,7 @@ int aio_queue_t::submit_batch(aio_iter begin, aio_iter end,
  * # 调用libaio相关的api提交io
      起了一个单独的线程检查IO的完成情况
      KernelDevice::_aio_thread
+	 50 ms
  */
     r = io_submit(ctx, std::min(left, max_iodepth), (struct iocb**)(piocb + done));
 #elif defined(HAVE_POSIXAIO)
@@ -104,6 +105,9 @@ int aio_queue_t::get_next_completed(int timeout_ms, aio_t **paio, int max)
 
   for (int i=0; i<r; ++i) {
 #if defined(HAVE_LIBAIO)
+/** comment by hy 2020-09-06
+ * # 获取结果
+ */
     paio[i] = (aio_t *)events[i].obj;
     paio[i]->rval = events[i].res;
 #else

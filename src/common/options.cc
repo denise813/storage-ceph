@@ -2958,10 +2958,12 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_STARTUP)
     .set_description("The number of cache shards to use in the object store."),
 
+/* modify begin by hy, 2020-09-08, BugId:123 原因: */
     Option("osd_op_num_threads_per_shard", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(0)
+    .set_default(1)
     .set_flag(Option::FLAG_STARTUP)
     .set_description(""),
+/* modify end by hy, 2020-09-08 */
 
     Option("osd_op_num_threads_per_shard_hdd", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(1)
@@ -2975,10 +2977,12 @@ std::vector<Option> get_global_options() {
     .set_description("")
     .add_see_also("osd_op_num_threads_per_shard"),
 
+/* modify begin by hy, 2020-09-08, BugId:123 原因: */
     Option("osd_op_num_shards", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(0)
+    .set_default(16)
     .set_flag(Option::FLAG_STARTUP)
     .set_description(""),
+/* modify end by hy, 2020-09-08 */
 
     Option("osd_op_num_shards_hdd", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
@@ -4302,10 +4306,21 @@ std::vector<Option> get_global_options() {
     .set_default(5)
     .set_description("Time period to wait if there is no completed I/O from polling"),
 
+/** comment by hy 2020-09-09
+ * # block 设备路径
+ */
     Option("bluestore_block_path", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("")
     .set_flag(Option::FLAG_CREATE)
     .set_description("Path to block device/file"),
+
+/** comment by hy 2020-09-09
+ * # 新增 缓冲设备路径
+ */
+   Option("bluestore_block_cache_path", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("")
+    .set_flag(Option::FLAG_CREATE)
+    .set_description("Path to block cache device/file"),
 /** comment by hy 2020-04-13
  * # 测试参数 2G
  */
@@ -4552,6 +4567,9 @@ std::vector<Option> get_global_options() {
     .set_default(.5)
     .set_description("2Q paper suggests .5"),
 
+/** comment by hy 2020-09-10
+ * # 缓存空间大小，需要根据物理内存大小以及osd的个数设置合理值
+ */
     Option("bluestore_cache_size", Option::TYPE_SIZE, Option::LEVEL_DEV)
     .set_default(0)
     .set_description("Cache size (in bytes) for BlueStore")
@@ -4574,6 +4592,9 @@ std::vector<Option> get_global_options() {
     .add_see_also("bluestore_cache_size")
     .set_description("Ratio of bluestore cache to devote to metadata"),
 
+/** comment by hy 2020-09-10
+ * # rocksdb database cache占用缓存的比率
+ */
     Option("bluestore_cache_kv_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)
     .set_default(.4)
     .add_see_also("bluestore_cache_size")

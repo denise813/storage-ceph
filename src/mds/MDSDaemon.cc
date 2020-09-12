@@ -548,10 +548,16 @@ int MDSDaemon::init()
 
   timer.init();
 
+/** comment by hy 2020-09-02
+ * # 初始化Beacon
+ */
   beacon.init(*mdsmap);
   messenger->set_myname(entity_name_t::MDS(MDS_RANK_NONE));
 
   // schedule tick
+/** comment by hy 2020-09-02
+ * # 定时任务
+ */
   reset_tick();
   return 0;
 }
@@ -882,6 +888,9 @@ bool MDSDaemon::ms_dispatch2(const ref_t<Message> &m)
   }
 
   // Drop out early if shutting down
+/** comment by hy 2020-09-02
+ * # mds处于shutdown状态，不处理消息
+ */
   if (beacon.get_want_state() == CEPH_MDS_STATE_DNE) {
     dout(10) << " stopping, discarding " << *m << dendl;
     return true;
@@ -895,6 +904,9 @@ bool MDSDaemon::ms_dispatch2(const ref_t<Message> &m)
 
   // Not core, try it as a rank message
   if (mds_rank) {
+/** comment by hy 2020-09-02
+ * # 核心代码
+ */
     return mds_rank->ms_dispatch(m);
   } else {
     return false;
@@ -918,16 +930,25 @@ bool MDSDaemon::ms_dispatch2(const ref_t<Message> &m)
 bool MDSDaemon::handle_core_message(const cref_t<Message> &m)
 {
   switch (m->get_type()) {
+/** comment by hy 2020-09-02
+ * # MON
+ */
   case CEPH_MSG_MON_MAP:
     ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MON);
     break;
 
     // MDS
+/** comment by hy 2020-09-02
+ * # MDS
+ */
   case CEPH_MSG_MDS_MAP:
     ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_MDS);
     handle_mds_map(ref_cast<MMDSMap>(m));
     break;
 
+/** comment by hy 2020-09-02
+ * # MON
+ */
   case MSG_REMOVE_SNAPS:
     ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MON);
     mds_rank->snapserver->handle_remove_snaps(ref_cast<MRemoveSnaps>(m));

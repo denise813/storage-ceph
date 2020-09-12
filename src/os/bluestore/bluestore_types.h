@@ -97,6 +97,9 @@ struct bluestore_interval_t
 /// pextent: physical extent
 struct bluestore_pextent_t : public bluestore_interval_t<uint64_t, uint32_t> 
 {
+#if 0
+  uint64_t agent_offset = -1;
+#endif
   bluestore_pextent_t() {}
   bluestore_pextent_t(uint64_t o, uint64_t l) : bluestore_interval_t(o, l) {}
   bluestore_pextent_t(const bluestore_interval_t &ext) :
@@ -111,6 +114,12 @@ struct bluestore_pextent_t : public bluestore_interval_t<uint64_t, uint32_t>
  * # 长度
  */
     denc_varint_lowz(v.length, p);
+/** comment by hy 2020-09-12
+ * # 代理磁盘偏移
+ */
+#if 0
+    denc_lba(v.agent_offset, p);
+#endif
   }
 
   void dump(Formatter *f) const;
@@ -728,9 +737,10 @@ public:
   template<class F>
   int map(uint64_t x_off, uint64_t x_len, F&& f) const {
     static_assert(std::is_invocable_r_v<int, F, uint64_t, uint64_t>);
-
+     uint64_t disk_offset = 0;
     auto p = extents.begin();
     ceph_assert(p != extents.end());
+
     while (x_off >= p->length) {
       x_off -= p->length;
       ++p;
@@ -739,7 +749,18 @@ public:
     while (x_len > 0) {
       ceph_assert(p != extents.end());
       uint64_t l = std::min(p->length - x_off, x_len);
-      int r = f(p->offset + x_off, l);
+/** comment by hy 2020-09-12
+ * # 如果是普通盘,使用普通盘的偏移,如果是缓存盘使用缓存盘的偏移
+ */
+      disk_offset = p->offset;
+#if 0
+      if (p->agent_offset != -1){
+        disk_offset = p->agent_offset;
+      } else {
+        disk_offset = p->offset;
+      }
+#endif
+      int r = f(disk_offset + x_off, l);
       if (r < 0)
         return r;
       x_off = 0;

@@ -704,6 +704,9 @@ void MDSRank::mark_base_recursively_scrubbed(inodeno_t ino)
 
 void MDSRankDispatcher::tick()
 {
+/** comment by hy 2020-09-02
+ * # 置heartbeat超时时间，避免被monitor kill
+ */
   heartbeat_reset();
 
   if (beacon.is_laggy()) {
@@ -711,10 +714,16 @@ void MDSRankDispatcher::tick()
     return;
   }
 
+/** comment by hy 2020-09-02
+ * # 从op_tracker中读取到所有in_flight的操作名称
+ */
   check_ops_in_flight();
 
   // Wake up thread in case we use to be laggy and have waiting_for_nolaggy
   // messages to progress.
+/** comment by hy 2020-09-02
+ * # 唤醒progress_thread线程
+ */
   progress_thread.signal();
 
   // make sure mds log flushes, trims periodically
@@ -723,6 +732,9 @@ void MDSRankDispatcher::tick()
   // update average session uptime
   sessionmap.update_average_session_age();
 
+/** comment by hy 2020-09-02
+ * # 如果是active,stopping去除cache,client_leases,log
+ */
   if (is_active() || is_stopping()) {
     mdlog->trim();  // NOT during recovery!
   }
@@ -735,11 +747,17 @@ void MDSRankDispatcher::tick()
   }
 
   // log
+/** comment by hy 2020-09-02
+ * # 更新log
+ */
   if (logger) {
     logger->set(l_mds_subtrees, mdcache->num_subtrees());
     mdcache->log_stat();
   }
 
+/** comment by hy 2020-09-02
+ * # 如果处于reconnect 标记
+ */
   if (is_reconnect())
     server->reconnect_tick();
 
@@ -1007,6 +1025,9 @@ bool MDSRankDispatcher::ms_dispatch(const cref_t<Message> &m)
 
 bool MDSRank::_dispatch(const cref_t<Message> &m, bool new_msg)
 {
+/** comment by hy 2020-09-02
+ * # 如果message不是mds发送过来,则直接返回
+ */
   if (is_stale_message(m)) {
     return true;
   }
@@ -1015,10 +1036,17 @@ bool MDSRank::_dispatch(const cref_t<Message> &m, bool new_msg)
     return false;
   }
 
+/** comment by hy 2020-09-02
+ * # 如果mds处于laggy状态，将消息放入waiting_for_nolaggy数组
+ */
   if (beacon.is_laggy()) {
     dout(5) << " laggy, deferring " << *m << dendl;
     waiting_for_nolaggy.push_back(m);
   } else if (new_msg && !waiting_for_nolaggy.empty()) {
+/** comment by hy 2020-09-02
+ * # 如果消息是新消息并且waiting_for_nolaggy数组不为空
+     则放入waiting_for_nolaggy中
+ */
     dout(5) << " there are deferred messages, deferring " << *m << dendl;
     waiting_for_nolaggy.push_back(m);
   } else {
@@ -1176,17 +1204,26 @@ void MDSRank::handle_message(const cref_t<Message> &m)
   int port = m->get_type() & 0xff00;
 
   switch (port) {
+/** comment by hy 2020-09-02
+ * # cache类型消息，由mdcache处理
+ */
   case MDS_PORT_CACHE:
     ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
     mdcache->dispatch(m);
     break;
 
+/** comment by hy 2020-09-02
+ * # migrator类型消息，由migrator处理
+ */
   case MDS_PORT_MIGRATOR:
     ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
     mdcache->migrator->dispatch(m);
     break;
 
   default:
+/** comment by hy 2020-09-02
+ * # client session,slave消息，由server处理
+ */
     switch (m->get_type()) {
       // SERVER
     case CEPH_MSG_CLIENT_SESSION:
@@ -1202,6 +1239,9 @@ void MDSRank::handle_message(const cref_t<Message> &m)
       server->dispatch(m);
       break;
 
+/** comment by hy 2020-09-02
+ * # heartbeat消息，有balancer处理
+ */
     case MSG_MDS_HEARTBEAT:
       ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
       balancer->proc_message(m);
@@ -1221,12 +1261,18 @@ void MDSRank::handle_message(const cref_t<Message> &m)
       }
       break;
 
+/** comment by hy 2020-09-02
+ * # lock消息，由locker处理
+ */
     case MSG_MDS_LOCK:
     case MSG_MDS_INODEFILECAPS:
       ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
       locker->dispatch(m);
       break;
 
+/** comment by hy 2020-09-02
+ * # client caps消息，由locker处理
+ */
     case CEPH_MSG_CLIENT_CAPS:
     case CEPH_MSG_CLIENT_CAPRELEASE:
     case CEPH_MSG_CLIENT_LEASE:

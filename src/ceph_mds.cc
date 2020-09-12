@@ -214,6 +214,9 @@ int main(int argc, const char **argv)
     forker.daemonize();
   }
 
+/** comment by hy 2020-09-02
+ * # 初始化流程
+ */
   r = mds->init();
   if (r < 0) {
     msgr->wait();

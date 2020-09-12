@@ -399,7 +399,7 @@ void generate_transaction(
 	t->omap_setheader(coll, goid, *(op.omap_header));
 
 /** comment by hy 2020-07-13
- * # 执行对应的操作
+ * # 执行对应的 omap 操作
  */
       for (auto &&up: op.omap_updates) {
 	using UpdateType = PGTransaction::ObjectOperation::OmapUpdateType;
@@ -429,7 +429,9 @@ void generate_transaction(
       }
 
 /** comment by hy 2020-01-31
- * # 写数据后不为空
+ * # 处理的 pg log
+     其中 PGTransaction::write 将信息 放入 buffer_updates
+     即 pglog
  */
       for (auto &&extent: op.buffer_updates) {
 	using BufferUpdate = PGTransaction::ObjectOperation::BufferUpdate;
@@ -437,7 +439,7 @@ void generate_transaction(
 	  extent.get_val(),
 	  [&](const BufferUpdate::Write &op) {
 /** comment by hy 2020-01-31
- * # 放入后端存储事务的 data 缓冲中
+ * # pg 放入后端存储事务的 data 缓冲中
  */
 	    t->write(
 	      coll,
@@ -494,7 +496,7 @@ void ReplicatedBackend::submit_transaction(
   PGTransactionUPtr t(std::move(_t));
   set<hobject_t> added, removed;
 /** comment by hy 2020-01-31
- * # 放入后端存储引擎的data缓冲中
+ * # 放入后端存储引擎的 data 缓冲中
  */
   generate_transaction(
     t,
@@ -504,6 +506,7 @@ void ReplicatedBackend::submit_transaction(
     &added,
     &removed,
     get_osdmap()->require_osd_release);
+
   ceph_assert(added.size() <= 1);
   ceph_assert(removed.size() <= 1);
 
@@ -550,7 +553,7 @@ void ReplicatedBackend::submit_transaction(
 
 /** comment by hy 2020-01-31
  * # 准备log信息
-     将PGLog相关信息序列化到transaction里,即数据库中
+     将PGLog相关信息序列化到 transaction 里,即数据库中
      PrimaryLogPG::log_operation
  */
   parent->log_operation(

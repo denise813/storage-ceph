@@ -600,11 +600,20 @@ void bluestore_pextent_t::dump(Formatter *f) const
 {
   f->dump_unsigned("offset", offset);
   f->dump_unsigned("length", length);
+
+#if 0
+  f->dump_unsigned("agent_length", agent_length);
+#endif
 }
 
 ostream& operator<<(ostream& out, const bluestore_pextent_t& o) {
   if (o.is_valid())
+
+#if 1
     return out << "0x" << std::hex << o.offset << "~" << o.length << std::dec;
+#else
+    return out << "0x" << std::hex << o.offset << o.agent. << "~" << o.length << std::dec;
+#endif
   else
     return out << "!~" << std::hex << o.length << std::dec;
 }
