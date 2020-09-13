@@ -2,16 +2,25 @@ import re
 import os
 from depoly_tools import remote_exec_cmd
 from depoly_tools import local_exec_cmd
+from depoly_tools import remote_target
+from depoly_tools import cluster
 
+osd_ids=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 data_disks=['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdh', 'sdi', 'sdj', 'sdk']
-meta_disks=['nvme0n1', 'nvme1n1']
-cache_disks=[]
+meta_disks=['nvme0n1']
+cache_disks=['nvme1n1']
+#meta_disks=['nvme0n1', 'nvme1n1']
+#cache_disks=[]
 
 devices={"data": data_disks, 'meta':meta_disks, "cache":cache_disks}
 
+# 拷贝证书
+remote_exec_cmd("scp /var/lib/ceph/bootstrap-osd/{cluster_name}.keyring root@{node}:/var/lib/ceph/bootstrap-osd/{cluster_name}.keyring".format(
+    cluster_name=cluster, node=remote_target))
+
 # 进行元数据分物理区
 for i in range(len(devices['meta'])):
-    remote_exec_cmd( "parted /dev/{disk_name} --script mktable gpt".format(disk_name=devices['meta'][i]) )
+    remote_exec_cmd( "parted /dev/{disk_name} --script mktable gpt".format(disk_name=devices['meta'][i]))
     local_exec_cmd( "sleep 1")
 
 # 进行元数据逻辑分区
@@ -21,11 +30,10 @@ cache_disk_len = len(devices['cache'])
 if meta_disk_len != 0:
     meta_zone_len = data_disk_len // meta_disk_len
 
-if cache_disk_len != 0
+if cache_disk_len != 0:
     cache_zone_len = data_disk_len // cache_disk_len
 
 disk_id = 0
-osd_id = 0
 ready_disks = []
 for i in range(meta_disk_len):
     # 进行db分区
@@ -61,16 +69,16 @@ for i in range(meta_disk_len):
         if cache_disk_len != 0:
             # 缓存盘后端建立
             disk['disk_id'] = disk_id
-            remote_exec_cmd("make-bcache -B  /dev/{disk_name}".format(disk_name=devices['data'][disk_id]))
+            remote_exec_cmd("make-bcache -B /dev/{disk_name} -w 4K".format(disk_name=devices['data'][disk_id]))
             disk['data'] = "/dev/bcache{cache_id}".format(cache_id=disk_id)
         else:
             # 数据盘
-            disk['data'] = "/dev/bcache{disk_name}".format(disk_name=devices['data'][disk_id])
+            disk['data'] = "/dev/{disk_name}".format(disk_name=devices['data'][disk_id])
 
         # osd 
-        disk['osd_id'] = osd_id
+        disk['osd_id'] = osd_ids[disk_id]
+        disk['disk_id'] = disk_id
         # diskid
-        osd_id = osd_id + 1
         disk_id = disk_id + 1
         ready_disks.append(disk.copy())
 
@@ -85,7 +93,10 @@ for i in range(meta_disk_len):
 disk_id = 0
 # 缓存盘处理
 for i in range(cache_disk_len):
-    remote_exec_cmd("make-bcache -C /dev/{disk_name}".format(
+    # backing device hard sector size of SSD -w
+    # -bucket aching device的 erase block size
+    # lsblk -o NAME, PHY-SeC
+    remote_exec_cmd("make-bcache -C /dev/{disk_name} -w 4K -b 1M".format(
         disk_name=devices['cache'][i]))
     local_exec_cmd("sleep 2")
 
@@ -95,9 +106,10 @@ for i in range(cache_disk_len):
     tmp_cset_uuid = re.findall(r'\S+-\S+-\S+-\S+-*', cset_out)
     cset_uuid = tmp_cset_uuid[0]
     for index in range(cache_zone_len):
-        remote_exec_cmd('echo "{uuid}" >/sys/block/bcache{cache_id}/bcache/attach'.format(
+        remote_exec_cmd('echo {uuid} >/sys/block/bcache{cache_id}/bcache/attach'.format(
             uuid=cset_uuid, cache_id=ready_disks[disk_id]['disk_id']))
         disk_id = disk_id + 1
+        local_exec_cmd("sleep 2")
 
 # 检查创建成功
 local_exec_cmd( "sleep 1")
@@ -115,8 +127,8 @@ for disk in ready_disks:
             data_path=disk['data'],
             wal_path=disk['wal'],
             db_path=disk['db'],
-            osd_id=disk['osd_id']) )
-    local_exec_cmd("sleep 10")
+            osd_id=disk['osd_id']))
+    local_exec_cmd("sleep 5")
 
 # 激活 osd磁盘
 # ceph-volume lvm activate -h
@@ -129,8 +141,8 @@ for disk in ready_disks:
         "--no-tmpfs --no-systemd".format(
             data_path=disk['data'],
             wal_path=disk['wal'],
-            db_path=disk['db']) )
-    local_exec_cmd("sleep 10")
+            db_path=disk['db']))
+    local_exec_cmd("sleep 5")
 
 for disk in ready_disks:
     remote_exec_cmd("systemctl enable ceph-osd@{osd_id}".format(osd_id=disk['osd_id']))

@@ -49,6 +49,6 @@ def create_parser(prog, description):
     parser.add_argument(
         '--osd_id',
         dest='osd_id',
-        help='specify id of object storage daemon sevice',
+        help='The ID of the OSD, usually an integer, like 0',
     )
     return parser

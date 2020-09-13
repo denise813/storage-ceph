@@ -117,6 +117,11 @@ class Activate(object):
             help='Path to bluestore block.wal block device'
         )
         parser.add_argument(
+            '--osd_id',
+            dest='osd_id',
+            help='The ID of the OSD, usually an integer, like 0'
+        )                                                                )
+        parser.add_argument(
             '--no-tmpfs',
             action='store_true',
             help='Do not use a tmpfs mount for OSD data dir'
