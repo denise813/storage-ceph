@@ -531,6 +531,10 @@ int MDSDaemon::init()
     return 0;
   }
 
+/** comment by hy 2020-09-14
+ * # 通过 MDSDaemon::handle_core_message, ->handle_mds_map
+     完成初始化为主
+ */
   monc->sub_want("mdsmap", 0, 0);
   monc->renew_subs();
 

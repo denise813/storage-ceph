@@ -57,5 +57,5 @@ for pkg in noarch_rpm_array:
 
 print (pkgs)
 remote_exec_cmd("yum install -y {pkgs}".format(pkgs=pkgs) )
-remote_exec_cmd("yum install -y fio")
+remote_exec_cmd("yum install -y fio sdparm")
 

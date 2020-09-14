@@ -192,6 +192,14 @@ std::map<std::string, std::string> Mgr::load_store()
       Command get_cmd;
       std::ostringstream cmd_json;
       cmd_json << "{\"prefix\": \"config-key get\", \"key\": \"" << key << "\"}";
+/** comment by hy 2020-09-17
+ * # 向mon发送命令, 命令为 prefix config-key get device/
+     信息由 set-life-expectancy 而来
+     这个是 diskprediction_local 模块 中的
+     模块启动是 serve
+     predict_all_devices->_set_device_life_expectancy
+     而这些是来至于初始化 向mon 发送获取 osd metadata 信息的命令加载而来
+ */
       get_cmd.run(monc, cmd_json.str());
       lock.unlock();
       get_cmd.wait();

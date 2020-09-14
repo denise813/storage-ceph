@@ -1673,7 +1673,10 @@ public:
     interval_set<uint64_t> allocated, released;
     volatile_statfs statfs_delta;	   ///< overall store statistics delta
     uint64_t osd_pool_id = META_POOL_ID;    ///< osd pool id we're operating on
-    
+
+/** comment by hy 2020-09-13
+ * # 延迟写io
+ */
     IOContext ioc;
     bool had_ios = false;  ///< true if we submitted IOs before our kv txn
 
@@ -2062,11 +2065,6 @@ private:
  * # block 数据设备
  */
   BlockDevice *bdev = nullptr;
-/** comment by hy 2020-09-09
- * # 添加 cache 数据设备
- */
-  BlockDevice *cachedev = nullptr;
-
 
   std::string freelist_type;
   FreelistManager *fm = nullptr;

@@ -711,10 +711,12 @@ protected:
     uint64_t min_length,
     uint64_t max_length,
     uint64_t hint,
-    
     uint64_t* allocated,
     interval_vector_t* res)
   {
+/** comment by hy 2020-09-14
+ * # 待填充的数据
+ */
     uint64_t prev_allocated = *allocated;
     uint64_t d = L1_ENTRIES_PER_SLOT;
     ceph_assert(min_length <= l2_granularity);

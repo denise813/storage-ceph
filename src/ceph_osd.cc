@@ -507,6 +507,9 @@ flushjournal_out:
      osd_fsid 为 文件系统 id
  */
   uuid_d cluster_fsid, osd_fsid;
+/** comment by hy 2020-09-16
+ * # 一开始是未知值
+ */
   ceph_release_t require_osd_release = ceph_release_t::unknown;
   int w;
 /** comment by hy 2020-02-29

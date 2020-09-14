@@ -5100,6 +5100,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
  * # 第一次初始化，需要固化meta参数
  */
     ceph_assert( cct->_conf->bdev_block_size <= (int64_t)min_alloc_size);
+/** comment by hy 2020-09-13
+ * # BitmapFreelistManager::create
+ */
     fm->create(bdev->get_size(), (int64_t)min_alloc_size, t);
 
     // allocate superblock reserved space.  note that we do not mark
@@ -5745,6 +5748,9 @@ int BlueStore::_open_db_and_around(bool read_only)
       goto out_db;
     }
 
+/** comment by hy 2020-09-13
+ * # 设备的空间管理
+ */
     r = _open_fm(nullptr, true);
     if (r < 0)
       goto out_db;
@@ -6673,12 +6679,6 @@ int BlueStore::mkfs()
     if (r < 0)
       goto out_close_fsid;
   }
-
-#if 0
-    r = _open_cachedev(true);
-    if (r < 0)
-      goto out_close_fsid;
-#endif
 
 
 /** comment by hy 2020-08-25
@@ -8861,6 +8861,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 	      continue;
 	    }
 	    PExtentVector exts;
+            
 	    int64_t alloc_len = alloc->allocate(e->length, min_alloc_size,
 						0, 0, &exts);
 	    if (alloc_len < 0 || alloc_len < (int64_t)e->length) {
@@ -8883,6 +8884,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 
 	    bufferlist bl;
 	    IOContext ioc(cct, NULL, true); // allow EIO
+	    
 	    r = bdev->read(e->offset, e->length, &bl, &ioc, false);
 	    if (r < 0) {
 	      derr << __func__ << " failed to read from 0x" << std::hex << e->offset
@@ -14591,6 +14593,13 @@ int BlueStore::_do_alloc_write(
  */
   prealloc.reserve(2 * wctx->writes.size());;
   int64_t prealloc_left = 0;
+/** comment by hy 2020-09-14
+ * # 先判断缓存磁盘是否有空间
+ */
+ 
+/** comment by hy 2020-09-14
+ * # 如果有使用缓存盘分配空间
+ */
 /** comment by hy 2020-02-05
  * # 申请空间,由指定的分配器指定,申请是由后往前进行
  */
@@ -14754,7 +14763,7 @@ int BlueStore::_do_alloc_write(
 	logger->inc(l_bluestore_write_small_deferred);
       } else {
 /** comment by hy 2020-02-05
- * # 到达处理间隔
+ * # 到达处理间隔,安装对应的map进行操作
  */
 	b->get_blob().map_bl(
 	  b_off, *l,
@@ -15134,7 +15143,7 @@ int BlueStore::_do_write(
  */
   o->extent_map.fault_range(db, offset, length);
 /** comment by hy 2020-02-05
- * # 写到第一次缓存中
+ * # 写到缓存中 write_item 中
  */
   _do_write_data(txc, c, o, offset, length, bl, &wctx);
 /** comment by hy 2020-02-05

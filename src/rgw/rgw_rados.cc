@@ -2373,6 +2373,8 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
 
 /** comment by hy 2020-03-08
  * # 写 到bucket 元数据中,发送消息
+     是不是在这里加上一个 小文件对象索引?
+     这里添加小文件索引合适?
  */
     ret = put_linked_bucket_info(info, exclusive, ceph::real_time(), pep_objv, &attrs, true);
     if (ret == -ECANCELED) {

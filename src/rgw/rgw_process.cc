@@ -259,7 +259,8 @@ int process_request(rgw::sal::RGWRadosStore* const store,
                     int* http_ret)
 {
 /** comment by hy 2020-02-08
-   # 设置消息头 以及 连接信息
+   # 初始化客户端，主要是从request info中取出请求头来
+     设置消息头 以及 连接信息
      RGWCivetWeb
  * # ConLenControllingFilter
      ChunkingFilter
@@ -274,7 +275,8 @@ int process_request(rgw::sal::RGWRadosStore* const store,
   perfcounter->inc(l_rgw_req);
 
 /** comment by hy 2020-03-07
- * # 获取根据请求包装后 env
+ * # 初始化执行环境,获取client_io的env来初始化
+     获取根据请求包装后 env
      RGWCivetWeb::get_env
  */
   RGWEnv& rgw_env = client_io->get_env();
@@ -282,13 +284,15 @@ int process_request(rgw::sal::RGWRadosStore* const store,
   rgw::sal::RGWRadosUser user;
 
 /** comment by hy 2020-03-07
- * # 生成请求状态空间
+ * # 存储用于完成完成请求的所有信息
+     生成请求状态空间
  */
   struct req_state rstate(g_ceph_context, &rgw_env, &user, req->id);
   struct req_state *s = &rstate;
 
 /** comment by hy 2020-03-15
- * # 生成内容
+ * # 初始化rados上下文
+     生成内容
  */
   RGWObjectCtx rados_ctx(store, s);
   s->obj_ctx = &rados_ctx;
@@ -306,6 +310,9 @@ int process_request(rgw::sal::RGWRadosStore* const store,
     return ret;
   }
 
+/** comment by hy 2020-09-16
+ * # 初始化请求跟踪等
+ */
   s->req_id = store->svc()->zone_utils->unique_id(req->id);
   s->trans_id = store->svc()->zone_utils->unique_trans_id(req->id);
   s->host_id = store->getRados()->host_id;
@@ -313,12 +320,16 @@ int process_request(rgw::sal::RGWRadosStore* const store,
 
   ldpp_dout(s, 2) << "initializing for trans_id = " << s->trans_id << dendl;
 
+/** comment by hy 2020-09-16
+ * # 初始化操作
+ */
   RGWOp* op = nullptr;
   int init_error = 0;
   bool should_log = false;
   RGWRESTMgr *mgr;
 /** comment by hy 2020-02-08
- * # 获取 url 解析出对应处理者
+ * # 根据请求的url来选择对应的manager和该manager中的handler
+     获取 url 解析出对应处理者
      RGWRESTMgr_S3::get_handler
 
      service 得到RGWHandler_REST类实例 如
@@ -418,8 +429,8 @@ int process_request(rgw::sal::RGWRadosStore* const store,
  * # 
      RGWHandler_REST_Bucket_S3::postauth_init = 
      RGWHandler_REST_Obj_S3::postauth_init =
-     RGWHandler_REST_S3::postauth_init
-
+     RGWHandler_REST_S3::postauth_init =
+    调用 RGWHandler_REST_S3::postauth_init
      检查bucket以及object名字的有效性
  */
     ret = handler->postauth_init();
@@ -445,6 +456,7 @@ int process_request(rgw::sal::RGWRadosStore* const store,
 
         重要的是执行三个模板方法
         op->pre_exec();
+        开始执行具体请求的操作
         op->execute();
         op->complete();
 
@@ -454,6 +466,7 @@ int process_request(rgw::sal::RGWRadosStore* const store,
         RGWCreateBucket_ObjStore_S3::complete
          = RGWCreateBucket::pre_exec
          = RGWCreateBucket::execute
+         这里会执行具体操作 如 RGWRados::create_bucket
          = RGWCreateBucket::complete = 注册的函数 用于通知
 
       上传对象 等对应操作
@@ -480,7 +493,8 @@ int process_request(rgw::sal::RGWRadosStore* const store,
 
 done:
 /** comment by hy 2020-02-08
- * # 收尾
+ * # 结束客户端请求
+     收尾
      RGWCivetWeb::complete_request
  */
   try {

@@ -4314,13 +4314,6 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_CREATE)
     .set_description("Path to block device/file"),
 
-/** comment by hy 2020-09-09
- * # 新增 缓冲设备路径
- */
-   Option("bluestore_block_cache_path", Option::TYPE_STR, Option::LEVEL_DEV)
-    .set_default("")
-    .set_flag(Option::FLAG_CREATE)
-    .set_description("Path to block cache device/file"),
 /** comment by hy 2020-04-13
  * # 测试参数 2G
  */

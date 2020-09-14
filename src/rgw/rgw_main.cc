@@ -733,9 +733,13 @@ int radosgw_Main(int argc, const char **argv)
 
      RGWCivetWebFrontend::run
          注册请求对应的回调
-           cb.begin_request = civetweb_callback;通过框架连接有请求的回调 派发消息
-           cb.log_message = rgw_civetweb_log_callback; 通过 调用mg_cry回调 记录消息日志
-           cb.log_access = rgw_civetweb_log_access_callback;通过框架有连接请求的回调 输出访问日志
+           cb.begin_request = civetweb_callback;
+           通过框架连接有请求的回调 派发消息
+           z最后调用 process_request 处理请求
+           cb.log_message = rgw_civetweb_log_callback;
+           通过 调用mg_cry回调 记录消息日志
+           cb.log_access = rgw_civetweb_log_access_callback;
+           通过框架有连接请求的回调 输出访问日志
  */
     r = fe->run();
     if (r < 0) {

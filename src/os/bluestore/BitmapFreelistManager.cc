@@ -92,6 +92,9 @@ int BitmapFreelistManager::create(uint64_t new_size, uint64_t granularity,
 	   << " blocks 0x" << blocks
 	   << " blocks_per_key 0x" << blocks_per_key
 	   << std::dec << dendl;
+/** comment by hy 2020-09-13
+ * # 设立的前缀 为 B
+ */
   {
     bufferlist bl;
     encode(bytes_per_block, bl);

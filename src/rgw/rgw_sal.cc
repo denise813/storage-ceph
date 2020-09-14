@@ -308,6 +308,8 @@ rgw::sal::RGWRadosStore *RGWStoreManager::init_storage_provider(CephContext *cct
  */
 /** comment by hy 2020-03-05
  * # RGWRados::initialize 里面包括服务启动的线程
+     set_use_cache 表示启动用户信息的cache 与 RGWRados::init_svc 关联
+     最后 与 civetweb_callback 一起工作
  */
   if ((*rados).set_use_cache(use_cache)
               .set_run_gc_thread(use_gc_thread)

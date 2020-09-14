@@ -2168,6 +2168,9 @@ bool DaemonServer::_handle_command(
     cmdctx->reply(r, ss);
     return true;
   } else if (prefix == "device set-life-expectancy") {
+/** comment by hy 2020-09-17
+ * # 设置设备信息
+ */
     string devid;
     cmd_getval(cmdctx->cmdmap, "devid", devid);
     string from_str, to_str;

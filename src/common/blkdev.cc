@@ -292,6 +292,22 @@ static int easy_readdir(const std::string& dir, std::set<std::string> *out)
   return 0;
 }
 
+/* add begin by hy, 2020-09-18, BugId:123 原因: 添加从块设备找到主设备 */
+void get_real_disks(const std::string& dev, std::set<std::string> *ls)
+{
+  std::string p = std::string("/sys/block/") + dev + "/slaves";
+  std::set<std::string> parents;
+  easy_readdir(p, &parents);
+  if (parents.size() == 0) {
+    ls->insert(dev);
+    return;
+  }
+  for (auto& d : parents) {
+    get_real_disks(d, ls);
+  }
+}
+/* add end by hy, 2020-09-18 */
+
 void get_dm_parents(const std::string& dev, std::set<std::string> *ls)
 {
   std::string p = std::string("/sys/block/") + dev + "/slaves";
@@ -1272,7 +1288,25 @@ void get_device_metadata(
   (*pm)["devices"] = stringify(devnames);
   string &devids = (*pm)["device_ids"];
   string &devpaths = (*pm)["device_paths"];
-  for (auto& dev : devnames) {
+/** comment by hy 2020-09-18
+ * # 获得设备信息
+ */
+/* add begin by hy, 2020-09-18, BugId:123 原因:
+   因为bcache 设备无法找到对应的真实的设备，所以在这
+   添加从块设备找到从设备,从而找到真实的设备
+ */
+/** comment by hy 2020-09-18
+ * # 判断设备的真实路径
+ */
+  std::set<std::string> real_devnames;
+  for (auto & dev : devnames) {
+    get_real_disks(dev, &real_devnames);
+  }
+  //dout(1) << __func__ << " devnames" << devnames << dendl;
+  //dout(1) << __func__ << " real_devnames" << real_devnames << dendl;
+/* modify end by hy, 2020-09-18 */
+
+  for (auto& dev : real_devnames) {
     string err;
     string id = get_device_id(dev, &err);
     if (id.size()) {

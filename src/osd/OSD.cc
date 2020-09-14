@@ -6732,8 +6732,14 @@ void OSD::_collect_metadata(map<string,string> *pm)
   }
 
   set<string> devnames;
+/** comment by hy 2020-09-17
+ * # 获取使用的设备名称
+ */
   store->get_devices(&devnames);
   map<string,string> errs;
+/** comment by hy 2020-09-18
+ * # 获取设备的元数据信息
+ */
   get_device_metadata(devnames, pm, &errs);
   for (auto& i : errs) {
     dout(1) << __func__ << " " << i.first << ": " << i.second << dendl;
