@@ -117,11 +117,6 @@ class Activate(object):
             help='Path to bluestore block.wal block device'
         )
         parser.add_argument(
-            '--osd_id',
-            dest='osd_id',
-            help='The ID of the OSD, usually an integer, like 0'
-        )                                                                )
-        parser.add_argument(
             '--no-tmpfs',
             action='store_true',
             help='Do not use a tmpfs mount for OSD data dir'
@@ -135,6 +130,7 @@ class Activate(object):
         if not args.no_systemd:
             terminal.error('systemd support not yet implemented')
             raise SystemExit(1)
+        # 设备格式化的时候已经写入设备
         self.activate(args.device,
                       tmpfs=not args.no_tmpfs,
                       systemd=not self.args.no_systemd,
