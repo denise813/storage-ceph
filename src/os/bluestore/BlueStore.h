@@ -2064,6 +2064,10 @@ private:
 /** comment by hy 2020-08-02
  * # block 数据设备
  */
+/** comment by hy 2020-09-18
+ * # 这里我想改成多个设备,每个设备怎么分
+     故障如何处理
+ */
   BlockDevice *bdev = nullptr;
 
   std::string freelist_type;

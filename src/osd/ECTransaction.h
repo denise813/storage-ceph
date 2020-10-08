@@ -43,6 +43,9 @@ namespace ECTransaction {
     F &&get_hinfo,
     DoutPrefixProvider *dpp) {
     WritePlan plan;
+/** comment by hy 2020-09-19
+ * # 转换为object 事务
+ */
     t->safe_create_traverse(
       [&](pair<const hobject_t, PGTransaction::ObjectOperation> &i) {
 	ECUtil::HashInfoRef hinfo = get_hinfo(i.first);

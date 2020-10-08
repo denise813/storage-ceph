@@ -181,6 +181,31 @@ extern "C" int _rados_connect(rados_t cluster)
 }
 LIBRADOS_C_API_BASE_DEFAULT(rados_connect);
 
+extern "C" int _rados_subscribe_servicemap(rados_t cluster, char * service)
+{
+  tracepoint(librados, rados_subscribe_servicemap_enter, cluster, service);
+  librados::RadosClient *client = (librados::RadosClient *)cluster;
+  int retval = client->subscribe_servicemap(service);
+  tracepoint(librados, rados_subscribe_servicemap_exit, retval);
+  return retval;
+}
+LIBRADOS_C_API_BASE_DEFAULT(rados_subscribe_servicemap);
+
+extern "C" int _rados_get_servicemap(rados_t cluster, char * service, char **argv)
+{
+  std::vector<const char*> map;
+  const char **tmpargv;
+  int tmpargc;
+
+  tracepoint(librados, rados_get_servicemap_enter, cluster, service);
+  librados::RadosClient *client = (librados::RadosClient *)cluster;
+  int retval = client->get_servicemap(service, map);
+  vec_to_argv(argv[0], map, &tmpargc, &tmpargv);
+  tracepoint(librados, rados_get_servicemap_exit, retval);
+  return retval;
+}
+LIBRADOS_C_API_BASE_DEFAULT(rados_get_servicemap);
+
 extern "C" void _rados_shutdown(rados_t cluster)
 {
   tracepoint(librados, rados_shutdown_enter, cluster);

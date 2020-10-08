@@ -358,7 +358,7 @@ private:
    *  BDEV_SLOW db.slow/ - a big, slow device, to spill over to as BDEV_DB fills
    */
 /** comment by hy 2020-04-22
- * # BlueFS能够使用的所有BlockDevice
+ * # BlueFS能够使用的所有BlockDevice,简而言之就是数据库(元数据使用的设备)
  */
   vector<BlockDevice*> bdev;                  ///< block devices we can use
 /** comment by hy 2020-04-22

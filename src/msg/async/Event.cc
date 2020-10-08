@@ -389,6 +389,9 @@ int EventCenter::process_events(unsigned timeout_microseconds,  ceph::timespan *
 
   ldout(cct, 30) << __func__ << " wait second " << tv.tv_sec << " usec " << tv.tv_usec << dendl;
   vector<FiredFileEvent> fired_events;
+/** comment by hy 2020-09-22
+ * # 这里等待事件
+ */
   numevents = driver->event_wait(fired_events, &tv);
   auto working_start = ceph::mono_clock::now();
   for (int event_id = 0; event_id < numevents; event_id++) {

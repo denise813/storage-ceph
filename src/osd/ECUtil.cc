@@ -133,12 +133,21 @@ int ECUtil::encode(
   if (logical_size == 0)
     return 0;
 
+/** comment by hy 2020-09-18
+ * # 件每次按strip_width的大小进行encode编码
+ */
   for (uint64_t i = 0; i < logical_size; i += sinfo.get_stripe_width()) {
     map<int, bufferlist> encoded;
     bufferlist buf;
     buf.substr_of(in, i, sinfo.get_stripe_width());
+/** comment by hy 2020-09-18
+ * # 调用对应的纠删码方式进行编码
+ */
     int r = ec_impl->encode(want, buf, &encoded);
     ceph_assert(r == 0);
+/** comment by hy 2020-09-18
+ * # 将条带化的数据块和校验块追加到out
+ */
     for (map<int, bufferlist>::iterator i = encoded.begin();
 	 i != encoded.end();
 	 ++i) {

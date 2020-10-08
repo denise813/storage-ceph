@@ -5015,6 +5015,7 @@ int BlueStore::_open_bdev(bool create)
 /** comment by hy 2020-07-28
  * # NVMEDevice
      KernelDevice
+     size block size 是在open 里面进行设置
  */
   if (create && cct->_conf->bdev_enable_discard) {
     bdev->discard(0, bdev->get_size());
@@ -6653,7 +6654,7 @@ int BlueStore::mkfs()
   }
 
 /** comment by hy 2020-08-19
- * # 设备连接
+ * # 设备连接, 在分级存储的场合 block 等于 缓存盘
  */
   r = _setup_block_symlink_or_file("block", cct->_conf->bluestore_block_path,
 				   cct->_conf->bluestore_block_size,

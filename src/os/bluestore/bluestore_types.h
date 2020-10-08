@@ -775,6 +775,9 @@ public:
       uint64_t l = std::min(p->length - x_off, x_len);
       bufferlist t;
       it.copy(l, t);
+/** comment by hy 2020-09-24
+ * # 调用对应的处理函数
+ */
       f(p->offset + x_off, t);
       x_off = 0;
       x_len -= l;

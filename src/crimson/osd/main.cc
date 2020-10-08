@@ -167,6 +167,9 @@ int main(int argc, char* argv[])
         pidfile_write(local_conf()->pid_file);
         const int whoami = std::stoi(local_conf()->name.get_id());
         const auto nonce = get_nonce();
+/** comment by hy 2020-10-12
+ * # 网络接口初始化
+ */
         crimson::net::MessengerRef cluster_msgr, client_msgr;
         crimson::net::MessengerRef hb_front_msgr, hb_back_msgr;
         for (auto [msgr, name] : {make_pair(std::ref(cluster_msgr), "cluster"s),
@@ -182,6 +185,9 @@ int main(int argc, char* argv[])
             msgr->set_crc_header();
           }
         }
+/** comment by hy 2020-10-12
+ * # 启动过程
+ */
         osd.start_single(whoami, nonce,
                          cluster_msgr, client_msgr,
                          hb_front_msgr, hb_back_msgr).get();
@@ -190,6 +196,9 @@ int main(int argc, char* argv[])
             seastar::engine().exit(1);
           }).get();
         }
+/** comment by hy 2020-10-12
+ * # 
+ */
         if (config.count("mkfs")) {
           osd.invoke_on(
 	    0,

@@ -980,6 +980,9 @@ void ECBackend::handle_sub_write(
   tls.reserve(2);
   tls.push_back(std::move(op.t));
   tls.push_back(std::move(localt));
+/** comment by hy 2020-09-19
+ * # 
+ */
   get_parent()->queue_transactions(tls, msg);
   dout(30) << __func__ << " missing after" << get_parent()->get_log().get_missing().get_items() << dendl;
   if (op.at_version != eversion_t()) {
@@ -1512,6 +1515,9 @@ void ECBackend::submit_transaction(
     op->trace = client_op->pg_trace;
   
   dout(10) << __func__ << ": op " << *op << " starting" << dendl;
+/** comment by hy 2020-09-19
+ * # 
+ */
   start_rmw(op, std::move(t));
 }
 
@@ -1840,6 +1846,9 @@ void ECBackend::start_rmw(Op *op, PGTransactionUPtr &&t)
 {
   ceph_assert(op);
 
+/** comment by hy 2020-09-19
+ * # 转化为对应的object 事务
+ */
   op->plan = ECTransaction::get_write_plan(
     sinfo,
     std::move(t),
@@ -1859,6 +1868,9 @@ void ECBackend::start_rmw(Op *op, PGTransactionUPtr &&t)
   dout(10) << __func__ << ": " << *op << dendl;
 
   waiting_state.push_back(*op);
+/** comment by hy 2020-09-19
+ * # 核心逻辑
+ */
   check_ops();
 }
 
@@ -1868,6 +1880,10 @@ bool ECBackend::try_state_to_reads()
     return false;
 
   Op *op = &(waiting_state.front());
+/** comment by hy 2020-09-19
+ * # requires_rmw 判断范围已经对齐,以及 cache_invalid 表示 使用缓存
+     还不允许重新
+ */
   if (op->requires_rmw() && pipeline_state.cache_invalid()) {
     ceph_assert(get_parent()->get_pool().allows_ecoverwrites());
     dout(20) << __func__ << ": blocking " << *op
@@ -1899,6 +1915,9 @@ bool ECBackend::try_state_to_reads()
 	empty :
 	to_read_plan_iter->second;
 
+/** comment by hy 2020-09-19
+ * # 
+ */
       extent_set remote_read = cache.reserve_extents_for_rmw(
 	hpair.first,
 	op->pin,
@@ -1923,12 +1942,18 @@ bool ECBackend::try_state_to_reads()
 
   if (!op->remote_read.empty()) {
     ceph_assert(get_parent()->get_pool().allows_ecoverwrites());
+/** comment by hy 2020-09-19
+ * # 
+ */
     objects_read_async_no_cache(
       op->remote_read,
       [this, op](map<hobject_t,pair<int, extent_map> > &&results) {
 	for (auto &&i: results) {
 	  op->remote_read_result.emplace(i.first, i.second.second);
 	}
+/** comment by hy 2020-09-19
+ * # 重新放入上一步操作,进行流转到下一步
+ */
 	check_ops();
       });
   }
@@ -1949,10 +1974,17 @@ bool ECBackend::try_reads_to_commit()
   dout(10) << __func__ << ": starting commit on " << *op << dendl;
   dout(20) << __func__ << ": " << cache << dendl;
 
+/** comment by hy 2020-09-19
+ * # pg 的处理
+     PrimaryLogPG::apply_stats
+ */
   get_parent()->apply_stats(
     op->hoid,
     op->delta_stats);
 
+/** comment by hy 2020-09-19
+ * # cache 处理
+ */
   if (op->using_cache) {
     for (auto &&hpair: op->pending_read) {
       op->remote_read_result[hpair.first].insert(
@@ -1978,6 +2010,9 @@ bool ECBackend::try_reads_to_commit()
 
   map<hobject_t,extent_map> written;
   if (op->plan.t) {
+/** comment by hy 2020-09-19
+ * # 这里
+ */
     ECTransaction::generate_transactions(
       op->plan,
       ec_impl,
@@ -2083,6 +2118,9 @@ bool ECBackend::try_reads_to_commit()
     get_parent()->send_message_osd_cluster(messages, get_osdmap_epoch());
   }
 
+/** comment by hy 2020-09-19
+ * # 
+ */
   if (should_write_local) {
     handle_sub_write(
       get_parent()->whoami_shard(),
@@ -2150,6 +2188,11 @@ bool ECBackend::try_finish_rmw()
 
 void ECBackend::check_ops()
 {
+/** comment by hy 2020-09-19
+ * # try_state_to_reads
+     try_reads_to_commit
+     try_finish_rmw
+ */
   while (try_state_to_reads() ||
 	 try_reads_to_commit() ||
 	 try_finish_rmw());
@@ -2182,14 +2225,23 @@ void ECBackend::objects_read_async(
 	 to_read.begin();
        i != to_read.end();
        ++i) {
+/** comment by hy 2020-09-18
+ * # 新范围对齐
+ */
     pair<uint64_t, uint64_t> tmp =
       sinfo.offset_len_to_stripe_bounds(
 	make_pair(i->first.get<0>(), i->first.get<1>()));
 
+/** comment by hy 2020-09-18
+ * # 插入新范围
+ */
     es.union_insert(tmp.first, tmp.second);
     flags |= i->first.get<2>();
   }
 
+/** comment by hy 2020-09-18
+ * # 放入输出变量 to_read 容器中
+ */
   if (!es.empty()) {
     auto &offsets = reads[hoid];
     for (auto j = es.begin();

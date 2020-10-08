@@ -301,6 +301,9 @@ private:
 
       dout(20) << *ctx << ": start" << dendl;
 
+/** comment by hy 2020-10-13
+ * # 命令行处理
+ */
       switch (ctx->command)
       {
         case NBD_CMD_DISC:
@@ -322,6 +325,9 @@ private:
       IOContext *pctx = ctx.release();
       io_start(pctx);
       librbd::RBD::AioCompletion *c = new librbd::RBD::AioCompletion(pctx, aio_callback);
+/** comment by hy 2020-10-13
+ * # 数据流程
+ */
       switch (pctx->command)
       {
         case NBD_CMD_WRITE:
@@ -409,7 +415,11 @@ public:
       dout(10) << __func__ << ": starting" << dendl;
 
       started = true;
-
+/** comment by hy 2020-10-13
+ * # 读写线程
+     reader_thread(*this, &NBDServer::reader_entry)
+     writer_thread(*this, &NBDServer::writer_entry)
+ */
       reader_thread.create("rbd_reader");
       writer_thread.create("rbd_writer");
     }
@@ -608,6 +618,9 @@ static int load_module(Config *cfg)
   ostringstream param;
   int ret;
 
+/** comment by hy 2020-10-13
+ * # 这个最大是什么意思?
+ */
   if (cfg->nbds_max)
     param << "nbds_max=" << cfg->nbds_max;
 
@@ -621,6 +634,9 @@ static int load_module(Config *cfg)
     return 0;
   }
 
+/** comment by hy 2020-10-13
+ * # 加载nbd
+ */
   ret = module_load("nbd", param.str().c_str());
   if (ret < 0)
     cerr << "rbd-nbd: failed to load nbd kernel module: " << cpp_strerror(-ret)
@@ -1076,6 +1092,9 @@ static NBDServer *start_server(int fd, librbd::Image& image)
   NBDServer *server;
 
   server = new NBDServer(fd, image);
+/** comment by hy 2020-10-13
+ * # 设置server 里面的线程
+ */
   server->start();
 
   init_async_signal_handler();
@@ -1093,6 +1112,9 @@ static void run_server(Preforker& forker, NBDServer *server, bool netlink_used)
     forker.daemonize();
   }
 
+/** comment by hy 2020-10-13
+ * # 发送命令
+ */
   if (netlink_used)
     server->wait_for_disconnect();
   else
@@ -1217,10 +1239,16 @@ static int do_map(int argc, const char *argv[], Config *cfg)
 
   size = info.size;
 
+/** comment by hy 2020-10-13
+ * # 这里加载内核模块
+ */
   r = load_module(cfg);
   if (r < 0)
     goto close_fd;
 
+/** comment by hy 2020-10-13
+ * # 靠着 netlink 文件句柄来操作
+ */
   server = start_server(fd[1], image);
 
   use_netlink = cfg->try_netlink;

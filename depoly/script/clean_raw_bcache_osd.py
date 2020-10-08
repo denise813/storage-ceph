@@ -19,7 +19,7 @@ data_disk_len = len(devices['data'])
 meta_disk_len = len(devices['meta'])
 cache_disk_len = len(devices['cache'])
 if meta_disk_len != 0:
-    meta_zone = data_disk_len // meta_disk_len
+    meta_zone_len = data_disk_len // meta_disk_len
 if  cache_disk_len!= 0:
     cache_zone_len = data_disk_len // cache_disk_len
 
@@ -49,19 +49,24 @@ for i in range(data_disk_len):
 # 清理 缓存盘
 disk_id = 0
 for i in range(cache_disk_len):
-    cset_out = remote_exec_cmd('bcache-super-show /dev/{disk_name}|grep "cset.uuid" '.format(
-        disk_name=devices['cache'][i]))
-    tmp_cset_uuid = re.findall(r'\S+-\S+-\S+-\S+-*', cset_out)
-    cset_uuid = tmp_cset_uuid[0]
+    lv = 0
     for index in range(cache_zone_len):
+        lv = lv + 1
+        cset_out = remote_exec_cmd('bcache-super-show /dev/{disk_name}p{lv}|grep "cset.uuid" '.format(
+            disk_name=devices['cache'][i], lv=lv))
+        tmp_cset_uuid = re.findall(r'\S+-\S+-\S+-\S+-*', cset_out)
+        cset_uuid = tmp_cset_uuid[0]
         remote_exec_cmd('echo {uuid} >/sys/block/bcache{cache_id}/bcache/detach'.format(
             uuid=cset_uuid, cache_id=disk_id))
-        disk_id = disk_id + 1
         local_exec_cmd("sleep 2")
+        remote_exec_cmd('echo 1 >/sys/fs/bcache/{uuid}/unregister'.format(uuid=cset_uuid))
+        local_exec_cmd("sleep 2")
+        remote_exec_cmd('wipefs -a /dev/{disk_name}p{lv}'.format(disk_name=devices['cache'][i], lv=lv))
 
-    remote_exec_cmd('echo 1 >/sys/fs/bcache/{uuid}/unregister'.format(uuid=cset_uuid))
-    local_exec_cmd("sleep 2")
-    remote_exec_cmd('wipefs -a /dev/{disk_name}'.format(disk_name=devices['cache'][i]))
+        disk_id = disk_id + 1
+        remote_exec_cmd( "/usr/bin/dd if=/dev/zero of=/dev/{disk_name} bs=1M count=10 conv=fsync".format(
+        disk_name=devices['cache'][i]))
+
 
 # 清理数据
 disk_id = 0

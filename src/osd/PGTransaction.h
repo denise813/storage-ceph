@@ -592,8 +592,9 @@ public:
 
     // Populate stack with roots, dgraph with edges
 /** comment by hy 2020-06-26
- * # op_map 里面是 prepare_transaction 写
-     准备的操作
+ * # 将操作信息加入 缓存 l 和 stack
+     op_map 里面是 prepare_transaction 写
+     准备的操作 中的pg log,里面的 操作信息
  */
     for (auto &&opair: op_map) {
       hobject_t source;

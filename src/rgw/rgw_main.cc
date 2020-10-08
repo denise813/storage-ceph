@@ -236,7 +236,7 @@ int radosgw_Main(int argc, const char **argv)
 /** comment by hy 2020-01-08
  * # 检查配置文件中 http 服务的名称与端口号
      civetweb
-     boost.beast 
+     boost.beast
  */
     if (f.find("civetweb") != string::npos || f.find("beast") != string::npos) {
       if (f.find("port") != string::npos) {

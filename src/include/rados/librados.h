@@ -490,6 +490,42 @@ CEPH_RADOS_API int rados_ping_monitor(rados_t cluster, const char *mon_id,
 CEPH_RADOS_API int rados_connect(rados_t cluster);
 
 /**
+ * subscribe servicemap info to the cluster.
+ *
+ * @note BUG: Before calling this, calling a function that communicates with the
+ * cluster will crash.
+ *
+ * @pre The cluster handle is configured with at least a monitor
+ * address. If cephx is enabled, a client name and secret must also be
+ * set.
+ *
+ * @post If this succeeds, any function in librados may be used
+ *
+ * @param cluster The cluster to subscribe to.
+ * @param service The service of subscribe to.
+ * @returns 0 on success, negative error code on failure
+ */
+CEPH_RADOS_API int rados_subscribe_servicemap(rados_t cluster, char * service);
+
+/**
+ * subscribe servicemap info to the cluster.
+ *
+ * @note BUG: Before calling this, calling a function that communicates with the
+ * cluster will crash.
+ *
+ * @pre The cluster handle is configured with at least a monitor
+ * address. If cephx is enabled, a client name and secret must also be
+ * set.
+ *
+ * @post If this succeeds, any function in librados may be used
+ *
+ * @param cluster The cluster to subscribe to.
+ * @param service The service of subscribe to.
+ * @returns 0 on success, negative error code on failure
+ */
+CEPH_RADOS_API int rados_get_servicemap(rados_t cluster, char * service, char **argv);
+
+/**
  * Disconnects from the cluster.
  *
  * For clean up, this is only necessary after rados_connect() has

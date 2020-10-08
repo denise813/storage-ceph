@@ -117,7 +117,13 @@ int ErasureCodeJerasure::decode_chunks(const set<int> &want_to_read,
 				       map<int, bufferlist> *decoded)
 {
   unsigned blocksize = (*chunks.begin()).second.length();
+/** comment by hy 2020-09-18
+ * # 记录丢失块的编号
+ */
   int erasures[k + m + 1];
+/** comment by hy 2020-09-18
+ * # 丢失块的个数
+ */
   int erasures_count = 0;
   char *data[k];
   char *coding[m];

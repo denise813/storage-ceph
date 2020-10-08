@@ -307,6 +307,29 @@ void MgrStatMonitor::check_sub(Subscription *sub)
   }
 }
 
+void MgrStatMonitor::check_sub(Subscription *sub, const std::string & service)
+{
+  const auto epoch = mon->monmap->get_epoch();
+  dout(10) << __func__
+	   << " next " << sub->next
+	   << " have " << epoch << dendl;
+  if (sub->next <= service_map.epoch) {
+    ServiceMap send_service_map;
+    send_service_map.epoch = service_map.epoch;
+    send_service_map.services[service] = service_map.services[service];
+    auto m = new MServiceMap(send_service_map);
+    sub->session->con->send_message(m);
+    if (sub->onetime) {
+      mon->with_session_map([sub](MonSessionMap& session_map) {
+	  session_map.remove_sub(sub);
+	});
+    } else {
+      sub->next = epoch + 1;
+    }
+  }
+}
+
+
 void MgrStatMonitor::check_subs()
 {
   dout(10) << __func__ << dendl;

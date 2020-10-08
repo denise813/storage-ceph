@@ -259,6 +259,9 @@ class EventCenter {
       return;
     } else {
       C_submit_event<func> event(std::move(f), false);
+/** comment by hy 2020-09-22
+ * # 
+ */
       c->dispatch_event_external(&event);
       event.wait();
     }

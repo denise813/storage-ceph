@@ -258,7 +258,15 @@ void PrimaryLogPG::OpContext::start_async_reads(PrimaryLogPG *pg)
   inflightreads = 1;
   list<pair<boost::tuple<uint64_t, uint64_t, unsigned>,
 	    pair<bufferlist*, Context*> > > in;
+/** comment by hy 2020-09-18
+ * # 获取异步读请求
+ */
   in.swap(pending_async_reads);
+/** comment by hy 2020-09-18
+ * # ECBackend::objects_read_async 将buffer 对齐
+     通过 OnReadComplete 调用 PrimaryLogPG::OpContext::finish_read
+     完成真正的读操作
+ */
   pg->pgbackend->objects_read_async(
     obc->obs.oi.soid,
     in,
@@ -268,6 +276,12 @@ void PrimaryLogPG::OpContext::finish_read(PrimaryLogPG *pg)
 {
   ceph_assert(inflightreads > 0);
   --inflightreads;
+/** comment by hy 2020-09-18
+ * # async_reads_complete 判断 inflightreads == 0
+     因为 start_read 设置为1
+     这里开始减少
+     表示已经对应范围
+ */
   if (async_reads_complete()) {
     ceph_assert(pg->in_progress_async_reads.size());
     ceph_assert(pg->in_progress_async_reads.front().second == this);
@@ -275,6 +289,9 @@ void PrimaryLogPG::OpContext::finish_read(PrimaryLogPG *pg)
 
     // Restart the op context now that all reads have been
     // completed. Read failures will be handled by the op finisher
+/** comment by hy 2020-09-18
+ * # 重新在后端执行,这样就走完成流程
+ */
     pg->execute_ctx(this);
   }
 }

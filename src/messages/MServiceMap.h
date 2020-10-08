@@ -19,6 +19,7 @@ private:
   ~MServiceMap() override {}
 
 public:
+  const ServiceMap & get_map() {return service_map;}
   std::string_view get_type_name() const override { return "service_map"; }
   void print(ostream& out) const override {
     out << "service_map(e" << service_map.epoch << " "
@@ -33,6 +34,8 @@ public:
     decode(service_map, p);
   }
 private:
+  using RefCountedObject::put;
+  using RefCountedObject::get;
   template<class T, typename... Args>
   friend boost::intrusive_ptr<T> ceph::make_message(Args&&... args);
 };

@@ -19,6 +19,7 @@
 #include "msg/Connection.h"
 #include "msg/Dispatcher.h"
 #include "mon/MgrMap.h"
+#include "mgr/ServiceMap.h"
 #include "mgr/DaemonHealthMetric.h"
 
 #include "messages/MMgrReport.h"
@@ -61,6 +62,7 @@ class MgrClient : public Dispatcher
 protected:
   CephContext *cct;
   MgrMap map;
+  ServiceMap servicemap;
   Messenger *msgr;
   MonMap *monmap;
 
@@ -122,6 +124,8 @@ public:
   bool ms_handle_refused(Connection *con) override;
 
   bool handle_mgr_map(ceph::ref_t<MMgrMap> m);
+  bool handle_service_map(ceph::ref_t<MServiceMap> m);
+  bool get_service_map(const std::string &service, std::vector<const char *> maps);
   bool handle_mgr_configure(ceph::ref_t<MMgrConfigure> m);
   bool handle_mgr_close(ceph::ref_t<MMgrClose> m);
   bool handle_command_reply(

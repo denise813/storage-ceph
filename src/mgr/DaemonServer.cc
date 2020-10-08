@@ -435,6 +435,9 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
       daemon = std::make_shared<DaemonState>(daemon_state.types);
       daemon->key = key;
       daemon->service_daemon = true;
+/** comment by hy 2020-10-10
+ * # 插入信息
+ */
       daemon_state.insert(daemon);
     } else {
       /* A normal Ceph daemon has connected but we are or should be waiting on

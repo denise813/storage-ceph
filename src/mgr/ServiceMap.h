@@ -108,6 +108,10 @@ struct ServiceMap {
 
   epoch_t epoch = 0;
   utime_t modified;
+/** comment by hy 2020-04-23
+ * # active service 进程的地址
+ */
+  entity_addrvec_t active_addrs;
   std::map<std::string,Service> services;
 
   void encode(ceph::buffer::list& bl, uint64_t features) const;
@@ -150,6 +154,8 @@ struct ServiceMap {
 
     return false;
   }
+
+  entity_addrvec_t get_active_addrs() const { return active_addrs; }
 };
 WRITE_CLASS_ENCODER_FEATURES(ServiceMap)
 WRITE_CLASS_ENCODER_FEATURES(ServiceMap::Service)

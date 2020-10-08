@@ -5235,6 +5235,9 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
     s->remote_host = m->hostname;
   }
 
+/** comment by hy 2020-10-11
+ * # 获取信息
+ */
   for (map<string,ceph_mon_subscribe_item>::iterator p = m->what.begin();
        p != m->what.end();
        ++p) {
@@ -5304,6 +5307,8 @@ void Monitor::handle_subscribe(MonOpRequestRef op)
       mgrmon()->check_sub(s->sub_map[p->first]);
     } else if (p->first == "servicemap") {
       mgrstatmon()->check_sub(s->sub_map[p->first]);
+     } else if (p->first == "iscsimap") {
+      mgrstatmon()->check_sub(s->sub_map[p->first], p->first);
     } else if (p->first == "config") {
       configmon()->check_sub(s);
     }

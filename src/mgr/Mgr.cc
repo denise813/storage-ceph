@@ -577,6 +577,9 @@ bool Mgr::ms_dispatch2(const ref_t<Message>& m)
       objecter->maybe_request_map();
       break;
     case MSG_SERVICE_MAP:
+/** comment by hy 2020-10-10
+ * # 服务程序的map信息
+ */
       handle_service_map(ref_cast<MServiceMap>(m));
       py_module_registry->notify_all("service_map", "");
       break;

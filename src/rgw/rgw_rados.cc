@@ -1117,6 +1117,9 @@ int RGWRados::register_to_service_map(const string& daemon_type, const map<strin
   if (name.compare(0, 4, "rgw.") == 0) {
     name = name.substr(4);
   }
+/** comment by hy 2020-10-09
+ * # 这里注册 rgw 在 mgr 的服务
+ */
   int ret = rados.service_daemon_register(daemon_type, name, metadata);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: service_daemon_register() returned ret=" << ret << ": " << cpp_strerror(-ret) << dendl;

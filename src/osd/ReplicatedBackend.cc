@@ -304,7 +304,7 @@ void generate_transaction(
   ceph_assert(removed);
 
 /** comment by hy 2020-06-26
- * # log 信息处理
+ * # pg log 信息处理
  */
   for (auto &&le: log_entries) {
     le.mark_unrollbackable();

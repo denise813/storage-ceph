@@ -92,6 +92,42 @@ TRACEPOINT_EVENT(librados, rados_connect_exit,
     )
 )
 
+TRACEPOINT_EVENT(librados, rados_subscribe_servicemap_enter,
+    TP_ARGS(
+        rados_t, cluster,
+        char *, service),
+    TP_FIELDS(
+        ctf_integer_hex(rados_t, cluster, cluster)
+        ceph_ctf_string(service, service)
+    )
+)
+
+TRACEPOINT_EVENT(librados, rados_subscribe_servicemap_exit,
+    TP_ARGS(
+        int, retval),
+    TP_FIELDS(
+        ctf_integer(int, retval, retval)
+    )
+)
+
+TRACEPOINT_EVENT(librados, rados_get_servicemap_enter,
+    TP_ARGS(
+        rados_t, cluster,
+        char *, service),
+    TP_FIELDS(
+        ctf_integer_hex(rados_t, cluster, cluster)
+        ceph_ctf_string(service, service)
+    )
+)
+
+TRACEPOINT_EVENT(librados, rados_get_servicemap_exit,
+    TP_ARGS(
+        int, retval),
+    TP_FIELDS(
+        ctf_integer(int, retval, retval)
+    )
+)
+
 TRACEPOINT_EVENT(librados, rados_shutdown_enter,
     TP_ARGS(
         rados_t, cluster),

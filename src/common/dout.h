@@ -164,6 +164,7 @@ struct is_dynamic<dynamic_marker_t<T>> : public std::true_type {};
 		  "provided cct must be compatible with CephContext*"); \
     auto _dout_cct = cct;						\
     std::ostream* _dout = &_dout_e.get_ostream();
+    //_dout << "file:" << __FILE__ << " func:" << __func__ << " line:" << __LINE__ << " ";
 
 #define dendl_impl std::flush;                                          \
     _dout_cct->_log->submit_entry(std::move(_dout_e));                  \

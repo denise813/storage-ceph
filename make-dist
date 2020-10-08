@@ -13,11 +13,17 @@ version=$1
 if expr index $version '-' > /dev/null; then
     rpm_version=$(echo $version | cut -d - -f 1-1)
 # 修改成指定的release 版本
-    rpm_release=$(echo $version | cut -d - -f 2- | sed 's/-/./')
+    #rpm_release=$(echo $version | cut -d - -f 2- | sed 's/-/./')
 else
     rpm_version=$version
-    rpm_release=0
+    #rpm_release=0
 fi
+
+# 设置release 版本
+# 获取分支名称
+#branch=$(git branch 2>/dev/null | grep "^\*" | sed -e "s/^\*\ //")
+#rpm_release=$(git rev-list --count ${branch})
+rpm_release=0
 
 outfile="ceph-$version"
 echo "version $version"

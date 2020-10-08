@@ -2719,6 +2719,9 @@ CtPtr ProtocolV2::reuse_connection(const AsyncConnectionRef& existing,
           } else if (exproto->state == CLOSED) {
             auto back_to_close = std::bind(
                 [](ConnectedSocket &cs) mutable { cs.close(); }, std::move(cs));
+/** comment by hy 2020-09-22
+ * # 
+ */
             new_center->submit_to(new_center->get_id(),
                                   std::move(back_to_close), true);
             return;

@@ -571,7 +571,8 @@ int MonClient::init()
  */
   messenger->set_auth_client(this);
 /** comment by hy 2020-04-07
- * # 将分发放入接收处理中
+ * # 将分发放入接收处理中, 现在的顺序可能先是 monclient, 
+     mgrclient
  */
   messenger->add_dispatcher_head(this);
 

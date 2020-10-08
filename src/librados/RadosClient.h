@@ -211,6 +211,9 @@ public:
   int service_daemon_update_status(
     std::map<std::string,std::string>&& status);
 
+  int subscribe_servicemap(const std::string& service);
+  int get_servicemap(const std::string &service, std::vector<const char *> map);
+
   mon_feature_t get_required_monitor_features() const;
 
   int get_inconsistent_pgs(int64_t pool_id, std::vector<std::string>* pgs);

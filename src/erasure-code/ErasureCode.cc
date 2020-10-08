@@ -153,10 +153,20 @@ int ErasureCode::encode_prepare(const bufferlist &raw,
 {
   unsigned int k = get_data_chunk_count();
   unsigned int m = get_chunk_count() - k;
+/** comment by hy 2020-09-18
+ * # 每个块的大小
+ */
   unsigned blocksize = get_chunk_size(raw.length());
+/** comment by hy 2020-09-18
+ * # 空白块的个数
+ */
   unsigned padded_chunks = k - raw.length() / blocksize;
   bufferlist prepared = raw;
 
+/** comment by hy 2020-09-18
+ * # 将数据raw按blocksize大小有序分割
+     并将分割后的块有序写入到encoded
+ */
   for (unsigned int i = 0; i < k - padded_chunks; i++) {
     bufferlist &chunk = encoded[chunk_index(i)];
     chunk.substr_of(prepared, i * blocksize, blocksize);
@@ -192,9 +202,15 @@ int ErasureCode::encode(const set<int> &want_to_encode,
   unsigned int k = get_data_chunk_count();
   unsigned int m = get_chunk_count() - k;
   bufferlist out;
+/** comment by hy 2020-09-18
+ * # encoded的内存块分配
+ */
   int err = encode_prepare(in, *encoded);
   if (err)
     return err;
+/** comment by hy 2020-09-18
+ * # 进行编码操作
+ */
   encode_chunks(want_to_encode, encoded);
   for (unsigned int i = 0; i < k + m; i++) {
     if (want_to_encode.count(i) == 0)
@@ -351,8 +367,14 @@ int ErasureCode::decode_concat(const map<int, bufferlist> &chunks,
     want_to_read.insert(chunk_index(i));
   }
   map<int, bufferlist> decoded_map;
+/** comment by hy 2020-09-18
+ * # 解码核心部分
+ */
   int r = _decode(want_to_read, chunks, &decoded_map);
   if (r == 0) {
+/** comment by hy 2020-09-18
+ * # 将解码后的数据块链接
+ */
     for (unsigned int i = 0; i < get_data_chunk_count(); i++) {
       decoded->claim_append(decoded_map[chunk_index(i)]);
     }

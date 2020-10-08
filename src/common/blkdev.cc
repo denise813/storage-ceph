@@ -1302,8 +1302,6 @@ void get_device_metadata(
   for (auto & dev : devnames) {
     get_real_disks(dev, &real_devnames);
   }
-  //dout(1) << __func__ << " devnames" << devnames << dendl;
-  //dout(1) << __func__ << " real_devnames" << real_devnames << dendl;
 /* modify end by hy, 2020-09-18 */
 
   for (auto& dev : real_devnames) {

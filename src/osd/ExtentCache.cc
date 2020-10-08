@@ -131,10 +131,16 @@ extent_set ExtentCache::reserve_extents_for_rmw(
   const extent_set &to_write,
   const extent_set &to_read)
 {
+/** comment by hy 2020-09-19
+ * # 有读有写
+ */
   if (to_write.empty() && to_read.empty()) {
     return extent_set();
   }
   extent_set must_read;
+/** comment by hy 2020-09-19
+ * # 范围集合
+ */
   auto &eset = get_or_create(oid);
   extent_set missing;
   for (auto &&res: to_write) {

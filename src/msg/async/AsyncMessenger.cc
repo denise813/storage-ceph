@@ -155,6 +155,7 @@ int Processor::bind(const entity_addrvec_t &bind_addrs,
   return 0;
 }
 
+/* modify begin by hy, 2020-09-22, BugId:123 原因: 修改启动过程中可能等待乱用,将引起阻塞这里改成异步 */
 void Processor::start()
 {
   ldout(msgr->cct, 1) << __func__ << dendl;
@@ -174,6 +175,7 @@ void Processor::start()
       }
     }, false);
 }
+/* modify end by hy, 2020-09-22 */
 
 void Processor::accept()
 {
