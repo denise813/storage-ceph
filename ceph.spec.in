@@ -20,7 +20,6 @@
 # please read http://rpm.org/user_doc/conditional_builds.html for explanation of
 # bcond syntax!
 #################################################################################
-# bcond_with 设定添加变量 与 bcond_without 相匹配
 %bcond_with make_check
 %bcond_with cmake_verbose_logging
 %bcond_without ceph_test_package
@@ -116,7 +115,6 @@ Group:		System/Filesystems
 %endif
 URL:		http://ceph.com/
 Source0:	%{?_remote_tarball_prefix}@TARBALL_BASENAME@.tar.bz2
-Source1:	@CEPH_SOURCE@
 %if 0%{?suse_version}
 # _insert_obs_source_lines_here
 ExclusiveArch:  x86_64 aarch64 ppc64le s390x
@@ -477,6 +475,10 @@ Group:		System/Filesystems
 %endif
 Provides:	ceph-test:/usr/bin/ceph-monstore-tool
 Requires:	ceph-base = %{_epoch_prefix}%{version}-%{release}
+%if 0%{?weak_deps}
+Recommends:	nvme-cli
+Recommends:	smartmontools
+%endif
 %description mon
 ceph-mon is the cluster monitor daemon for the Ceph distributed file
 system. One or more instances of ceph-mon form a Paxos part-time
@@ -752,6 +754,11 @@ Requires:	ceph-base = %{_epoch_prefix}%{version}-%{release}
 Requires:	lvm2
 Requires:	sudo
 Requires:	libstoragemgmt
+Requires:	python%{python3_pkgversion}-ceph-common = %{_epoch_prefix}%{version}-%{release}
+%if 0%{?weak_deps}
+Recommends:	nvme-cli
+Recommends:	smartmontools
+%endif
 %description osd
 ceph-osd is the object storage daemon for the Ceph distributed file
 system.  It is responsible for storing objects on a local file system
@@ -993,6 +1000,12 @@ descriptions, and submitting the command to the appropriate daemon.
 
 %package -n python%{python3_pkgversion}-ceph-common
 Summary:	Python 3 utility libraries for Ceph
+%if 0%{?fedora} || 0%{?rhel} >= 8
+Requires:       python%{python3_pkgversion}-pyyaml
+%endif
+%if 0%{?suse_version}
+Requires:       python%{python3_pkgversion}-PyYAML
+%endif
 %if 0%{?suse_version}
 Group:		Development/Libraries/Python
 %endif
@@ -1121,13 +1134,11 @@ This package provides Ceph’s default alerts for Prometheus.
 # common
 #################################################################################
 %prep
-# 解压包
 %autosetup -p1 -n @TARBALL_BASENAME@
 
 %build
 # LTO can be enabled as soon as the following GCC bug is fixed:
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=48200
-codes=@CEPH_SOURCE@
 %define _lto_cflags %{nil}
 
 %if 0%{?rhel} == 7
@@ -1144,7 +1155,6 @@ done
 %if 0%{?suse_version}
 # the following setting fixed an OOM condition we once encountered in the OBS
 RPM_OPT_FLAGS="$RPM_OPT_FLAGS --param ggc-min-expand=20 --param ggc-min-heapsize=32768"
-RPM_OPT_FLAGS="-W -Wall -Wfatal-errors -O0 -g3 -gdwarf-4"
 %endif
 
 export CPPFLAGS="$java_inc"
@@ -1175,7 +1185,7 @@ export CEPH_SMP_NCPUS
 export CEPH_MFLAGS_JOBS="-j$CEPH_SMP_NCPUS"
 
 env | sort
-cd $codes
+
 mkdir build
 cd build
 %if 0%{?rhel} == 7
@@ -1184,7 +1194,6 @@ CMAKE=cmake3
 CMAKE=cmake
 %endif
 ${CMAKE} .. \
-    -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DCMAKE_INSTALL_LIBDIR=%{_libdir} \
     -DCMAKE_INSTALL_LIBEXECDIR=%{_libexecdir} \
@@ -1256,14 +1265,12 @@ make "$CEPH_MFLAGS_JOBS"
 %if 0%{with make_check}
 %check
 # run in-tree unittests
-cd $codes
 cd build
 ctest "$CEPH_MFLAGS_JOBS"
 %endif
 
 
 %install
-cd $codes
 pushd build
 make DESTDIR=%{buildroot} install
 # we have dropped sysvinit bits
@@ -1303,7 +1310,6 @@ install -m 0644 -D udev/50-rbd.rules %{buildroot}%{_udevrulesdir}/50-rbd.rules
 
 # sudoers.d
 install -m 0600 -D sudoers.d/ceph-osd-smartctl %{buildroot}%{_sysconfdir}/sudoers.d/ceph-osd-smartctl
-install -m 0600 -D sudoers.d/cephadm %{buildroot}%{_sysconfdir}/sudoers.d/cephadm
 
 %if 0%{?rhel} >= 8
 pathfix.py -pni "%{__python3} %{py3_shbang_opts}" %{buildroot}%{_bindir}/*
@@ -1460,7 +1466,6 @@ exit 0
 %files -n cephadm
 %{_sbindir}/cephadm
 %{_mandir}/man8/cephadm.8*
-%{_sysconfdir}/sudoers.d/cephadm
 %attr(0700,cephadm,cephadm) %dir %{_sharedstatedir}/cephadm
 %attr(0700,cephadm,cephadm) %dir %{_sharedstatedir}/cephadm/.ssh
 %attr(0600,cephadm,cephadm) %{_sharedstatedir}/cephadm/.ssh/authorized_keys

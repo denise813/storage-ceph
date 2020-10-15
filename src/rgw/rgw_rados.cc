@@ -184,6 +184,20 @@ void RGWObjVersionTracker::prepare_op_for_write(ObjectWriteOperation *op)
   }
 }
 
+void RGWObjVersionTracker::apply_write()
+{
+  const bool checked = (read_version.ver != 0);
+  const bool incremented = (write_version.ver == 0);
+
+  if (checked && incremented) {
+    // apply cls_version_inc() so our next operation can recheck it
+    ++read_version.ver;
+  } else {
+    read_version = write_version;
+  }
+  write_version = obj_version();
+}
+
 RGWObjState::RGWObjState() {
 }
 
@@ -8294,14 +8308,21 @@ int RGWRados::process_gc(bool expired_only)
   return gc->process(expired_only);
 }
 
-int RGWRados::list_lc_progress(const string& marker, uint32_t max_entries, map<string, int> *progress_map)
+int RGWRados::list_lc_progress(string& marker, uint32_t max_entries,
+			       vector<cls_rgw_lc_entry>& progress_map,
+			       int& index)
 {
-  return lc->list_lc_progress(marker, max_entries, progress_map);
+  return lc->list_lc_progress(marker, max_entries, progress_map, index);
 }
 
 int RGWRados::process_lc()
 {
-  return lc->process(nullptr);
+  RGWLC lc;
+  lc.initialize(cct, this->store);
+  RGWLC::LCWorker worker(&lc, cct, &lc, 0);
+  auto ret = lc.process(&worker, true /* once */);
+  lc.stop_processor(); // sets down_flag, but returns immediately
+  return ret;
 }
 
 bool RGWRados::process_expire_objects()
@@ -9167,7 +9188,7 @@ int RGWRados::check_bucket_shards(const RGWBucketInfo& bucket_info,
     return 0;
   }
 
-  ldout(cct, 20) << "RGWRados::" << __func__ << " bucket " << bucket.name <<
+  ldout(cct, 1) << "RGWRados::" << __func__ << " bucket " << bucket.name <<
     " needs resharding; current num shards " << bucket_info.num_shards <<
     "; new num shards " << final_num_shards << " (suggested " <<
     suggested_num_shards << ")" << dendl;

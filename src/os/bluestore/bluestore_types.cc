@@ -389,6 +389,10 @@ void bluestore_blob_use_tracker_t::allocate()
 {
   ceph_assert(num_au != 0);
   bytes_per_au = new uint32_t[num_au];
+  mempool::get_pool(
+    mempool::pool_index_t(mempool::mempool_bluestore_cache_other)).
+      adjust_count(1, sizeof(uint32_t) * num_au);
+
   for (uint32_t i = 0; i < num_au; ++i) {
     bytes_per_au[i] = 0;
   }
@@ -600,15 +604,10 @@ void bluestore_pextent_t::dump(Formatter *f) const
 {
   f->dump_unsigned("offset", offset);
   f->dump_unsigned("length", length);
-
-#if 0
-  f->dump_unsigned("agent_length", agent_length);
-#endif
 }
 
 ostream& operator<<(ostream& out, const bluestore_pextent_t& o) {
   if (o.is_valid())
-
     return out << "0x" << std::hex << o.offset << "~" << o.length << std::dec;
   else
     return out << "!~" << std::hex << o.length << std::dec;
@@ -1037,6 +1036,8 @@ void bluestore_blob_t::split(uint32_t blob_offset, bluestore_blob_t& rb)
 }
 
 // bluestore_shared_blob_t
+MEMPOOL_DEFINE_OBJECT_FACTORY(bluestore_shared_blob_t, bluestore_shared_blob_t,
+	          bluestore_cache_other);
 
 void bluestore_shared_blob_t::dump(Formatter *f) const
 {

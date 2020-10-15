@@ -3872,6 +3872,9 @@ int main(int argc, const char **argv)
  * # 将操作分级,只读操作,从向主有更新的操作,设置最新信息的操作
  */
   bool raw_period_update = opt_cmd == OPT::PERIOD_UPDATE && !commit;
+  // not a raw op if 'period pull' needs to read zone/period configuration
+  bool raw_period_pull = opt_cmd == OPT::PERIOD_PULL && !url.empty();
+
   std::set<OPT> raw_storage_ops_list = {OPT::ZONEGROUP_ADD, OPT::ZONEGROUP_CREATE, OPT::ZONEGROUP_DELETE,
 			 OPT::ZONEGROUP_GET, OPT::ZONEGROUP_LIST,
                          OPT::ZONEGROUP_SET, OPT::ZONEGROUP_DEFAULT,
@@ -3889,7 +3892,6 @@ int main(int argc, const char **argv)
 			 OPT::ZONE_PLACEMENT_GET,
 			 OPT::REALM_CREATE,
 			 OPT::PERIOD_DELETE, OPT::PERIOD_GET,
-			 OPT::PERIOD_PULL,
 			 OPT::PERIOD_GET_CURRENT, OPT::PERIOD_LIST,
 			 OPT::GLOBAL_QUOTA_GET, OPT::GLOBAL_QUOTA_SET,
 			 OPT::GLOBAL_QUOTA_ENABLE, OPT::GLOBAL_QUOTA_DISABLE,
@@ -3962,7 +3964,7 @@ int main(int argc, const char **argv)
  * # 接入是写操作
  */
   bool raw_storage_op = (raw_storage_ops_list.find(opt_cmd) != raw_storage_ops_list.end() ||
-                         raw_period_update);
+                         raw_period_update || raw_period_pull);
   bool need_cache = readonly_ops_list.find(opt_cmd) == readonly_ops_list.end();
 
   if (raw_storage_op) {
@@ -7354,27 +7356,35 @@ next:
 
   if (opt_cmd == OPT::LC_LIST) {
     formatter->open_array_section("lifecycle_list");
-    map<string, int> bucket_lc_map;
+    vector<cls_rgw_lc_entry> bucket_lc_map;
     string marker;
+    int index{0};
 #define MAX_LC_LIST_ENTRIES 100
     if (max_entries < 0) {
       max_entries = MAX_LC_LIST_ENTRIES;
     }
     do {
-      int ret = store->getRados()->list_lc_progress(marker, max_entries, &bucket_lc_map);
+      int ret = store->getRados()->list_lc_progress(marker, max_entries,
+						    bucket_lc_map, index);
       if (ret < 0) {
-        cerr << "ERROR: failed to list objs: " << cpp_strerror(-ret) << std::endl;
+        cerr << "ERROR: failed to list objs: " << cpp_strerror(-ret)
+	     << std::endl;
         return 1;
       }
-      map<string, int>::iterator iter;
-      for (iter = bucket_lc_map.begin(); iter != bucket_lc_map.end(); ++iter) {
+      for (const auto& entry : bucket_lc_map) {
         formatter->open_object_section("bucket_lc_info");
-        formatter->dump_string("bucket", iter->first);
-        string lc_status = LC_STATUS[iter->second];
+        formatter->dump_string("bucket", entry.bucket);
+	char exp_buf[100];
+	time_t t{time_t(entry.start_time)};
+	if (std::strftime(
+	      exp_buf, sizeof(exp_buf),
+	      "%a, %d %b %Y %T %Z", std::gmtime(&t))) {
+	  formatter->dump_string("started", exp_buf);
+	}
+        string lc_status = LC_STATUS[entry.status];
         formatter->dump_string("status", lc_status);
         formatter->close_section(); // objs
         formatter->flush(cout);
-        marker = iter->first;
       }
     } while (!bucket_lc_map.empty());
 

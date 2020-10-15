@@ -1,3 +1,10 @@
+>=15.2.6
+--------
+
+* The ``ceph df`` command now lists the number of pgs in each pool.
+
+* The ``bluefs_preextend_wal_files`` option has been removed.
+
 >=15.2.5
 --------
 
@@ -9,3 +16,13 @@
 * Monitors now have a config option ``mon_osd_warn_num_repaired``, 10 by default.
   If any OSD has repaired more than this many I/O errors in stored data a
  ``OSD_TOO_MANY_REPAIRS`` health warning is generated.
+
+* Now when noscrub and/or nodeep-scrub flags are set globally or per pool,
+  scheduled scrubs of the type disabled will be aborted. All user initiated
+  scrubs are NOT interrupted.
+
+* It is now possible to specify the initial monitor to contact for Ceph tools
+  and daemons using the ``mon_host_override`` config option or
+  ``--mon-host-override <ip>`` command-line switch. This generally should only
+  be used for debugging and only affects initial communication with Ceph's
+  monitor cluster.

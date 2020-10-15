@@ -494,6 +494,8 @@ void MonClient::handle_monmap(MMonMap *m)
     }
   }
 
+  cct->set_mon_addrs(monmap);
+
   sub.got("monmap", monmap.get_epoch());
   map_cond.notify_all();
   want_monmap = false;
@@ -1260,11 +1262,13 @@ void MonClient::schedule_tick()
      否则ping一下mon,
      tick() 包罗了上面两个流程
  */
-  if (_hunting()) {
+  if (!is_connected()) {
+    // start another round of hunting
     const auto hunt_interval = (cct->_conf->mon_client_hunt_interval *
 				reopen_interval_multiplier);
     timer.add_event_after(hunt_interval, do_tick);
   } else {
+    // keep in touch
     timer.add_event_after(std::min(cct->_conf->mon_client_ping_interval,
 				   cct->_conf->mon_client_log_interval),
 			  do_tick);

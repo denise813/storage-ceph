@@ -5,9 +5,8 @@ import logging
 import json
 
 import cherrypy
-
 from . import ApiController, BaseController, RESTController, Endpoint, \
-    ReadPermission
+    ReadPermission, allow_empty_body
 from ..exceptions import DashboardException
 from ..rest_client import RequestException
 from ..security import Scope, Permission
@@ -17,8 +16,8 @@ from ..services.rgw_client import RgwClient
 from ..tools import json_str_to_object, str_to_bool
 
 try:
-    from typing import List
-except ImportError:
+    from typing import Any, List
+except ImportError:  # pragma: no cover
     pass  # Just for type checking
 
 logger = logging.getLogger('controllers.rgw')
@@ -33,7 +32,7 @@ class Rgw(BaseController):
         try:
             instance = RgwClient.admin_instance()
             # Check if the service is online.
-            if not instance.is_service_online():
+            if not instance.is_service_online():  # pragma: no cover - no complexity there
                 msg = 'Failed to connect to the Object Gateway\'s Admin Ops API.'
                 raise RequestException(msg)
             # Ensure the API user ID is known by the RGW.
@@ -42,7 +41,7 @@ class Rgw(BaseController):
                     instance.userid)
                 raise RequestException(msg)
             # Ensure the system flag is set for the API user ID.
-            if not instance.is_system_user():
+            if not instance.is_system_user():  # pragma: no cover - no complexity there
                 msg = 'The system flag is not set for user "{}".'.format(
                     instance.userid)
                 raise RequestException(msg)
@@ -193,9 +192,15 @@ class RgwBucket(RgwRESTController):
             bucket_name = '{}:{}'.format(tenant, bucket_name)
         return bucket_name
 
-    def list(self):
-        # type: () -> List[str]
-        return self.proxy('GET', 'bucket')
+    def list(self, stats=False):
+        # type: (bool) -> List[Any]
+        query_params = '?stats' if stats else ''
+        result = self.proxy('GET', 'bucket{}'.format(query_params))
+
+        if stats:
+            result = [self._append_bid(bucket) for bucket in result]
+
+        return result
 
     def get(self, bucket):
         # type: (str) -> dict
@@ -214,6 +219,7 @@ class RgwBucket(RgwRESTController):
 
         return self._append_bid(result)
 
+    @allow_empty_body
     def create(self, bucket, uid, zonegroup=None, placement_target=None,
                lock_enabled='false', lock_mode=None,
                lock_retention_period_days=None,
@@ -229,9 +235,10 @@ class RgwBucket(RgwRESTController):
                                   lock_retention_period_days,
                                   lock_retention_period_years)
             return result
-        except RequestException as e:
+        except RequestException as e:  # pragma: no cover - handling is too obvious
             raise DashboardException(e, http_status_code=500, component='rgw')
 
+    @allow_empty_body
     def set(self, bucket, bucket_id, uid, versioning_state=None,
             mfa_delete=None, mfa_token_serial=None, mfa_token_pin=None,
             lock_mode=None, lock_retention_period_days=None,
@@ -335,6 +342,7 @@ class RgwUser(RgwRESTController):
                 emails.append(user["email"])
         return emails
 
+    @allow_empty_body
     def create(self, uid, display_name, email=None, max_buckets=None,
                suspended=None, generate_key=None, access_key=None,
                secret_key=None):
@@ -356,6 +364,7 @@ class RgwUser(RgwRESTController):
         result = self.proxy('PUT', 'user', params)
         return self._append_uid(result)
 
+    @allow_empty_body
     def set(self, uid, display_name=None, email=None, max_buckets=None,
             suspended=None):
         params = {'uid': uid}
@@ -380,11 +389,12 @@ class RgwUser(RgwRESTController):
                                              'Object Gateway'.format(uid))
             # Finally redirect request to the RGW proxy.
             return self.proxy('DELETE', 'user', {'uid': uid}, json_response=False)
-        except (DashboardException, RequestException) as e:
+        except (DashboardException, RequestException) as e:  # pragma: no cover
             raise DashboardException(e, component='rgw')
 
     # pylint: disable=redefined-builtin
     @RESTController.Resource(method='POST', path='/capability', status=201)
+    @allow_empty_body
     def create_cap(self, uid, type, perm):
         return self.proxy('PUT', 'user?caps', {
             'uid': uid,
@@ -400,6 +410,7 @@ class RgwUser(RgwRESTController):
         })
 
     @RESTController.Resource(method='POST', path='/key', status=201)
+    @allow_empty_body
     def create_key(self, uid, key_type='s3', subuser=None, generate_key='true',
                    access_key=None, secret_key=None):
         params = {'uid': uid, 'key-type': key_type, 'generate-key': generate_key}
@@ -425,6 +436,7 @@ class RgwUser(RgwRESTController):
         return self.proxy('GET', 'user?quota', {'uid': uid})
 
     @RESTController.Resource(method='PUT', path='/quota')
+    @allow_empty_body
     def set_quota(self, uid, quota_type, enabled, max_size_kb, max_objects):
         return self.proxy('PUT', 'user?quota', {
             'uid': uid,
@@ -435,6 +447,7 @@ class RgwUser(RgwRESTController):
         }, json_response=False)
 
     @RESTController.Resource(method='POST', path='/subuser', status=201)
+    @allow_empty_body
     def create_subuser(self, uid, subuser, access, key_type='s3',
                        generate_secret='true', access_key=None,
                        secret_key=None):

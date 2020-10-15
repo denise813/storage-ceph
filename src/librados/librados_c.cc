@@ -1032,20 +1032,6 @@ extern "C" int _rados_monitor_log2(rados_t cluster, const char *level,
 }
 LIBRADOS_C_API_BASE_DEFAULT(rados_monitor_log2);
 
-/*****************************************************************************
- * 函 数 名  : _rados_ioctx_create
- * 负 责 人  : hy
- * 创建日期  : 2020年1月21日
- * 函数功能  : 打开pool的io上下文句柄
- * 输入参数  : rados_t cluster    集群客户端句柄
-               const char *name   pool名称
-               rados_ioctx_t *io  pool的io上下文
- * 输出参数  : 无
- * 返 回 值  : extern
- * 调用关系  : 
- * 其    它  : 
-
-*****************************************************************************/
 extern "C" int _rados_ioctx_create(rados_t cluster, const char *name, rados_ioctx_t *io)
 {
   tracepoint(librados, rados_ioctx_create_enter, cluster, name);

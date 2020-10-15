@@ -43,6 +43,7 @@ target_link_libraries(rbd_test_mock PUBLIC
 set(unittest_librbd_srcs
   test_main.cc
   test_mock_fixture.cc
+  test_mock_ConfigWatcher.cc
   test_mock_DeepCopyRequest.cc
   test_mock_ExclusiveLock.cc
   test_mock_Journal.cc
@@ -51,7 +52,7 @@ set(unittest_librbd_srcs
   test_mock_TrashWatcher.cc
   test_mock_Watcher.cc
   cache/test_mock_WriteAroundObjectDispatch.cc
-  cache/test_mock_ParentImageCache.cc
+  cache/test_mock_ParentCacheObjectDispatch.cc
   deep_copy/test_mock_ImageCopyRequest.cc
   deep_copy/test_mock_MetadataCopyRequest.cc
   deep_copy/test_mock_ObjectCopyRequest.cc

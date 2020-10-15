@@ -26,6 +26,21 @@ def test_parse_host_placement_specs(test_input, expected, require_network):
     assert ret == expected
     assert str(ret) == test_input
 
+    ps = PlacementSpec.from_string(test_input)
+    assert ps.pretty_str() == test_input
+    assert ps == PlacementSpec.from_string(ps.pretty_str())
+
+    # Testing the old verbose way of generating json. Don't remove:
+    assert ret == HostPlacementSpec.from_json({
+            'hostname': ret.hostname,
+            'network': ret.network,
+            'name': ret.name
+        })
+
+    assert ret == HostPlacementSpec.from_json(ret.to_json())
+
+
+
 
 @pytest.mark.parametrize(
     "test_input,expected",
@@ -51,6 +66,7 @@ def test_parse_host_placement_specs(test_input, expected, require_network):
 def test_parse_placement_specs(test_input, expected):
     ret = PlacementSpec.from_string(test_input)
     assert str(ret) == expected
+    assert PlacementSpec.from_string(ret.pretty_str()) == ret, f'"{ret.pretty_str()}" != "{test_input}"'
 
 @pytest.mark.parametrize(
     "test_input",
@@ -75,18 +91,7 @@ def test_parse_host_placement_specs_raises_wrong_format(test_input):
         HostPlacementSpec.parse(test_input)
 
 
-@pytest.mark.parametrize(
-    "s_type,o_spec,s_id",
-    [
-        ("mgr", ServiceSpec, 'test'),
-        ("mon", ServiceSpec, 'test'),
-        ("mds", ServiceSpec, 'test'),
-        ("rgw", RGWSpec, 'realm.zone'),
-        ("nfs", NFSServiceSpec, 'test'),
-        ("iscsi", IscsiServiceSpec, 'test'),
-        ("osd", DriveGroupSpec, 'test'),
-    ])
-def test_servicespec_map_test(s_type, o_spec, s_id):
+def _get_dict_spec(s_type, s_id):
     dict_spec = {
         "service_id": s_id,
         "service_type": s_type,
@@ -105,7 +110,26 @@ def test_servicespec_map_test(s_type, o_spec, s_id):
                 'all': True
             }
         }
-    spec = ServiceSpec.from_json(dict_spec)
+    elif s_type == 'rgw':
+        dict_spec['rgw_realm'] = 'realm'
+        dict_spec['rgw_zone'] = 'zone'
+
+    return dict_spec
+
+
+@pytest.mark.parametrize(
+    "s_type,o_spec,s_id",
+    [
+        ("mgr", ServiceSpec, 'test'),
+        ("mon", ServiceSpec, 'test'),
+        ("mds", ServiceSpec, 'test'),
+        ("rgw", RGWSpec, 'realm.zone'),
+        ("nfs", NFSServiceSpec, 'test'),
+        ("iscsi", IscsiServiceSpec, 'test'),
+        ("osd", DriveGroupSpec, 'test'),
+    ])
+def test_servicespec_map_test(s_type, o_spec, s_id):
+    spec = ServiceSpec.from_json(_get_dict_spec(s_type, s_id))
     assert isinstance(spec, o_spec)
     assert isinstance(spec.placement, PlacementSpec)
     assert isinstance(spec.placement.hosts[0], HostPlacementSpec)
@@ -133,9 +157,7 @@ service_id: default-rgw-realm.eu-central-1.1
 service_name: rgw.default-rgw-realm.eu-central-1.1
 placement:
   hosts:
-  - hostname: ceph-001
-    name: ''
-    network: ''
+  - ceph-001
 spec:
   rgw_realm: default-rgw-realm
   rgw_zone: eu-central-1
@@ -163,3 +185,81 @@ spec:
 
         assert yaml.dump(object) == y
         assert yaml.dump(ServiceSpec.from_json(object.to_json())) == y
+
+@pytest.mark.parametrize("spec1, spec2, eq",
+                         [
+                             (
+                                     ServiceSpec(
+                                         service_type='mon'
+                                     ),
+                                     ServiceSpec(
+                                         service_type='mon'
+                                     ),
+                                     True
+                             ),
+                             (
+                                     ServiceSpec(
+                                         service_type='mon'
+                                     ),
+                                     ServiceSpec(
+                                         service_type='mon',
+                                         service_id='foo'
+                                     ),
+                                     True
+                             ),
+                             # Add service_type='mgr'
+                             (
+                                     ServiceSpec(
+                                         service_type='osd'
+                                     ),
+                                     ServiceSpec(
+                                         service_type='osd',
+                                     ),
+                                     True
+                             ),
+                             (
+                                     ServiceSpec(
+                                         service_type='osd'
+                                     ),
+                                     DriveGroupSpec(),
+                                     True
+                             ),
+                             (
+                                     ServiceSpec(
+                                         service_type='osd'
+                                     ),
+                                     ServiceSpec(
+                                         service_type='osd',
+                                         service_id='foo',
+                                     ),
+                                     False
+                             ),
+                             (
+                                     ServiceSpec(
+                                         service_type='rgw'
+                                     ),
+                                     RGWSpec(),
+                                     True
+                             ),
+                         ])
+def test_spec_hash_eq(spec1: ServiceSpec,
+                      spec2: ServiceSpec,
+                      eq: bool):
+
+    assert (spec1 == spec2) is eq
+
+@pytest.mark.parametrize(
+    "s_type,s_id,s_name",
+    [
+        ('mgr', 's_id', 'mgr'),
+        ('mon', 's_id', 'mon'),
+        ('mds', 's_id', 'mds.s_id'),
+        ('rgw', 's_id', 'rgw.s_id'),
+        ('nfs', 's_id', 'nfs.s_id'),
+        ('iscsi', 's_id', 'iscsi.s_id'),
+        ('osd', 's_id', 'osd.s_id'),
+    ])
+def test_service_name(s_type, s_id, s_name):
+    spec = ServiceSpec.from_json(_get_dict_spec(s_type, s_id))
+    spec.validate()
+    assert spec.service_name() == s_name

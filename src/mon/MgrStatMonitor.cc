@@ -307,6 +307,7 @@ void MgrStatMonitor::check_sub(Subscription *sub)
   }
 }
 
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
 void MgrStatMonitor::check_sub(Subscription *sub, const std::string & service)
 {
   const auto epoch = mon->monmap->get_epoch();
@@ -328,7 +329,7 @@ void MgrStatMonitor::check_sub(Subscription *sub, const std::string & service)
     }
   }
 }
-
+/* modify end by hy, 2020-10-15 */
 
 void MgrStatMonitor::check_subs()
 {

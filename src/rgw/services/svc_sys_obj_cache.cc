@@ -132,8 +132,9 @@ int RGWSI_SysObj_Cache::read(RGWSysObjectCtxBase& obj_ctx,
     flags |= CACHE_FLAG_OBJV;
   if (attrs)
     flags |= CACHE_FLAG_XATTRS;
-
-  if ((cache.get(name, info, flags, cache_info) == 0) &&
+  
+  int r = cache.get(name, info, flags, cache_info);
+  if (r == 0 &&
       (!refresh_version || !info.version.compare(&(*refresh_version)))) {
     if (info.status < 0)
       return info.status;
@@ -156,9 +157,11 @@ int RGWSI_SysObj_Cache::read(RGWSysObjectCtxBase& obj_ctx,
     }
     return obl->length();
   }
+  if(r == -ENODATA)
+    return -ENOENT;
 
   map<string, bufferlist> unfiltered_attrset;
-  int r = RGWSI_SysObj_Core::read(obj_ctx, read_state, objv_tracker,
+  r = RGWSI_SysObj_Core::read(obj_ctx, read_state, objv_tracker,
                          obj, obl, ofs, end,
 			 (attrs ? &unfiltered_attrset : nullptr),
 			 true, /* cache unfiltered attrs */
@@ -215,7 +218,8 @@ int RGWSI_SysObj_Cache::get_attr(const rgw_raw_obj& obj,
 
   uint32_t flags = CACHE_FLAG_XATTRS;
 
-  if (cache.get(name, info, flags, nullptr) == 0) {
+  int r = cache.get(name, info, flags, nullptr);
+  if (r == 0) {
     if (info.status < 0)
       return info.status;
 
@@ -226,6 +230,8 @@ int RGWSI_SysObj_Cache::get_attr(const rgw_raw_obj& obj,
 
     *dest = iter->second;
     return dest->length();
+  } else if (r == -ENODATA) {
+    return -ENOENT;
   }
   /* don't try to cache this one */
   return RGWSI_SysObj_Core::get_attr(obj, attr_name, dest, y);
@@ -247,13 +253,13 @@ int RGWSI_SysObj_Cache::set_attrs(const rgw_raw_obj& obj,
   }
   info.status = 0;
   info.flags = CACHE_FLAG_MODIFY_XATTRS;
-  if (objv_tracker) {
-    info.version = objv_tracker->write_version;
-    info.flags |= CACHE_FLAG_OBJV;
-  }
   int ret = RGWSI_SysObj_Core::set_attrs(obj, attrs, rmattrs, objv_tracker, y);
   string name = normal_name(pool, oid);
   if (ret >= 0) {
+    if (objv_tracker && objv_tracker->read_version.ver) {
+      info.version = objv_tracker->read_version;
+      info.flags |= CACHE_FLAG_OBJV;
+    }
     cache.put(name, info, NULL);
     int r = distribute_cache(name, obj, info, UPDATE_OBJ, y);
     if (r < 0)
@@ -282,16 +288,16 @@ int RGWSI_SysObj_Cache::write(const rgw_raw_obj& obj,
   info.status = 0;
   info.data = data;
   info.flags = CACHE_FLAG_XATTRS | CACHE_FLAG_DATA | CACHE_FLAG_META;
-  if (objv_tracker) {
-    info.version = objv_tracker->write_version;
-    info.flags |= CACHE_FLAG_OBJV;
-  }
   ceph::real_time result_mtime;
   int ret = RGWSI_SysObj_Core::write(obj, &result_mtime, attrs,
                                      exclusive, data,
                                      objv_tracker, set_mtime, y);
   if (pmtime) {
     *pmtime = result_mtime;
+  }
+  if (objv_tracker && objv_tracker->read_version.ver) {
+    info.version = objv_tracker->read_version;
+    info.flags |= CACHE_FLAG_OBJV;
   }
   info.meta.mtime = result_mtime;
   info.meta.size = data.length();
@@ -333,13 +339,13 @@ int RGWSI_SysObj_Cache::write_data(const rgw_raw_obj& obj,
   info.status = 0;
   info.flags = CACHE_FLAG_DATA;
 
-  if (objv_tracker) {
-    info.version = objv_tracker->write_version;
-    info.flags |= CACHE_FLAG_OBJV;
-  }
   int ret = RGWSI_SysObj_Core::write_data(obj, data, exclusive, objv_tracker, y);
   string name = normal_name(pool, oid);
   if (ret >= 0) {
+    if (objv_tracker && objv_tracker->read_version.ver) {
+      info.version = objv_tracker->read_version;
+      info.flags |= CACHE_FLAG_OBJV;
+    }
     cache.put(name, info, NULL);
     int r = distribute_cache(name, obj, info, UPDATE_OBJ, y);
     if (r < 0)
@@ -381,6 +387,9 @@ int RGWSI_SysObj_Cache::raw_stat(const rgw_raw_obj& obj, uint64_t *psize, real_t
     if (objv_tracker)
       objv_tracker->read_version = info.version;
     goto done;
+  }
+  if (r == -ENODATA) {
+    return -ENOENT;
   }
   r = RGWSI_SysObj_Core::raw_stat(obj, &size, &mtime, &epoch, &info.xattrs,
                                   first_chunk, objv_tracker, y);

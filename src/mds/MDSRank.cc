@@ -1281,7 +1281,7 @@ void MDSRank::handle_message(const cref_t<Message> &m)
       break;
 
     default:
-      derr << "unrecogonized message " << *m << dendl;
+      derr << "unrecognized message " << *m << dendl;
     }
   }
 }
@@ -3674,7 +3674,10 @@ void MDSRank::get_task_status(std::map<std::string, std::string> *status) {
 
   // scrub summary for now..
   std::string_view scrub_summary = scrubstack->scrub_summary();
-  status->emplace(SCRUB_STATUS_KEY, std::move(scrub_summary));
+  if (!ScrubStack::is_idle(scrub_summary)) {
+    send_status = true;
+    status->emplace(SCRUB_STATUS_KEY, std::move(scrub_summary));
+  }
 }
 
 void MDSRank::schedule_update_timer_task() {
@@ -3690,13 +3693,17 @@ void MDSRank::send_task_status() {
   std::map<std::string, std::string> status;
   get_task_status(&status);
 
-  if (!status.empty()) {
-    dout(20) << __func__ << ": updating " << status.size() << " status keys" << dendl;
+  if (send_status) {
+    if (status.empty()) {
+      send_status = false;
+    }
 
+    dout(20) << __func__ << ": updating " << status.size() << " status keys" << dendl;
     int r = mgrc->service_daemon_update_task_status(std::move(status));
     if (r < 0) {
       derr << ": failed to update service daemon status: " << cpp_strerror(r) << dendl;
     }
+
   }
 
   schedule_update_timer_task();

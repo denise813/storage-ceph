@@ -2725,7 +2725,6 @@ will start to track new ops received afterwards.";
   }
 
   else if (prefix == "bench") {
-    lock_guard l(osd_lock);
     int64_t count;
     int64_t bsize;
     int64_t osize, onum;
@@ -6682,6 +6681,12 @@ void OSD::_collect_metadata(map<string,string> *pm)
   (*pm)["rotational"] = store_is_rotational ? "1" : "0";
   (*pm)["journal_rotational"] = journal_is_rotational ? "1" : "0";
   (*pm)["default_device_class"] = store->get_default_device_class();
+  string osdspec_affinity;
+  int r = store->read_meta("osdspec_affinity", &osdspec_affinity);
+  if (r < 0 || osdspec_affinity.empty()) {
+    osdspec_affinity = "";
+  }
+  (*pm)["osdspec_affinity"] = osdspec_affinity;
   store->collect_metadata(pm);
 
   collect_sys_info(pm, cct);
@@ -7692,16 +7697,15 @@ void OSD::sched_scrub()
     return;
   }
   bool allow_requested_repair_only = false;
-  if (service.is_recovery_active()) {
-    if (!cct->_conf->osd_scrub_during_recovery && cct->_conf->osd_repair_during_recovery) {
-      dout(10) << __func__
-               << " will only schedule explicitly requested repair due to active recovery"
-               << dendl;
-      allow_requested_repair_only = true;
-    } else if (!cct->_conf->osd_scrub_during_recovery && !cct->_conf->osd_repair_during_recovery) {
+  if (service.is_recovery_active() && !cct->_conf->osd_scrub_during_recovery) {
+    if (!cct->_conf->osd_repair_during_recovery) {
       dout(20) << __func__ << " not scheduling scrubs due to active recovery" << dendl;
       return;
     }
+    dout(10) << __func__
+             << " will only schedule explicitly requested repair due to active recovery"
+             << dendl;
+    allow_requested_repair_only = true;
   }
 
   utime_t now = ceph_clock_now();
@@ -8220,6 +8224,13 @@ void OSD::handle_osd_map(MOSDMap *m)
 	delete o;
 	request_full_map(e, last);
 	last = e - 1;
+
+	// don't continue committing if we failed to enc the first inc map
+	if (last < start) {
+	  dout(10) << __func__ << " bailing because last < start (" << last << "<" << start << ")" << dendl;
+	  m->put();
+	  return;
+	}
 	break;
       }
       got_full_map(e);
@@ -8352,10 +8363,12 @@ void OSD::_committed_osd_maps(epoch_t first, epoch_t last, MOSDMap *m)
   }
   map_lock.lock();
 
+  ceph_assert(first <= last);
+
   bool do_shutdown = false;
   bool do_restart = false;
   bool network_error = false;
-  OSDMapRef osdmap;
+  OSDMapRef osdmap = get_osdmap();
 
   // advance through the new maps
   for (epoch_t cur = first; cur <= last; cur++) {

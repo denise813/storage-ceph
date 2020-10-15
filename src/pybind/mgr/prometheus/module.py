@@ -9,9 +9,8 @@ import socket
 import threading
 import time
 from mgr_module import MgrModule, MgrStandbyModule, CommandResult, PG_STATES
-from mgr_util import get_default_addr
+from mgr_util import get_default_addr, profile_method
 from rbd import RBD
-
 try:
     from typing import Optional, Dict, Any, Set
 except:
@@ -63,7 +62,8 @@ def health_status_to_number(status):
 DF_CLUSTER = ['total_bytes', 'total_used_bytes', 'total_used_raw_bytes']
 
 DF_POOL = ['max_avail', 'stored', 'stored_raw', 'objects', 'dirty',
-           'quota_bytes', 'quota_objects', 'rd', 'rd_bytes', 'wr', 'wr_bytes']
+           'quota_bytes', 'quota_objects', 'rd', 'rd_bytes', 'wr', 'wr_bytes',
+           'compress_bytes_used', 'compress_under_bytes']
 
 OSD_POOL_STATS = ('recovering_objects_per_sec', 'recovering_bytes_per_sec',
                   'recovering_keys_per_sec', 'num_objects_recovered',
@@ -434,12 +434,14 @@ class Module(MgrModule):
 
         return metrics
 
+    @profile_method()
     def get_health(self):
         health = json.loads(self.get('health')['json'])
         self.metrics['health_status'].set(
             health_status_to_number(health['status'])
         )
 
+    @profile_method()
     def get_pool_stats(self):
         # retrieve pool stats to provide per pool recovery metrics
         # (osd_pool_stats moved to mgr in Mimic)
@@ -451,6 +453,7 @@ class Module(MgrModule):
                     (pool['pool_id'],)
                 )
 
+    @profile_method()
     def get_df(self):
         # maybe get the to-be-exported metrics from a config?
         df = self.get('df')
@@ -464,6 +467,7 @@ class Module(MgrModule):
                     (pool['id'],)
                 )
 
+    @profile_method()
     def get_fs(self):
         fs_map = self.get('fs_map')
         servers = self.get_service_list()
@@ -497,6 +501,7 @@ class Module(MgrModule):
                     daemon['rank'], host_version[1]
                 ))
 
+    @profile_method()
     def get_quorum_status(self):
         mon_status = json.loads(self.get('mon_status')['json'])
         servers = self.get_service_list()
@@ -506,7 +511,7 @@ class Module(MgrModule):
             host_version = servers.get((id_, 'mon'), ('', ''))
             self.metrics['mon_metadata'].set(1, (
                 'mon.{}'.format(id_), host_version[0],
-                mon['public_addr'].split(':')[0], rank,
+                mon['public_addr'].rsplit(':', 1)[0], rank,
                 host_version[1]
             ))
             in_quorum = int(rank in mon_status['quorum'])
@@ -514,6 +519,7 @@ class Module(MgrModule):
                 'mon.{}'.format(id_),
             ))
 
+    @profile_method()
     def get_mgr_status(self):
         mgr_map = self.get('mgr_map')
         servers = self.get_service_list()
@@ -559,6 +565,7 @@ class Module(MgrModule):
             self.metrics['mgr_module_status'].set(_state, (mod_name,))
             self.metrics['mgr_module_can_run'].set(_can_run, (mod_name,))
 
+    @profile_method()
     def get_pg_status(self):
 
         pg_summary = self.get('pg_summary')
@@ -578,6 +585,7 @@ class Module(MgrModule):
                 except KeyError:
                     self.log.warning("skipping pg in unknown state {}".format(state))
 
+    @profile_method()
     def get_osd_stats(self):
         osd_stats = self.get('osd_stats')
         for osd in osd_stats['osd_stats']:
@@ -597,6 +605,7 @@ class Module(MgrModule):
                 ret.update({(service['id'], service['type']): (host, version)})
         return ret
 
+    @profile_method()
     def get_metadata_and_osd_status(self):
         osd_map = self.get('osd_map')
         osd_flags = osd_map['flags'].split(',')
@@ -611,8 +620,8 @@ class Module(MgrModule):
             # id can be used to link osd metrics and metadata
             id_ = osd['osd']
             # collect osd metadata
-            p_addr = osd['public_addr'].split(':')[0]
-            c_addr = osd['cluster_addr'].split(':')[0]
+            p_addr = osd['public_addr'].rsplit(':', 1)[0]
+            c_addr = osd['cluster_addr'].rsplit(':', 1)[0]
             if p_addr == "-" or c_addr == "-":
                 self.log.info(
                     "Missing address metadata for osd {0}, skipping occupation"
@@ -720,12 +729,14 @@ class Module(MgrModule):
                         for k in RBD_MIRROR_METADATA)
                 )
 
+    @profile_method()
     def get_num_objects(self):
         pg_sum = self.get('pg_summary')['pg_stats_sum']['stat_sum']
         for obj in NUM_OBJECTS:
             stat = 'num_objects_{}'.format(obj)
             self.metrics[stat].set(pg_sum[stat])
 
+    @profile_method()
     def get_rbd_stats(self):
         # Per RBD image stats is collected by registering a dynamic osd perf
         # stats query that tells OSDs to group stats for requests associated
@@ -742,7 +753,8 @@ class Module(MgrModule):
 
         # Parse rbd_stats_pools option, which is a comma or space separated
         # list of pool[/namespace] entries. If no namespace is specifed the
-        # stats are collected for every namespace in the pool.
+        # stats are collected for every namespace in the pool. The wildcard
+        # '*' can be used to indicate all pools or namespaces
         pools_string = self.get_localized_module_option('rbd_stats_pools', '')
         pool_keys = []
         for x in re.split('[\s,]+', pools_string):
@@ -773,11 +785,12 @@ class Module(MgrModule):
                 # empty set means collect for all namespaces
                 pools[pool_name] = set()
                 continue
+
             if pool_name not in pools:
                 pools[pool_name] = set()
             elif not pools[pool_name]:
                 continue
-            pools[pool_name].add(s[1])
+            pools[pool_name].add(namespace_name)
 
         rbd_stats_pools = {}
         for pool_id in self.rbd_stats['pools'].keys():
@@ -996,6 +1009,7 @@ class Module(MgrModule):
 
         self.metrics.update(new_metrics)
 
+    @profile_method(True)
     def collect(self):
         # Clear the metrics before scraping
         for k in self.metrics.keys():

@@ -19,7 +19,9 @@
 #include "msg/Connection.h"
 #include "msg/Dispatcher.h"
 #include "mon/MgrMap.h"
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
 #include "mgr/ServiceMap.h"
+/* modify end by hy, 2020-10-15 */
 #include "mgr/DaemonHealthMetric.h"
 
 #include "messages/MMgrReport.h"
@@ -124,8 +126,10 @@ public:
   bool ms_handle_refused(Connection *con) override;
 
   bool handle_mgr_map(ceph::ref_t<MMgrMap> m);
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
   bool handle_service_map(ceph::ref_t<MServiceMap> m);
   bool get_service_map(const std::string &service, std::vector<const char *> maps);
+/* modify end by hy, 2020-10-15 */
   bool handle_mgr_configure(ceph::ref_t<MMgrConfigure> m);
   bool handle_mgr_close(ceph::ref_t<MMgrClose> m);
   bool handle_command_reply(

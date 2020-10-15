@@ -151,7 +151,9 @@ protected:
   bool lock_exclusive = true;
 
 public:
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
   uint64_t some_used = 0;
+/* modify end by hy, 2020-10-15 */
   aio_callback_t aio_callback;
   void *aio_callback_priv;
   BlockDevice(CephContext* cct, aio_callback_t cb, void *cbpriv)

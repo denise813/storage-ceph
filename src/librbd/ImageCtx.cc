@@ -122,7 +122,6 @@ public:
       operations(new Operations<>(*this)),
       exclusive_lock(nullptr), object_map(nullptr),
       io_work_queue(nullptr), op_work_queue(nullptr),
-      external_callback_completions(32),
       event_socket_completions(32),
       asok_hook(nullptr),
       trace_endpoint("librbd")
@@ -167,6 +166,7 @@ public:
   }
 
   ImageCtx::~ImageCtx() {
+    ceph_assert(config_watcher == nullptr);
     ceph_assert(image_watcher == NULL);
     ceph_assert(exclusive_lock == NULL);
     ceph_assert(object_map == NULL);
@@ -756,6 +756,8 @@ public:
                                 bool thread_safe) {
     ldout(cct, 20) << __func__ << dendl;
 
+    std::unique_lock image_locker(image_lock);
+
     // reset settings back to global defaults
 /** comment by hy 2020-08-17
  * # 读取配置文件,并加载到配置文件中
@@ -799,6 +801,8 @@ public:
         }
       }
     }
+
+    image_locker.unlock();
 
 #define ASSIGN_OPTION(param, type)              \
     param = config.get_val<type>("rbd_"#param)

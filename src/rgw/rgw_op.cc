@@ -2182,7 +2182,7 @@ int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 bool RGWGetObj::prefetch_data()
 {
   /* HEAD request, stop prefetch*/
-  if (!get_data) {
+  if (!get_data || s->info.env->exists("HTTP_X_RGW_AUTH")) {
     return false;
   }
 
@@ -2296,7 +2296,10 @@ void RGWGetObj::execute()
   if (get_type() == RGW_OP_STAT_OBJ) {
     return;
   }
-
+  if (s->info.env->exists("HTTP_X_RGW_AUTH")) {
+    op_ret = 0;
+    goto done_err;
+  }
   /* start gettorrent */
   if (torrent.get_flag())
   {
@@ -6364,6 +6367,7 @@ void RGWInitMultipart::execute()
     obj_op.meta.owner = s->owner.get_id();
     obj_op.meta.category = RGWObjCategory::MultiMeta;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
+    obj_op.meta.mtime = &mtime;
 
     multipart_upload_info upload_info;
     upload_info.dest_placement = s->dest_placement;

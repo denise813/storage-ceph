@@ -19,7 +19,9 @@ private:
   ~MServiceMap() override {}
 
 public:
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
   const ServiceMap & get_map() {return service_map;}
+/* modify end by hy, 2020-10-15 */
   std::string_view get_type_name() const override { return "service_map"; }
   void print(ostream& out) const override {
     out << "service_map(e" << service_map.epoch << " "
@@ -34,8 +36,10 @@ public:
     decode(service_map, p);
   }
 private:
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
   using RefCountedObject::put;
   using RefCountedObject::get;
+/* modify end by hy, 2020-10-15 */
   template<class T, typename... Args>
   friend boost::intrusive_ptr<T> ceph::make_message(Args&&... args);
 };

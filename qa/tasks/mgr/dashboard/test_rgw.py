@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.twofactor.totp import TOTP
 from cryptography.hazmat.primitives.hashes import SHA1
 from six.moves.urllib import parse
 
-from tasks.mgr.dashboard.helper import DashboardTestCase, JObj, JList, JLeaf
+from .helper import DashboardTestCase, JObj, JList, JLeaf
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +209,20 @@ class RgwBucketTest(RgwTestCase):
         self.assertEqual(len(data), 1)
         self.assertIn('teuth-test-bucket', data)
 
+        # List all buckets with stats.
+        data = self._get('/api/rgw/bucket?stats=true')
+        self.assertStatus(200)
+        self.assertEqual(len(data), 1)
+        self.assertSchema(data[0], JObj(sub_elems={
+            'bid': JLeaf(str),
+            'bucket': JLeaf(str),
+            'bucket_quota': JObj(sub_elems={}, allow_unknown=True),
+            'id': JLeaf(str),
+            'owner': JLeaf(str),
+            'usage': JObj(sub_elems={}, allow_unknown=True),
+            'tenant': JLeaf(str),
+        }, allow_unknown=True))
+
         # Get the bucket.
         data = self._get('/api/rgw/bucket/teuth-test-bucket')
         self.assertStatus(200)
@@ -218,7 +232,10 @@ class RgwBucketTest(RgwTestCase):
             'tenant': JLeaf(str),
             'bucket': JLeaf(str),
             'bucket_quota': JObj(sub_elems={}, allow_unknown=True),
-            'owner': JLeaf(str)
+            'owner': JLeaf(str),
+            'mfa_delete': JLeaf(str),
+            'usage': JObj(sub_elems={}, allow_unknown=True),
+            'versioning': JLeaf(str)
         }, allow_unknown=True))
         self.assertEqual(data['bucket'], 'teuth-test-bucket')
         self.assertEqual(data['owner'], 'admin')
@@ -509,6 +526,11 @@ class RgwUserTest(RgwTestCase):
         self.assertStatus(200)
         self.assertGreaterEqual(len(data), 1)
         self.assertIn('admin', data)
+
+    def test_get_emails(self):
+        data = self._get('/api/rgw/user/get_emails')
+        self.assertStatus(200)
+        self.assertSchema(data, JList(str))
 
     def test_create_get_update_delete(self):
         # Create a new user.

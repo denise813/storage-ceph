@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import datetime
 import json
 
 import pytest
@@ -97,6 +98,7 @@ def some_complex_completion():
             lambda four: four + 1))
     return c
 
+
 def test_promise_mondatic_then_combined():
     p = some_complex_completion()
     p.finalize()
@@ -134,13 +136,15 @@ def test_progress():
                                       completion=lambda: Completion(
                                           on_complete=lambda _: progress_val))
     )
-    mgr.remote.assert_called_with('progress', 'update', c.progress_reference.progress_id, 'hello world', 0.0, [('origin', 'orchestrator')])
+    mgr.remote.assert_called_with('progress', 'update', c.progress_reference.progress_id, 'hello world', 0.0, [
+                                  ('origin', 'orchestrator')])
 
     c.finalize()
     mgr.remote.assert_called_with('progress', 'complete', c.progress_reference.progress_id)
 
     c.progress_reference.update()
-    mgr.remote.assert_called_with('progress', 'update', c.progress_reference.progress_id, 'hello world', progress_val, [('origin', 'orchestrator')])
+    mgr.remote.assert_called_with('progress', 'update', c.progress_reference.progress_id,
+                                  'hello world', progress_val, [('origin', 'orchestrator')])
     assert not c.progress_reference.effective
 
     progress_val = 1
@@ -190,8 +194,8 @@ def test_fail():
     assert isinstance(c.exception, KeyError)
 
     with pytest.raises(ValueError,
-                  match='Invalid State: called fail, but Completion is already finished: {}'.format(
-                      str(ZeroDivisionError()))):
+                       match='Invalid State: called fail, but Completion is already finished: {}'.format(
+                           str(ZeroDivisionError()))):
         c._first_promise.fail(ZeroDivisionError())
 
 
@@ -233,6 +237,7 @@ def test_pretty_print():
 
     assert p.result == 5
 
+
 def test_apply():
     to = _TestOrchestrator('', 0, 0)
     completion = to.apply([
@@ -241,7 +246,7 @@ def test_apply():
         ServiceSpec(service_type='nfs'),
     ])
     completion.finalize(42)
-    assert  completion.result == [None, None, None]
+    assert completion.result == [None, None, None]
 
 
 def test_yaml():
@@ -250,6 +255,7 @@ daemon_id: ubuntu
 hostname: ubuntu
 status: 1
 status_desc: starting
+is_active: false
 events:
 - 2020-06-10T10:08:22.933241 daemon:crash.ubuntu [INFO] "Deployed crash.ubuntu on
   host 'ubuntu'"
@@ -279,3 +285,13 @@ events:
 
         j = json.loads(to_format(object, 'json', False, cls))
         assert to_format(cls.from_json(j), 'yaml', False, cls) == y
+
+
+def test_event_multiline():
+    from .._interface import OrchestratorEvent
+    e = OrchestratorEvent(datetime.datetime.utcnow(), 'service', 'subject', 'ERROR', 'message')
+    assert OrchestratorEvent.from_json(e.to_json()) == e
+
+    e = OrchestratorEvent(datetime.datetime.utcnow(), 'service',
+                          'subject', 'ERROR', 'multiline\nmessage')
+    assert OrchestratorEvent.from_json(e.to_json()) == e

@@ -292,6 +292,7 @@ struct MockImageCtx {
 
   EventSocket &event_socket;
 
+  MockImageCtx *child = nullptr;
   MockImageCtx *parent;
   MockOperations *operations;
   MockImageState *state;
@@ -318,6 +319,7 @@ struct MockImageCtx {
   bool cache;
 
   ConfigProxy config;
+  std::set<std::string> config_overrides;
 };
 
 } // namespace librbd

@@ -143,7 +143,7 @@ class DriveGroupSpec(ServiceSpec):
         "db_slots", "wal_slots", "block_db_size", "placement", "service_id", "service_type",
         "data_devices", "db_devices", "wal_devices", "journal_devices",
         "data_directories", "osds_per_device", "objectstore", "osd_id_claims",
-        "journal_size", "unmanaged", "filter_logic"
+        "journal_size", "unmanaged", "filter_logic", "preview_only"
     ]
 
     def __init__(self,
@@ -165,12 +165,14 @@ class DriveGroupSpec(ServiceSpec):
                  journal_size=None,  # type: Optional[int]
                  service_type=None,  # type: Optional[str]
                  unmanaged=False,  # type: bool
-                 filter_logic='AND'  # type: str
+                 filter_logic='AND',  # type: str
+                 preview_only=False,  # type: bool
                  ):
         assert service_type is None or service_type == 'osd'
         super(DriveGroupSpec, self).__init__('osd', service_id=service_id,
                                              placement=placement,
-                                             unmanaged=unmanaged)
+                                             unmanaged=unmanaged,
+                                             preview_only=preview_only)
 
         #: A :class:`ceph.deployment.drive_group.DeviceSelection`
         self.data_devices = data_devices
@@ -190,7 +192,7 @@ class DriveGroupSpec(ServiceSpec):
         #: Set (or override) the "bluestore_block_db_size" value, in bytes
         self.block_db_size = block_db_size
 
-        #: set journal_size is bytes
+        #: set journal_size in bytes
         self.journal_size = journal_size
 
         #: Number of osd daemons per "DATA" device.
@@ -219,6 +221,9 @@ class DriveGroupSpec(ServiceSpec):
         #: The logic gate we use to match disks with filters.
         #: defaults to 'AND'
         self.filter_logic = filter_logic.upper()
+
+        #: If this should be treated as a 'preview' spec
+        self.preview_only = preview_only
 
     @classmethod
     def _from_json_impl(cls, json_drive_group):
@@ -290,6 +295,8 @@ class DriveGroupSpec(ServiceSpec):
         for s in filter(None, specs):
             s.validate()
         for s in filter(None, [self.db_devices, self.wal_devices, self.journal_devices]):
+            if s.paths:
+                raise DriveGroupValidationError("`paths` is only allowed for data_devices")
             if s.all:
                 raise DriveGroupValidationError("`all` is only allowed for data_devices")
 

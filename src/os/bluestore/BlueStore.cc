@@ -66,13 +66,13 @@ MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::Onode, bluestore_onode,
 
 // bluestore_cache_other
 MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::Buffer, bluestore_buffer,
-			      bluestore_cache_other);
+			      bluestore_Buffer);
 MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::Extent, bluestore_extent,
-			      bluestore_cache_other);
+			      bluestore_Extent);
 MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::Blob, bluestore_blob,
-			      bluestore_cache_other);
+			      bluestore_Blob);
 MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::SharedBlob, bluestore_shared_blob,
-			      bluestore_cache_other);
+			      bluestore_SharedBlob);
 
 // bluestore_txc
 MEMPOOL_DEFINE_OBJECT_FACTORY(BlueStore::TransContext, bluestore_transcontext,
@@ -190,6 +190,11 @@ const string BLUESTORE_GLOBAL_STATFS_KEY = "bluestore_statfs";
  * We use ! as a terminator for strings; this works because it is < #
  * and will get escaped if it is present in the string.
  *
+ * NOTE: There is a bug in this implementation: due to implicit
+ * character type conversion in comparison it may produce unexpected
+ * ordering. Unfortunately fixing the bug would mean invalidating the
+ * keys in existing deployments. Instead we do additional sorting
+ * where it is needed.
  */
 template<typename S>
 static void append_escaped(const string &in, S *out)
@@ -197,11 +202,11 @@ static void append_escaped(const string &in, S *out)
   char hexbyte[in.length() * 3 + 1];
   char* ptr = &hexbyte[0];
   for (string::const_iterator i = in.begin(); i != in.end(); ++i) {
-    if (*i <= '#') {
+    if (*i <= '#') { // bug: unexpected result for *i > 0x7f
       *ptr++ = '#';
       *ptr++ = "0123456789abcdef"[(*i >> 4) & 0x0f];
       *ptr++ = "0123456789abcdef"[*i & 0x0f];
-    } else if (*i >= '~') {
+    } else if (*i >= '~') { // bug: unexpected result for *i > 0x7f
       *ptr++ = '~';
       *ptr++ = "0123456789abcdef"[(*i >> 4) & 0x0f];
       *ptr++ = "0123456789abcdef"[*i & 0x0f];
@@ -323,47 +328,48 @@ static const char *_key_decode_shard(const char *key, shard_id_t *pshard)
   return key + 1;
 }
 
-static void get_coll_key_range(const coll_t& cid, int bits,
-			       string *temp_start, string *temp_end,
-			       string *start, string *end)
+static void get_coll_range(const coll_t& cid, int bits,
+                           ghobject_t *temp_start, ghobject_t *temp_end,
+                           ghobject_t *start, ghobject_t *end)
 {
-  temp_start->clear();
-  temp_end->clear();
-  start->clear();
-  end->clear();
-
   spg_t pgid;
   if (cid.is_pg(&pgid)) {
-    _key_encode_shard(pgid.shard, start);
+    start->shard_id = pgid.shard;
     *temp_start = *start;
 
-    _key_encode_u64(pgid.pool() + 0x8000000000000000ull, start);
-    _key_encode_u64((-2ll - pgid.pool()) + 0x8000000000000000ull, temp_start);
+    start->hobj.pool = pgid.pool();
+    temp_start->hobj.pool = -2ll - pgid.pool();
 
     *end = *start;
     *temp_end = *temp_start;
 
     uint32_t reverse_hash = hobject_t::_reverse_bits(pgid.ps());
-    _key_encode_u32(reverse_hash, start);
-    _key_encode_u32(reverse_hash, temp_start);
+    start->hobj.set_bitwise_key_u32(reverse_hash);
+    temp_start->hobj.set_bitwise_key_u32(reverse_hash);
 
     uint64_t end_hash = reverse_hash  + (1ull << (32 - bits));
     if (end_hash > 0xffffffffull)
       end_hash = 0xffffffffull;
 
-    _key_encode_u32(end_hash, end);
-    _key_encode_u32(end_hash, temp_end);
+    end->hobj.set_bitwise_key_u32(end_hash);
+    temp_end->hobj.set_bitwise_key_u32(end_hash);
   } else {
-    _key_encode_shard(shard_id_t::NO_SHARD, start);
-    _key_encode_u64(-1ull + 0x8000000000000000ull, start);
+    start->shard_id = shard_id_t::NO_SHARD;
+    start->hobj.pool = -1ull;
+
     *end = *start;
-    _key_encode_u32(0, start);
-    _key_encode_u32(0xffffffff, end);
+    start->hobj.set_bitwise_key_u32(0);
+    end->hobj.set_bitwise_key_u32(0xffffffff);
 
     // no separate temp section
     *temp_start = *end;
     *temp_end = *end;
   }
+
+  start->generation = 0;
+  end->generation = 0;
+  temp_start->generation = 0;
+  temp_end->generation = 0;
 }
 
 static void get_shared_blob_key(uint64_t sbid, string *key)
@@ -382,13 +388,15 @@ static int get_key_shared_blob(const string& key, uint64_t *sbid)
 }
 
 template<typename S>
-static int get_key_object(const S& key, ghobject_t *oid)
+static void _key_encode_prefix(const ghobject_t& oid, S *key)
 {
-  int r;
-  const char *p = key.c_str();
+  _key_encode_shard(oid.shard_id, key);
+  _key_encode_u64(oid.hobj.pool + 0x8000000000000000ull, key);
+  _key_encode_u32(oid.hobj.get_bitwise_key_u32(), key);
+}
 
-  if (key.length() < 1 + 8 + 4)
-    return -1;
+static const char *_key_decode_prefix(const char *p, ghobject_t *oid)
+{
   p = _key_decode_shard(p, &oid->shard_id);
 
   uint64_t pool;
@@ -399,6 +407,25 @@ static int get_key_object(const S& key, ghobject_t *oid)
   p = _key_decode_u32(p, &hash);
 
   oid->hobj.set_bitwise_key_u32(hash);
+
+  return p;
+}
+
+#define ENCODED_KEY_PREFIX_LEN (1 + 8 + 4)
+
+template<typename S>
+static int get_key_object(const S& key, ghobject_t *oid)
+{
+  int r;
+  const char *p = key.c_str();
+
+  if (key.length() < ENCODED_KEY_PREFIX_LEN)
+    return -1;
+
+  p = _key_decode_prefix(p, oid);
+
+  if (key.length() == ENCODED_KEY_PREFIX_LEN)
+    return -2;
 
   r = decode_escaped(p, &oid->hobj.nspace);
   if (r < 0)
@@ -448,7 +475,7 @@ static void get_object_key(CephContext *cct, const ghobject_t& oid, S *key)
 {
   key->clear();
 
-  size_t max_len = 1 + 8 + 4 +
+  size_t max_len = ENCODED_KEY_PREFIX_LEN +
                   (oid.hobj.nspace.length() * 3 + 1) +
                   (oid.hobj.get_key().length() * 3 + 1) +
                    1 + // for '<', '=', or '>'
@@ -456,9 +483,7 @@ static void get_object_key(CephContext *cct, const ghobject_t& oid, S *key)
                    8 + 8 + 1;
   key->reserve(max_len);
 
-  _key_encode_shard(oid.shard_id, key);
-  _key_encode_u64(oid.hobj.pool + 0x8000000000000000ull, key);
-  _key_encode_u32(oid.hobj.get_bitwise_key_u32(), key);
+  _key_encode_prefix(oid, key);
 
   append_escaped(oid.hobj.nspace, key);
 
@@ -692,6 +717,195 @@ ostream& operator<<(ostream& out, const BlueStore::Buffer& b)
   return out << ")";
 }
 
+namespace {
+
+/*
+ * Due to a bug in key string encoding (see a comment for append_escaped)
+ * the KeyValueDB iterator does not lexicographically sort the same
+ * way that ghobject_t does: objects with the same hash may have wrong order.
+ *
+ * This is the iterator wrapper that fixes the keys order.
+ */
+
+class CollectionListIterator {
+public:
+  CollectionListIterator(const KeyValueDB::Iterator &it)
+    : m_it(it) {
+  }
+  virtual ~CollectionListIterator() {
+  }
+
+  virtual bool valid() const = 0;
+  virtual const ghobject_t &oid() const = 0;
+  virtual void lower_bound(const ghobject_t &oid) = 0;
+  virtual void upper_bound(const ghobject_t &oid) = 0;
+  virtual void next() = 0;
+
+protected:
+  KeyValueDB::Iterator m_it;
+};
+
+class SimpleCollectionListIterator : public CollectionListIterator {
+public:
+  SimpleCollectionListIterator(CephContext *cct, const KeyValueDB::Iterator &it)
+    : CollectionListIterator(it), m_cct(cct) {
+  }
+
+  bool valid() const override {
+    return m_it->valid();
+  }
+
+  const ghobject_t &oid() const override {
+    ceph_assert(valid());
+
+    return m_oid;
+  }
+
+  void lower_bound(const ghobject_t &oid) override {
+    string key;
+    get_object_key(m_cct, oid, &key);
+
+    m_it->lower_bound(key);
+    get_oid();
+  }
+
+  void upper_bound(const ghobject_t &oid) override {
+    string key;
+    get_object_key(m_cct, oid, &key);
+
+    m_it->upper_bound(key);
+    get_oid();
+  }
+
+  void next() override {
+    ceph_assert(valid());
+
+    m_it->next();
+    get_oid();
+  }
+
+private:
+  CephContext *m_cct;
+  ghobject_t m_oid;
+
+  void get_oid() {
+    if (!valid()) {
+      return;
+    }
+
+    if (is_extent_shard_key(m_it->key())) {
+      next();
+      return;
+    }
+
+    m_oid = ghobject_t();
+    int r = get_key_object(m_it->key(), &m_oid);
+    ceph_assert(r == 0);
+  }
+};
+
+class SortedCollectionListIterator : public CollectionListIterator {
+public:
+  SortedCollectionListIterator(const KeyValueDB::Iterator &it)
+    : CollectionListIterator(it), m_chunk_iter(m_chunk.end()) {
+  }
+
+  bool valid() const override {
+    return m_chunk_iter != m_chunk.end();
+  }
+
+  const ghobject_t &oid() const override {
+    ceph_assert(valid());
+
+    return m_chunk_iter->first;
+  }
+
+  void lower_bound(const ghobject_t &oid) override {
+    std::string key;
+    _key_encode_prefix(oid, &key);
+
+    m_it->lower_bound(key);
+    m_chunk_iter = m_chunk.end();
+    if (!get_next_chunk()) {
+      return;
+    }
+
+    if (this->oid().shard_id != oid.shard_id ||
+        this->oid().hobj.pool != oid.hobj.pool ||
+        this->oid().hobj.get_bitwise_key_u32() != oid.hobj.get_bitwise_key_u32()) {
+      return;
+    }
+
+    m_chunk_iter = m_chunk.lower_bound(oid);
+    if (m_chunk_iter == m_chunk.end()) {
+      get_next_chunk();
+    }
+  }
+
+  void upper_bound(const ghobject_t &oid) override {
+    lower_bound(oid);
+
+    if (valid() && this->oid() == oid) {
+      next();
+    }
+  }
+
+  void next() override {
+    ceph_assert(valid());
+
+    m_chunk_iter++;
+    if (m_chunk_iter == m_chunk.end()) {
+      get_next_chunk();
+    }
+  }
+
+private:
+  std::map<ghobject_t, std::string> m_chunk;
+  std::map<ghobject_t, std::string>::iterator m_chunk_iter;
+
+  bool get_next_chunk() {
+    while (m_it->valid() && is_extent_shard_key(m_it->key())) {
+      m_it->next();
+    }
+
+    if (!m_it->valid()) {
+      return false;
+    }
+
+    ghobject_t oid;
+    int r = get_key_object(m_it->key(), &oid);
+    ceph_assert(r == 0);
+
+    m_chunk.clear();
+    while (true) {
+      m_chunk.insert({oid, m_it->key()});
+
+      do {
+        m_it->next();
+      } while (m_it->valid() && is_extent_shard_key(m_it->key()));
+
+      if (!m_it->valid()) {
+        break;
+      }
+
+      ghobject_t next;
+      r = get_key_object(m_it->key(), &next);
+      ceph_assert(r == 0);
+      if (next.shard_id != oid.shard_id ||
+          next.hobj.pool != oid.hobj.pool ||
+          next.hobj.get_bitwise_key_u32() != oid.hobj.get_bitwise_key_u32()) {
+        break;
+      }
+      oid = next;
+    }
+
+    m_chunk_iter = m_chunk.begin();
+    return true;
+  }
+};
+
+} // anonymous namespace
+
 // Garbage Collector
 
 void BlueStore::GarbageCollector::process_protrusive_extents(
@@ -886,77 +1100,47 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
       BlueStore::Onode,
       boost::intrusive::list_member_hook<>,
       &BlueStore::Onode::lru_item> > list_t;
-  typedef boost::intrusive::list<
-    BlueStore::Onode,
-    boost::intrusive::member_hook<
-      BlueStore::Onode,
-      boost::intrusive::list_member_hook<>,
-      &BlueStore::Onode::pin_item> > pin_list_t;
 
   list_t lru;
-  pin_list_t pin_list;
 
   explicit LruOnodeCacheShard(CephContext *cct) : BlueStore::OnodeCacheShard(cct) {}
 
-  void _add(BlueStore::OnodeRef& o, int level) override
+  void _add(BlueStore::Onode* o, int level) override
   {
-    ceph_assert(o->s == nullptr);
-    o->s = this;
-    if (o->nref > 1) {
-      pin_list.push_front(*o);
-      o->pinned = true;
-      num_pinned = pin_list.size();
-    } else {
+    if (o->put_cache()) {
       (level > 0) ? lru.push_front(*o) : lru.push_back(*o);
-    }
-    num = lru.size();
-  }
-  void _rm(BlueStore::OnodeRef& o) override
-  {
-    o->s = nullptr;
-    if (o->pinned) {
-      o->pinned = false;
-      pin_list.erase(pin_list.iterator_to(*o));
     } else {
+      ++num_pinned;
+    }
+    ++num; // we count both pinned and unpinned entries
+    dout(20) << __func__ << " " << this << " " << o->oid << " added, num=" << num << dendl;
+  }
+  void _rm(BlueStore::Onode* o) override
+  {
+    if (o->pop_cache()) {
       lru.erase(lru.iterator_to(*o));
+    } else {
+      ceph_assert(num_pinned);
+      --num_pinned;
     }
-    num = lru.size();
-    num_pinned = pin_list.size();
+    ceph_assert(num);
+    --num;
+    dout(20) << __func__ << " " << this << " " << " " << o->oid << " removed, num=" << num << dendl;
   }
-  void _touch(BlueStore::OnodeRef& o) override
+  void _pin(BlueStore::Onode* o) override
   {
-    if (o->pinned) {
-      return;
-    }
     lru.erase(lru.iterator_to(*o));
+    ++num_pinned;
+    dout(20) << __func__ << this << " " << " " << " " << o->oid << " pinned" << dendl;
+  }
+  void _unpin(BlueStore::Onode* o) override
+  {
     lru.push_front(*o);
-    num = lru.size();
+    ceph_assert(num_pinned);
+    --num_pinned;
+    dout(20) << __func__ << this << " " << " " << " " << o->oid << " unpinned" << dendl;
   }
-  void _pin(BlueStore::Onode& o) override
-  {
-    if (o.pinned == true) {
-      return;
-    }
-    lru.erase(lru.iterator_to(o));
-    pin_list.push_front(o);
-    o.pinned = true;
-    num = lru.size();
-    num_pinned = pin_list.size();
-    dout(30) << __func__ << " " << o.oid << " pinned" << dendl;
 
-  } 
-  void _unpin(BlueStore::Onode& o) override
-  {
-    if (o.pinned == false) {
-      return;
-    }
-    pin_list.erase(pin_list.iterator_to(o));
-    lru.push_front(o);
-    o.pinned = false;
-    num = lru.size();
-    num_pinned = pin_list.size();
-    dout(30) << __func__ << " " << o.oid << " unpinned" << dendl;
-  }
   void _trim_to(uint64_t new_size) override
   {
     if (new_size >= lru.size()) {
@@ -966,26 +1150,40 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
     auto p = lru.end();
     ceph_assert(p != lru.begin());
     --p;
-    while (n > 0) {
+    ceph_assert(num >= n);
+    num -= n;
+    while (n-- > 0) {
       BlueStore::Onode *o = &*p;
-      dout(30) << __func__ << "  rm " << o->oid << dendl;
+      dout(20) << __func__ << "  rm " << o->oid << " "
+               << o->nref << " " << o->cached << " " << o->pinned << dendl;
       if (p != lru.begin()) {
         lru.erase(p--);
       } else {
+        ceph_assert(n == 0);
         lru.erase(p);
-        ceph_assert(n == 1);
       }
-      o->s = nullptr;
-      o->get();  // paranoia
-      o->c->onode_map.remove(o->oid);
-      o->put();
-      --n;
+      auto pinned = !o->pop_cache();
+      ceph_assert(!pinned);
+      o->c->onode_map._remove(o->oid);
     }
-    num = lru.size();
+  }
+  void move_pinned(OnodeCacheShard *to, BlueStore::Onode *o) override
+  {
+    if (to == this) {
+      return;
+    }
+    ceph_assert(o->cached);
+    ceph_assert(o->pinned);
+    ceph_assert(num);
+    ceph_assert(num_pinned);
+    --num_pinned;
+    --num;
+    ++to->num_pinned;
+    ++to->num;
   }
   void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) override
   {
-    *onodes += num + num_pinned;
+    *onodes += num;
     *pinned_onodes += num_pinned;
   }
 };
@@ -1689,7 +1887,8 @@ void BlueStore::BufferSpace::split(BufferCacheShard* cache, size_t pos, BlueStor
 #undef dout_prefix
 #define dout_prefix *_dout << "bluestore.OnodeSpace(" << this << " in " << cache << ") "
 
-BlueStore::OnodeRef BlueStore::OnodeSpace::add(const ghobject_t& oid, OnodeRef o)
+BlueStore::OnodeRef BlueStore::OnodeSpace::add(const ghobject_t& oid,
+  OnodeRef& o)
 {
   std::lock_guard l(cache->lock);
   auto p = onode_map.find(oid);
@@ -1699,11 +1898,17 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::add(const ghobject_t& oid, OnodeRef o
 			  << dendl;
     return p->second;
   }
-  ldout(cache->cct, 30) << __func__ << " " << oid << " " << o << dendl;
+  ldout(cache->cct, 20) << __func__ << " " << oid << " " << o << dendl;
   onode_map[oid] = o;
-  cache->_add(o, 1);
+  cache->_add(o.get(), 1);
   cache->_trim();
   return o;
+}
+
+void BlueStore::OnodeSpace::_remove(const ghobject_t& oid)
+{
+  ldout(cache->cct, 20) << __func__ << " " << oid << " " << dendl;
+  onode_map.erase(oid);
 }
 
 BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
@@ -1719,10 +1924,16 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
       ldout(cache->cct, 30) << __func__ << " " << oid << " miss" << dendl;
     } else {
       ldout(cache->cct, 30) << __func__ << " " << oid << " hit " << p->second
+                            << " " << p->second->nref
+                            << " " << p->second->cached
+                            << " " << p->second->pinned
 			    << dendl;
-      cache->_touch(p->second);
-      hit = true;
+      // This will pin onode and implicitly touch the cache when Onode
+      // eventually will become unpinned
       o = p->second;
+      ceph_assert(!o->cached || o->pinned);
+
+      hit = true;
     }
   }
 
@@ -1737,9 +1948,9 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
 void BlueStore::OnodeSpace::clear()
 {
   std::lock_guard l(cache->lock);
-  ldout(cache->cct, 10) << __func__ << dendl;
+  ldout(cache->cct, 10) << __func__ << " " << onode_map.size()<< dendl;
   for (auto &p : onode_map) {
-    cache->_rm(p.second);
+    cache->_rm(p.second.get());
   }
   onode_map.clear();
 }
@@ -1754,7 +1965,7 @@ void BlueStore::OnodeSpace::rename(
   OnodeRef& oldo,
   const ghobject_t& old_oid,
   const ghobject_t& new_oid,
-  const mempool::bluestore_cache_other::string& new_okey)
+  const mempool::bluestore_cache_meta::string& new_okey)
 {
   std::lock_guard l(cache->lock);
   ldout(cache->cct, 30) << __func__ << " " << old_oid << " -> " << new_oid
@@ -1768,7 +1979,7 @@ void BlueStore::OnodeSpace::rename(
   if (pn != onode_map.end()) {
     ldout(cache->cct, 30) << __func__ << "  removing target " << pn->second
 			  << dendl;
-    cache->_rm(pn->second);
+    cache->_rm(pn->second.get());
     onode_map.erase(pn);
   }
   OnodeRef o = po->second;
@@ -1776,10 +1987,13 @@ void BlueStore::OnodeSpace::rename(
   // install a non-existent onode at old location
   oldo.reset(new Onode(o->c, old_oid, o->key));
   po->second = oldo;
-  cache->_add(po->second, 1);
-  // add at new position and fix oid, key
+  cache->_add(oldo.get(), 1);
+  // add at new position and fix oid, key.
+  // This will pin 'o' and implicitly touch cache
+  // when it will eventually become unpinned
   onode_map.insert(make_pair(new_oid, o));
-  cache->_touch(o);
+  ceph_assert(o->pinned);
+
   o->oid = new_oid;
   o->key = new_okey;
   cache->_trim();
@@ -1801,7 +2015,11 @@ template <int LogLevelV = 30>
 void BlueStore::OnodeSpace::dump(CephContext *cct)
 {
   for (auto& i : onode_map) {
-    ldout(cct, LogLevelV) << i.first << " : " << i.second << dendl;
+    ldout(cct, LogLevelV) << i.first << " : " << i.second
+      << " " << i.second->nref
+      << " " << i.second->cached
+      << " " << i.second->pinned
+      << dendl;
   }
 }
 
@@ -2336,7 +2554,7 @@ void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
       unsigned n;
       // we need to encode inline_bl to measure encoded length
       bool never_happen = encode_some(0, OBJECT_MAX_SIZE, inline_bl, &n);
-      inline_bl.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+      inline_bl.reassign_to_mempool(mempool::mempool_bluestore_inline_bl);
       ceph_assert(!never_happen);
       size_t len = inline_bl.length();
       dout(20) << __func__ << "  inline shard " << len << " bytes from " << n
@@ -3372,6 +3590,47 @@ BlueStore::BlobRef BlueStore::ExtentMap::split_blob(
 #undef dout_prefix
 #define dout_prefix *_dout << "bluestore.onode(" << this << ")." << __func__ << " "
 
+//
+// A tricky thing about Onode's ref counter is that we do an additional
+// increment when newly pinned instance is detected. And -1 on unpin.
+// This prevents from a conflict with a delete call (when nref == 0).
+// The latter might happen while the thread is in unpin() function
+// (and e.g. waiting for lock acquisition) since nref is already
+// decremented. And another 'putting' thread on the instance will release it.
+//
+void BlueStore::Onode::get() {
+  if (++nref == 2) {
+    c->get_onode_cache()->pin(this, [&]() {
+        bool was_pinned = pinned;
+        pinned = nref >= 2;
+        // additional increment for newly pinned instance
+        bool r = !was_pinned && pinned;
+        if (r) {
+          ++nref;
+        }
+        return cached && r;
+      });
+  }
+}
+void BlueStore::Onode::put() {
+  if (--nref == 2) {
+    c->get_onode_cache()->unpin(this, [&]() {
+        bool was_pinned = pinned;
+        pinned = pinned && nref > 2; // intentionally use > not >= as we have
+                                     // +1 due to pinned state
+        bool r = was_pinned && !pinned;
+        // additional decrement for newly unpinned instance
+        if (r) {
+          --nref;
+        }
+        return cached && r;
+      });
+  }
+  if (nref == 0) {
+    delete this;
+  }
+}
+
 BlueStore::Onode* BlueStore::Onode::decode(
   CollectionRef c,
   const ghobject_t& oid,
@@ -3383,7 +3642,7 @@ BlueStore::Onode* BlueStore::Onode::decode(
   auto p = v.front().begin_deep();
   on->onode.decode(p);
   for (auto& i : on->onode.attrs) {
-    i.second.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+    i.second.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
   }
 
   // initialize extent_map
@@ -3392,7 +3651,7 @@ BlueStore::Onode* BlueStore::Onode::decode(
     denc(on->extent_map.inline_bl, p);
     on->extent_map.decode_some(on->extent_map.inline_bl);
     on->extent_map.inline_bl.reassign_to_mempool(
-      mempool::mempool_bluestore_cache_other);
+      mempool::mempool_bluestore_cache_data);
   }
   else {
     on->extent_map.init_shards(false, false);
@@ -3827,23 +4086,17 @@ void BlueStore::Collection::split_cache(
       ldout(store->cct, 20) << __func__ << " moving " << o << " " << o->oid
 			    << dendl;
 
-      // move the onode to the new map before futzing with the cache
-      // shard, ensuring that nref is always >= 2, and no racing
-      // thread can trigger a pin or unpin (which does *not* behave
-      // well when we are clearing and resetting the 's' shard
-      // pointer!).
+      // ensuring that nref is always >= 2 and hence onode is pinned and 
+      // physically out of cache during the transition
+      OnodeRef o_pin = o;
+      ceph_assert(o->pinned);
+
       p = onode_map.onode_map.erase(p);
       dest->onode_map.onode_map[o->oid] = o;
-
-      if (onode_map.cache != dest->onode_map.cache) {
-	// move onode to a different cache shard
-	onode_map.cache->_rm(o);
-	o->c = dest;
-	dest->onode_map.cache->_add(o, 1);
-      } else {
-	// the onode is in the same cache shard, making our move simpler.
-	o->c = dest;
+      if (get_onode_cache() != dest->get_onode_cache()) {
+        get_onode_cache()->move_pinned(dest->get_onode_cache(), o.get());
       }
+      o->c = dest;
 
       // move over shared blobs and buffers.  cover shared blobs from
       // both extent map and spanning blob map (the full extent map
@@ -7371,7 +7624,7 @@ int BlueStore::_mount(bool kv_only, bool open_db)
  out_stop:
   _kv_stop();
  out_coll:
-  _flush_cache();
+  _shutdown_cache();
  out_db:
   _close_db_and_around(false);
  out_bdev:
@@ -7395,7 +7648,7 @@ int BlueStore::umount()
     mempool_thread.shutdown();
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    _flush_cache();
+    _shutdown_cache();
     dout(20) << __func__ << " closing" << dendl;
 
   }
@@ -8518,7 +8771,7 @@ int BlueStore::_fsck(BlueStore::FSCKDepth depth, bool repair)
 
 out_scan:
   mempool_thread.shutdown();
-  _flush_cache();
+  _shutdown_cache();
 out_db:
   _close_db_and_around(false);
 out_bdev:
@@ -10730,7 +10983,7 @@ int BlueStore::getattr(
   int r;
   {
     std::shared_lock l(c->lock);
-    mempool::bluestore_cache_other::string k(name);
+    mempool::bluestore_cache_meta::string k(name);
 
     OnodeRef o = c->get_onode(oid, false);
     if (!o || !o->exists) {
@@ -10844,7 +11097,28 @@ int BlueStore::collection_list(
   int r;
   {
     std::shared_lock l(c->lock);
-    r = _collection_list(c, start, end, max, ls, pnext);
+    r = _collection_list(c, start, end, max, false, ls, pnext);
+  }
+
+  dout(10) << __func__ << " " << c->cid
+    << " start " << start << " end " << end << " max " << max
+    << " = " << r << ", ls.size() = " << ls->size()
+    << ", next = " << (pnext ? *pnext : ghobject_t())  << dendl;
+  return r;
+}
+
+int BlueStore::collection_list_legacy(
+  CollectionHandle &c_, const ghobject_t& start, const ghobject_t& end, int max,
+  vector<ghobject_t> *ls, ghobject_t *pnext)
+{
+  Collection *c = static_cast<Collection *>(c_.get());
+  c->flush();
+  dout(15) << __func__ << " " << c->cid
+           << " start " << start << " end " << end << " max " << max << dendl;
+  int r;
+  {
+    std::shared_lock l(c->lock);
+    r = _collection_list(c, start, end, max, true, ls, pnext);
   }
 
   dout(10) << __func__ << " " << c->cid
@@ -10856,7 +11130,7 @@ int BlueStore::collection_list(
 
 int BlueStore::_collection_list(
   Collection *c, const ghobject_t& start, const ghobject_t& end, int max,
-  vector<ghobject_t> *ls, ghobject_t *pnext)
+  bool legacy, vector<ghobject_t> *ls, ghobject_t *pnext)
 {
 
   if (!c->exists)
@@ -10865,11 +11139,11 @@ int BlueStore::_collection_list(
   auto start_time = mono_clock::now();
   int r = 0;
   ghobject_t static_next;
-  KeyValueDB::Iterator it;
-  string temp_start_key, temp_end_key;
-  string start_key, end_key;
+  std::unique_ptr<CollectionListIterator> it;
+  ghobject_t coll_range_temp_start, coll_range_temp_end;
+  ghobject_t coll_range_start, coll_range_end;
   bool set_next = false;
-  string pend;
+  ghobject_t pend;
   bool temp;
 
   if (!pnext)
@@ -10881,93 +11155,94 @@ int BlueStore::_collection_list(
   if (start.is_max() || start.hobj.is_max()) {
     goto out;
   }
-/** comment by hy 2020-05-30
- * # 
- */
-  get_coll_key_range(c->cid, c->cnode.bits, &temp_start_key, &temp_end_key,
-    &start_key, &end_key);
+  get_coll_range(c->cid, c->cnode.bits, &coll_range_temp_start,
+                 &coll_range_temp_end, &coll_range_start, &coll_range_end);
   dout(20) << __func__
-    << " range " << pretty_binary_string(temp_start_key)
-    << " to " << pretty_binary_string(temp_end_key)
-    << " and " << pretty_binary_string(start_key)
-    << " to " << pretty_binary_string(end_key)
+    << " range " << coll_range_temp_start
+    << " to " << coll_range_temp_end
+    << " and " << coll_range_start
+    << " to " << coll_range_end
     << " start " << start << dendl;
 /** comment by hy 2020-05-30
  * # 迭代器
  */
-  it = db->get_iterator(PREFIX_OBJ);
+  if (legacy) {
+    it = std::make_unique<SimpleCollectionListIterator>(
+      cct, db->get_iterator(PREFIX_OBJ));
+  } else {
+    it = std::make_unique<SortedCollectionListIterator>(
+      db->get_iterator(PREFIX_OBJ));
+  }
   if (start == ghobject_t() ||
     start.hobj == hobject_t() ||
     start == c->cid.get_min_hobj()) {
-    it->upper_bound(temp_start_key);
+    it->upper_bound(coll_range_temp_start);
     temp = true;
   } else {
-    string k;
-    get_object_key(cct, start, &k);
     if (start.hobj.is_temp()) {
       temp = true;
-      ceph_assert(k >= temp_start_key && k < temp_end_key);
+      ceph_assert(start >= coll_range_temp_start && start < coll_range_temp_end);
     } else {
       temp = false;
-      ceph_assert(k >= start_key && k < end_key);
+      ceph_assert(start >= coll_range_start && start < coll_range_end);
     }
-    dout(20) << __func__ << " start from " << pretty_binary_string(k)
-      << " temp=" << (int)temp << dendl;
-    it->lower_bound(k);
+    dout(20) << __func__ << " temp=" << (int)temp << dendl;
+    it->lower_bound(start);
   }
 /** comment by hy 2020-05-30
  * # 结束了
  */
   if (end.hobj.is_max()) {
-    pend = temp ? temp_end_key : end_key;
+    pend = temp ? coll_range_temp_end : coll_range_end;
   } else {
-    get_object_key(cct, end, &end_key);
     if (end.hobj.is_temp()) {
       if (temp)
-	pend = end_key;
+        pend = end;
       else
-	goto out;
+        goto out;
     } else {
-      pend = temp ? temp_end_key : end_key;
+      pend = temp ? coll_range_temp_end : end;
     }
   }
-  dout(20) << __func__ << " pend " << pretty_binary_string(pend) << dendl;
+  dout(20) << __func__ << " pend " << pend << dendl;
   while (true) {
-    if (!it->valid() || it->key() >= pend) {
+    if (!it->valid() || it->oid() >= pend) {
       if (!it->valid())
 	dout(20) << __func__ << " iterator not valid (end of db?)" << dendl;
       else
-	dout(20) << __func__ << " key " << pretty_binary_string(it->key())
-	         << " >= " << end << dendl;
+	dout(20) << __func__ << " oid " << it->oid() << " >= " << pend << dendl;
       if (temp) {
 	if (end.hobj.is_temp()) {
+          if (it->valid() && it->oid() < coll_range_temp_end) {
+            *pnext = it->oid();
+            set_next = true;
+          }
 	  break;
 	}
 	dout(30) << __func__ << " switch to non-temp namespace" << dendl;
 	temp = false;
-	it->upper_bound(start_key);
-	pend = end_key;
-	dout(30) << __func__ << " pend " << pretty_binary_string(pend) << dendl;
+	it->upper_bound(coll_range_start);
+        if (end.hobj.is_max())
+          pend = coll_range_end;
+        else
+          pend = end;
+	dout(30) << __func__ << " pend " << pend << dendl;
 	continue;
+      }
+      if (it->valid() && it->oid() < coll_range_end) {
+        *pnext = it->oid();
+        set_next = true;
       }
       break;
     }
-    dout(30) << __func__ << " key " << pretty_binary_string(it->key()) << dendl;
-    if (is_extent_shard_key(it->key())) {
-      it->next();
-      continue;
-    }
-    ghobject_t oid;
-    int r = get_key_object(it->key(), &oid);
-    ceph_assert(r == 0);
-    dout(20) << __func__ << " oid " << oid << " end " << end << dendl;
+    dout(20) << __func__ << " oid " << it->oid() << " end " << end << dendl;
     if (ls->size() >= (unsigned)max) {
       dout(20) << __func__ << " reached max " << max << dendl;
-      *pnext = oid;
+      *pnext = it->oid();
       set_next = true;
       break;
     }
-    ls->push_back(oid);
+    ls->push_back(it->oid());
     it->next();
   }
 out:
@@ -15509,10 +15784,10 @@ int BlueStore::_setattr(TransContext *txc,
   if (val.is_partial()) {
     auto& b = o->onode.attrs[name.c_str()] = bufferptr(val.c_str(),
 						       val.length());
-    b.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+    b.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
   } else {
     auto& b = o->onode.attrs[name.c_str()] = val;
-    b.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+    b.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
   }
   txc->write_onode(o);
   dout(10) << __func__ << " " << c->cid << " " << o->oid
@@ -15535,10 +15810,10 @@ int BlueStore::_setattrs(TransContext *txc,
     if (p->second.is_partial()) {
       auto& b = o->onode.attrs[p->first.c_str()] =
 	bufferptr(p->second.c_str(), p->second.length());
-      b.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+      b.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
     } else {
       auto& b = o->onode.attrs[p->first.c_str()] = p->second;
-      b.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
+      b.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
     }
   }
   txc->write_onode(o);
@@ -15980,7 +16255,7 @@ int BlueStore::_rename(TransContext *txc,
 	   << new_oid << dendl;
   int r;
   ghobject_t old_oid = oldo->oid;
-  mempool::bluestore_cache_other::string new_okey;
+  mempool::bluestore_cache_meta::string new_okey;
 
   if (newo) {
     if (newo->exists) {
@@ -16115,7 +16390,7 @@ int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
  * # 一下子把所有的都弄出来？
  */
     r = _collection_list(c->get(), ghobject_t(), ghobject_t::get_max(),
-                         nonexistent_count + 1, &ls, &next);
+                         nonexistent_count + 1, false, &ls, &next);
     if (r >= 0) {
       // If true mean collecton has more objects than nonexistent_count,
       // so bypass check.
@@ -16675,22 +16950,15 @@ void BlueStore::generate_db_histogram(Formatter *f)
 
 }
 
-void BlueStore::_flush_cache()
+void BlueStore::_shutdown_cache()
 {
   dout(10) << __func__ << dendl;
-  for (auto i : onode_cache_shards) {
-    i->flush();
-    ceph_assert(i->empty());
-  }
   for (auto i : buffer_cache_shards) {
     i->flush();
     ceph_assert(i->empty());
   }
   for (auto& p : coll_map) {
-    if (!p.second->onode_map.empty()) {
-      derr << __func__ << " stray onodes on " << p.first << dendl;
-      p.second->onode_map.dump<0>(cct);
-    }
+    p.second->onode_map.clear();
     if (!p.second->shared_blob_set.empty()) {
       derr << __func__ << " stray shared blobs on " << p.first << dendl;
       p.second->shared_blob_set.dump<0>(cct);
@@ -16699,6 +16967,9 @@ void BlueStore::_flush_cache()
     ceph_assert(p.second->shared_blob_set.empty());
   }
   coll_map.clear();
+  for (auto i : onode_cache_shards) {
+    ceph_assert(i->empty());
+  }
 }
 
 // For external caller.

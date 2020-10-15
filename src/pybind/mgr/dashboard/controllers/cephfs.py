@@ -8,7 +8,8 @@ import os
 import cherrypy
 import cephfs
 
-from . import ApiController, ControllerDoc, RESTController, UiApiController
+from . import ApiController, ControllerDoc, RESTController, UiApiController, \
+    allow_empty_body
 from .. import mgr
 from ..exceptions import DashboardException
 from ..security import Scope
@@ -19,7 +20,7 @@ from ..tools import ViewCache
 
 @ApiController('/cephfs', Scope.CEPHFS)
 class CephFS(RESTController):
-    def __init__(self):
+    def __init__(self):  # pragma: no cover
         super(CephFS, self).__init__()
 
         # Stateful instances of CephFSClients, hold cached results.  Key to
@@ -179,7 +180,7 @@ class CephFS(RESTController):
                                                     info['name'],
                                                     "mds_server.handle_client_request")
                 else:
-                    activity = 0.0
+                    activity = 0.0  # pragma: no cover
 
                 self._append_mds_metadata(mds_versions, info['name'])
                 rank_table.append(
@@ -285,15 +286,15 @@ class CephFS(RESTController):
         # indepdendent of whether it's a kernel or userspace
         # client, so that the javascript doesn't have to grok that.
         for client in clients:
-            if "ceph_version" in client['client_metadata']:
+            if "ceph_version" in client['client_metadata']:  # pragma: no cover - no complexity
                 client['type'] = "userspace"
                 client['version'] = client['client_metadata']['ceph_version']
                 client['hostname'] = client['client_metadata']['hostname']
-            elif "kernel_version" in client['client_metadata']:
+            elif "kernel_version" in client['client_metadata']:  # pragma: no cover - no complexity
                 client['type'] = "kernel"
                 client['version'] = client['client_metadata']['kernel_version']
                 client['hostname'] = client['client_metadata']['hostname']
-            else:
+            else:  # pragma: no cover - no complexity there
                 client['type'] = "unknown"
                 client['version'] = ""
                 client['hostname'] = ""
@@ -334,7 +335,7 @@ class CephFS(RESTController):
         """
         try:
             return self._get_root_directory(self._cephfs_instance(fs_id))
-        except (cephfs.PermissionError, cephfs.ObjectNotFound):
+        except (cephfs.PermissionError, cephfs.ObjectNotFound):  # pragma: no cover
             return None
 
     def _get_root_directory(self, cfs):
@@ -365,7 +366,7 @@ class CephFS(RESTController):
         try:
             cfs = self._cephfs_instance(fs_id)
             paths = cfs.ls_dir(path, depth)
-        except (cephfs.PermissionError, cephfs.ObjectNotFound):
+        except (cephfs.PermissionError, cephfs.ObjectNotFound):  # pragma: no cover
             paths = []
         return paths
 
@@ -385,6 +386,7 @@ class CephFS(RESTController):
         return path
 
     @RESTController.Resource('POST')
+    @allow_empty_body
     def mk_dirs(self, fs_id, path):
         """
         Create a directory.
@@ -395,6 +397,7 @@ class CephFS(RESTController):
         cfs.mk_dirs(path)
 
     @RESTController.Resource('POST')
+    @allow_empty_body
     def rm_dir(self, fs_id, path):
         """
         Remove a directory.
@@ -405,6 +408,7 @@ class CephFS(RESTController):
         cfs.rm_dir(path)
 
     @RESTController.Resource('POST')
+    @allow_empty_body
     def mk_snapshot(self, fs_id, path, name=None):
         """
         Create a snapshot.
@@ -420,6 +424,7 @@ class CephFS(RESTController):
         return cfs.mk_snapshot(path, name)
 
     @RESTController.Resource('POST')
+    @allow_empty_body
     def rm_snapshot(self, fs_id, path, name):
         """
         Remove a snapshot.
@@ -444,6 +449,7 @@ class CephFS(RESTController):
         return cfs.get_quotas(path)
 
     @RESTController.Resource('POST')
+    @allow_empty_body
     def set_quotas(self, fs_id, path, max_bytes=None, max_files=None):
         """
         Set the quotas of the specified path.
@@ -516,6 +522,6 @@ class CephFsUi(CephFS):
             paths = cfs.ls_dir(path, depth)
             if path == os.sep:
                 paths = [self._get_root_directory(cfs)] + paths
-        except (cephfs.PermissionError, cephfs.ObjectNotFound):
+        except (cephfs.PermissionError, cephfs.ObjectNotFound):  # pragma: no cover
             paths = []
         return paths

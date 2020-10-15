@@ -21,7 +21,9 @@ will be serviced from the local cache.
 
 .. note:: RBD shared read-only parent image cache requires the Ceph Nautilus release or later.
 
-.. ditaa::  +--------------------------------------------------------+
+.. ditaa::
+
+            +--------------------------------------------------------+
             |                         QEMU                           |
             +--------------------------------------------------------+
             |                librbd (cloned images)                  |
@@ -70,6 +72,10 @@ from local file. The daemon also maintains simple LRU statistics so if there's
 not enough capacity it will delete some cold cache files.
 
 Here are some important cache options correspond to the following settings:
+
+- ``immutable_object_cache_sock`` The path to the domain socket used for
+  communication between librbd clients and the ceph-immutable-object-cache
+  daemon.
 
 - ``immutable_object_cache_path`` The immutable object cache data directory.
 

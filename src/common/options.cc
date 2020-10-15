@@ -442,6 +442,13 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_NO_MON_UPDATE)
     .set_flag(Option::FLAG_STARTUP)
     .add_service("common"),
+
+    Option("mon_host_override", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_description("monitor(s) to use overriding the MonMap")
+    .set_flag(Option::FLAG_NO_MON_UPDATE)
+    .set_flag(Option::FLAG_STARTUP)
+    .add_service("common"),
+
 /** comment by hy 2020-06-30
  * # mon 域名 服务器
  */
@@ -859,6 +866,10 @@ std::vector<Option> get_global_options() {
     Option("compressor_zlib_level", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(5)
     .set_description("Zlib compression level to use"),
+
+    Option("compressor_zstd_level", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(1)
+    .set_description("Zstd compression level to use"),
 
     Option("qat_compressor_enabled", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
@@ -2753,7 +2764,7 @@ std::vector<Option> get_global_options() {
 
     Option("osd_erasure_code_plugins", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("jerasure lrc"
-  #ifdef HAVE_BETTER_YASM_ELF64
+  #if defined(HAVE_BETTER_YASM_ELF64) || defined(HAVE_ARMV8_SIMD)
          " isa"
   #endif
         )
@@ -4227,13 +4238,20 @@ std::vector<Option> get_global_options() {
     .set_enum_allowed({"bitmap", "stupid", "avl", "hybrid"})
     .set_description(""),
 
-    Option("bluefs_preextend_wal_files", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
-    .set_default(false)
-    .set_description("Preextent rocksdb wal files on mkfs to avoid performance penalty"),
-
     Option("bluefs_log_replay_check_allocations", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
       .set_default(true)
       .set_description("Enables checks for allocations consistency during log replay"),
+
+    Option("bluefs_replay_recovery", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description("Attempt to read bluefs log so large that it became unreadable.")
+    .set_long_description("If BlueFS log grows to extreme sizes (200GB+) it is likely that it becames unreadable. "
+			  "This options enables heuristics that scans devices for missing data. "
+			  "DO NOT ENABLE BY DEFAULT"),
+
+    Option("bluefs_replay_recovery_disable_compact", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description(""),
 
     Option("bluestore_bluefs", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(true)
@@ -4939,7 +4957,7 @@ std::vector<Option> get_global_options() {
     .set_description("Maximum RAM hybrid allocator should use before enabling bitmap supplement"),
 
     Option("bluestore_volume_selection_policy", Option::TYPE_STR, Option::LEVEL_DEV)
-    .set_default("rocksdb_original")
+    .set_default("use_some_extra")
     .set_enum_allowed({ "rocksdb_original", "use_some_extra" })
     .set_description("Determines bluefs volume selection policy")
     .set_long_description("Determines bluefs volume selection policy. "
@@ -6241,6 +6259,22 @@ std::vector<Option> get_rgw_options() {
     .set_description("use fast S3 attrs from bucket index (immutable only)")
     .set_long_description("use fast S3 attrs from bucket index (assumes NFS "
 			  "mounts are immutable)"),
+
+    Option("rgw_nfs_run_gc_threads", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("run GC threads in librgw (default off)"),
+
+    Option("rgw_nfs_run_lc_threads", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("run lifecycle threads in librgw (default off)"),
+
+    Option("rgw_nfs_run_quota_threads", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("run quota threads in librgw (default off)"),
+
+    Option("rgw_nfs_run_sync_thread", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("run sync thread in librgw (default off)"),
 
     Option("rgw_rados_pool_autoscale_bias", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(4.0)
@@ -7811,6 +7845,12 @@ static std::vector<Option> get_rbd_options() {
     Option("rbd_rwl_path", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("/tmp")
     .set_description("location of the persistent write back cache in a DAX-enabled filesystem on persistent memory"),
+
+    Option("rbd_config_pool_override_update_timestamp", Option::TYPE_UINT,
+           Option::LEVEL_DEV)
+    .set_default(0)
+    .set_description("timestamp of last update to pool-level config overrides"),
+
   });
 }
 
@@ -7940,7 +7980,7 @@ static std::vector<Option> get_rbd_mirror_options() {
 static std::vector<Option> get_immutable_object_cache_options() {
   return std::vector<Option>({
     Option("immutable_object_cache_path", Option::TYPE_STR, Option::LEVEL_ADVANCED)
-    .set_default("/tmp")
+    .set_default("/tmp/ceph_immutable_object_cache")
     .set_description("immutable object cache data dir"),
 
     Option("immutable_object_cache_sock", Option::TYPE_STR, Option::LEVEL_ADVANCED)
@@ -8184,6 +8224,12 @@ std::vector<Option> get_mds_options() {
     .set_default(128)
     .set_description("maximum number of segments which may be untrimmed"),
 
+    Option("mds_log_warn_factor", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    .set_default(2.0)
+    .set_min(1.0)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_description("trigger MDS_HEALTH_TRIM warning when the mds log is longer than mds_log_max_segments * mds_log_warn_factor"),
+
     Option("mds_bal_export_pin", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description("allow setting directory export pins to particular ranks"),
@@ -8304,6 +8350,11 @@ std::vector<Option> get_mds_options() {
     Option("mds_bal_target_decay", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(10.0)
     .set_description("rate of decay for export targets communicated to clients"),
+
+    Option("mds_oft_prefetch_dirfrags", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description("prefetch dirfrags recorded in open file table on startup")
+    .set_flag(Option::FLAG_STARTUP),
 
     Option("mds_replay_interval", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(1.0)
@@ -8801,6 +8852,14 @@ std::vector<Option> get_mds_client_options() {
     Option("debug_allow_any_pool_priority", Option::TYPE_BOOL, Option::LEVEL_DEV)
     .set_default(false)
     .set_description("Allow any pool priority to be set to test conversion to new range"),
+
+    Option("client_shutdown_timeout", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(30)
+    .set_min(0)
+    .set_description("timeout for shutting down CephFS")
+    .set_long_description("Timeout for shutting down CephFS via unmount or shutdown.")
+    .add_tag("client")
   });
 }
 

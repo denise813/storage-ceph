@@ -1735,6 +1735,7 @@ class RGWInitMultipart : public RGWOp {
 protected:
   string upload_id;
   RGWAccessControlPolicy policy;
+  ceph::real_time mtime;
 
 public:
   RGWInitMultipart() {}

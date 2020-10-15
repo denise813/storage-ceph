@@ -708,4 +708,4 @@ add_custom_target(tags DEPENDS ctags)
 find_package(CppCheck)
 # 去除多余头文件
 find_package(IWYU)
-set(VERSION 15.2.4)
+set(VERSION 15.2.5)

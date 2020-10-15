@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import List, Optional, Callable, Iterable, Tuple, TypeVar, Set
+from typing import List, Optional, Callable, Iterable, TypeVar, Set
 
 import orchestrator
 from ceph.deployment.service_spec import PlacementSpec, HostPlacementSpec, ServiceSpec
@@ -9,6 +9,7 @@ from orchestrator import OrchestratorValidationError
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
+
 
 class BaseScheduler(object):
     """
@@ -34,6 +35,7 @@ class SimpleScheduler(BaseScheduler):
     1) Shuffle the provided host_pool
     2) Select from list up to :count
     """
+
     def __init__(self, spec):
         super(SimpleScheduler, self).__init__(spec)
 
@@ -42,8 +44,10 @@ class SimpleScheduler(BaseScheduler):
         if not host_pool:
             return []
         host_pool = [x for x in host_pool]
+        # gen seed off of self.spec to make shuffling deterministic
+        seed = hash(self.spec.service_name())
         # shuffle for pseudo random selection
-        random.shuffle(host_pool)
+        random.Random(seed).shuffle(host_pool)
         return host_pool[:count]
 
 
@@ -51,18 +55,24 @@ class HostAssignment(object):
 
     def __init__(self,
                  spec,  # type: ServiceSpec
-                 get_hosts_func,  # type: Callable
-                 get_daemons_func, # type: Callable[[str],List[orchestrator.DaemonDescription]]
-                 filter_new_host=None, # type: Optional[Callable[[str],bool]]
+                 hosts: List[orchestrator.HostSpec],
+                 get_daemons_func,  # type: Callable[[str],List[orchestrator.DaemonDescription]]
+                 filter_new_host=None,  # type: Optional[Callable[[str],bool]]
                  scheduler=None,  # type: Optional[BaseScheduler]
                  ):
-        assert spec and get_hosts_func and get_daemons_func
+        assert spec and get_daemons_func
         self.spec = spec  # type: ServiceSpec
         self.scheduler = scheduler if scheduler else SimpleScheduler(self.spec)
-        self.get_hosts_func = get_hosts_func
+        self.hosts: List[orchestrator.HostSpec] = hosts
         self.filter_new_host = filter_new_host
         self.service_name = spec.service_name()
         self.daemons = get_daemons_func(self.service_name)
+
+    def hosts_by_label(self, label: str) -> List[orchestrator.HostSpec]:
+        return [h for h in self.hosts if label in h.labels]
+
+    def get_hostnames(self) -> List[str]:
+        return [h.hostname for h in self.hosts]
 
     def validate(self):
         self.spec.validate()
@@ -73,20 +83,20 @@ class HostAssignment(object):
 
         if self.spec.placement.hosts:
             explicit_hostnames = {h.hostname for h in self.spec.placement.hosts}
-            unknown_hosts = explicit_hostnames.difference(set(self.get_hosts_func()))
+            unknown_hosts = explicit_hostnames.difference(set(self.get_hostnames()))
             if unknown_hosts:
                 raise OrchestratorValidationError(
                     f'Cannot place {self.spec.one_line_str()} on {", ".join(sorted(unknown_hosts))}: Unknown hosts')
 
         if self.spec.placement.host_pattern:
-            pattern_hostnames = self.spec.placement.filter_matching_hosts(self.get_hosts_func)
+            pattern_hostnames = self.spec.placement.filter_matching_hostspecs(self.hosts)
             if not pattern_hostnames:
                 raise OrchestratorValidationError(
                     f'Cannot place {self.spec.one_line_str()}: No matching hosts')
 
         if self.spec.placement.label:
-            label_hostnames = self.get_hosts_func(label=self.spec.placement.label)
-            if not label_hostnames:
+            label_hosts = self.hosts_by_label(self.spec.placement.label)
+            if not label_hosts:
                 raise OrchestratorValidationError(
                     f'Cannot place {self.spec.one_line_str()}: No matching '
                     f'hosts for label {self.spec.placement.label}')
@@ -128,14 +138,13 @@ class HostAssignment(object):
 
         # we don't need any additional hosts
         if need < 0:
-            # ask the scheduler to return a set of hosts with a up to the value of <count>
-            return self.scheduler.place(hosts_with_daemons, count)
+            return self.prefer_hosts_with_active_daemons(hosts_with_daemons, count)
         else:
             # exclusive to 'mon' daemons. Filter out hosts that don't have a public network assigned
             if self.filter_new_host:
                 old = others
                 others = [h for h in others if self.filter_new_host(h.hostname)]
-                logger.debug('filtered %s down to %s' % (old, candidates))
+                logger.debug('filtered %s down to %s' % (old, others))
 
             # ask the scheduler to return a set of hosts with a up to the value of <count>
             others = self.scheduler.place(others, need)
@@ -144,6 +153,30 @@ class HostAssignment(object):
             # if a host already has the anticipated daemon, merge it with the candidates
             # to get a list of HostPlacementSpec that can be deployed on.
             return list(merge_hostspecs(hosts_with_daemons, others))
+
+    def get_hosts_with_active_daemon(self, hosts: List[HostPlacementSpec]) -> List[HostPlacementSpec]:
+        active_hosts: List['HostPlacementSpec'] = []
+        for daemon in self.daemons:
+            if daemon.is_active:
+                for h in hosts:
+                    if h.hostname == daemon.hostname:
+                        active_hosts.append(h)
+        # remove duplicates before returning
+        return list(dict.fromkeys(active_hosts))
+
+    def prefer_hosts_with_active_daemons(self, hosts: List[HostPlacementSpec], count) -> List[HostPlacementSpec]:
+        # try to prefer host with active daemon if possible
+        active_hosts = self.get_hosts_with_active_daemon(hosts)
+        if len(active_hosts) != 0 and count > 0:
+            for host in active_hosts:
+                hosts.remove(host)
+            if len(active_hosts) >= count:
+                return self.scheduler.place(active_hosts, count)
+            else:
+                return list(merge_hostspecs(self.scheduler.place(active_hosts, count),
+                                            self.scheduler.place(hosts, count - len(active_hosts))))
+        # ask the scheduler to return a set of hosts with a up to the value of <count>
+        return self.scheduler.place(hosts, count)
 
     def add_daemon_hosts(self, host_pool: List[HostPlacementSpec]) -> Set[HostPlacementSpec]:
         hosts_with_daemons = {d.hostname for d in self.daemons}
@@ -166,21 +199,22 @@ class HostAssignment(object):
             return self.spec.placement.hosts
         elif self.spec.placement.label:
             return [
-                HostPlacementSpec(x, '', '')
-                for x in self.get_hosts_func(label=self.spec.placement.label)
+                HostPlacementSpec(x.hostname, '', '')
+                for x in self.hosts_by_label(self.spec.placement.label)
             ]
         elif self.spec.placement.host_pattern:
             return [
                 HostPlacementSpec(x, '', '')
-                for x in self.spec.placement.filter_matching_hosts(self.get_hosts_func)
+                for x in self.spec.placement.filter_matching_hostspecs(self.hosts)
             ]
         # If none of the above and also no <count>
         if self.spec.placement.count is None:
-            raise OrchestratorValidationError("placement spec is empty: no hosts, no label, no pattern, no count")
+            raise OrchestratorValidationError(
+                "placement spec is empty: no hosts, no label, no pattern, no count")
         # backward compatibility: consider an empty placements to be the same pattern = *
         return [
-            HostPlacementSpec(x, '', '')
-            for x in self.get_hosts_func()
+            HostPlacementSpec(x.hostname, '', '')
+            for x in self.hosts
         ]
 
     def hosts_with_daemons(self, candidates: List[HostPlacementSpec]) -> List[HostPlacementSpec]:
@@ -224,5 +258,3 @@ def difference_hostspecs(l: List[HostPlacementSpec], r: List[HostPlacementSpec])
     """
     r_names = {h.hostname for h in r}
     return [h for h in l if h.hostname not in r_names]
-
-

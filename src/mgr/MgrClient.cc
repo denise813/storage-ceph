@@ -19,7 +19,9 @@
 
 #include "msg/Messenger.h"
 #include "messages/MMgrMap.h"
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
 #include "messages/MServiceMap.h"
+/* modify end by hy, 2020-10-15 */
 #include "messages/MMgrReport.h"
 #include "messages/MMgrOpen.h"
 #include "messages/MMgrClose.h"
@@ -100,8 +102,10 @@ bool MgrClient::ms_dispatch2(const ref_t<Message>& m)
   switch(m->get_type()) {
   case MSG_MGR_MAP:
     return handle_mgr_map(ref_cast<MMgrMap>(m));
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
   case MSG_SERVICE_MAP:
     return handle_service_map(ref_cast<MServiceMap>(m));
+/* modify end by hy, 2020-10-15 */
   case MSG_MGR_CONFIGURE:
     return handle_mgr_configure(ref_cast<MMgrConfigure>(m));
   case MSG_MGR_CLOSE:
@@ -184,6 +188,7 @@ void MgrClient::reconnect()
   if (service_daemon) {
     daemon_dirty_status = true;
   }
+  task_dirty_status = true;
 
   // Don't send an open if we're just a client (i.e. doing
   // command-sending, not stats etc)
@@ -264,6 +269,7 @@ bool MgrClient::handle_mgr_map(ref_t<MMgrMap> m)
   return true;
 }
 
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
 bool MgrClient::handle_service_map(ref_t<MServiceMap> m)
 {
   ceph_assert(ceph_mutex_is_locked_by_me(lock));
@@ -285,6 +291,7 @@ bool MgrClient::handle_service_map(ref_t<MServiceMap> m)
 
   return true;
 }
+/* modify end by hy, 2020-10-15 */
 
 bool MgrClient::ms_handle_reset(Connection *con)
 {
@@ -619,6 +626,7 @@ int MgrClient::service_daemon_register(
   return 0;
 }
 
+/* modify begin by hy, 2020-10-15, BugId:123 原因: */
 bool MgrClient::get_service_map(const std::string &service, std::vector<const char *> maps)
 {
   for (const auto &p : servicemap.services[service].daemons) {
@@ -626,6 +634,7 @@ bool MgrClient::get_service_map(const std::string &service, std::vector<const ch
   }
   return true;
 }
+/* modify end by hy, 2020-10-15 */
 
 int MgrClient::service_daemon_update_status(
   std::map<std::string,std::string>&& status)

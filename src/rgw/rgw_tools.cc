@@ -278,7 +278,7 @@ thread_local bool is_asio_thread = false;
 
 int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
                       librados::ObjectReadOperation *op, bufferlist* pbl,
-                      optional_yield y)
+                      optional_yield y, int flags)
 {
 #ifdef HAVE_BOOST_CONTEXT
 /** comment by hy 2020-03-11
@@ -290,7 +290,8 @@ int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
     auto& context = y.get_io_context();
     auto& yield = y.get_yield_context();
     boost::system::error_code ec;
-    auto bl = librados::async_operate(context, ioctx, oid, op, 0, yield[ec]);
+    auto bl = librados::async_operate(
+      context, ioctx, oid, op, flags, yield[ec]);
     if (pbl) {
       *pbl = std::move(bl);
     }
@@ -304,25 +305,26 @@ int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
 /** comment by hy 2020-03-11
  * # 因为有第三个参数,所以发送读取消息
  */
-  return ioctx.operate(oid, op, nullptr);
+  return ioctx.operate(oid, op, nullptr, flags);
 }
 
 int rgw_rados_operate(librados::IoCtx& ioctx, const std::string& oid,
-                      librados::ObjectWriteOperation *op, optional_yield y)
+                      librados::ObjectWriteOperation *op, optional_yield y,
+		      int flags)
 {
 #ifdef HAVE_BOOST_CONTEXT
   if (y) {
     auto& context = y.get_io_context();
     auto& yield = y.get_yield_context();
     boost::system::error_code ec;
-    librados::async_operate(context, ioctx, oid, op, 0, yield[ec]);
+    librados::async_operate(context, ioctx, oid, op, flags, yield[ec]);
     return -ec.value();
   }
   if (is_asio_thread) {
     dout(20) << "WARNING: blocking librados call" << dendl;
   }
 #endif
-  return ioctx.operate(oid, op);
+  return ioctx.operate(oid, op, flags);
 }
 
 int rgw_rados_notify(librados::IoCtx& ioctx, const std::string& oid,

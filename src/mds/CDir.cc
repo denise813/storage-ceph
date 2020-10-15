@@ -2046,20 +2046,6 @@ void CDir::_omap_fetched(bufferlist& hdrbl, map<string, bufferlist>& omap,
   }
 }
 
-void CDir::_go_bad()
-{
-  if (get_version() == 0)
-    set_version(1);
-  state_set(STATE_BADFRAG);
-  // mark complete, !fetching
-  mark_complete();
-  state_clear(STATE_FETCHING);
-  auth_unpin(this);
-
-  // kick waiters
-  finish_waiting(WAIT_COMPLETE, -EIO);
-}
-
 void CDir::go_bad_dentry(snapid_t last, std::string_view dname)
 {
   dout(10) << __func__ << " " << dname << dendl;
@@ -2084,10 +2070,17 @@ void CDir::go_bad(bool complete)
     ceph_abort();  // unreachable, damaged() respawns us
   }
 
-  if (complete)
-    _go_bad();
-  else
-    auth_unpin(this);
+  if (complete) {
+    if (get_version() == 0)
+      set_version(1);
+    
+    state_set(STATE_BADFRAG);
+    mark_complete();
+  }
+
+  state_clear(STATE_FETCHING);
+  auth_unpin(this);
+  finish_waiting(WAIT_COMPLETE, -EIO);
 }
 
 // -----------------------
@@ -2212,7 +2205,7 @@ void CDir::_omap_commit(int op_prio)
       op.priority = op_prio;
 
       // don't create new dirfrag blindly
-      if (!is_new() && !state_test(CDir::STATE_FRAGMENTING))
+      if (!is_new())
 	op.stat(NULL, (ceph::real_time*) NULL, NULL);
 
       if (!to_set.empty())
@@ -2230,11 +2223,12 @@ void CDir::_omap_commit(int op_prio)
     }
   };
 
-  if (state_test(CDir::STATE_FRAGMENTING)) {
+  if (state_test(CDir::STATE_FRAGMENTING) && is_new()) {
+    assert(committed_version == 0);
     for (auto p = items.begin(); p != items.end(); ) {
       CDentry *dn = p->second;
       ++p;
-      if (!dn->is_dirty() && dn->get_linkage()->is_null())
+      if (dn->get_linkage()->is_null())
 	continue;
       write_one(dn);
     }
@@ -2250,7 +2244,7 @@ void CDir::_omap_commit(int op_prio)
   op.priority = op_prio;
 
   // don't create new dirfrag blindly
-  if (!is_new() && !state_test(CDir::STATE_FRAGMENTING))
+  if (!is_new())
     op.stat(NULL, (ceph::real_time*)NULL, NULL);
 
   /*
