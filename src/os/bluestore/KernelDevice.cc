@@ -660,14 +660,18 @@ void KernelDevice::_aio_thread()
           --submit_counter;
 	  if (--ioc->num_running == 0) {
 /** comment by hy 2020-04-22
- * # 调用aio完成的回调函数,这里处理延迟写的回调
+ * # 调用aio完成的回调函数,这里处理延迟写的回调,或事务回调
       既调用 aio_cb
+                 BlueStore::TransContext::aio_finish
+                 BlueStore::DeferredBatch::aio_finish
+      事务回调是触发状态机继续下一步
+      延迟写回调从延迟事务中找到下一批继续提交
  */
 	    aio_callback(aio_callback_priv, ioc->priv);
 	  }
 	} else {
 /** comment by hy 2020-09-02
- * # 继续执行io_summit,进这一个放入到 submit 中
+ * # 读操作唤醒
  */
           ioc->try_aio_wake();
 	}

@@ -22,12 +22,21 @@ class OSDService(CephService):
 
     def create_from_spec(self, drive_group: DriveGroupSpec) -> str:
         logger.debug(f"Processing DriveGroup {drive_group}")
+		# ceph-volume 不是会自动获取osd id
         osd_id_claims = self.find_destroyed_osds()
         logger.info(f"Found osd claims for drivegroup {drive_group.service_id} -> {osd_id_claims}")
 
         @forall_hosts
         def create_from_spec_one(host: str, drive_selection: DriveSelection) -> Optional[str]:
             logger.info('Applying %s on host %s...' % (drive_group.service_id, host))
+			# 这里调用的是批量操作,所以需要预分配id
+			# 修改成进一步解析出字典类型的
+			# 这里通过调用 ./src/python-common/ceph/deployment/translate.py
+			# 中的方法实现 ceph-volume 的功能,然道是因为容器中获取不到设备?
+			#data_devices = [x.path for x in self.selection.data_devices()]
+            #db_devices = [x.path for x in self.selection.db_devices()]
+            #wal_devices = [x.path for x in self.selection.wal_devices()]
+			#selection = DriveGroupSpec ./src/python-common/ceph/deployment/drive_group.py
             cmd = self.driveselection_to_ceph_volume(drive_selection,
                                                      osd_id_claims.get(host, []))
             if not cmd:
@@ -35,6 +44,7 @@ class OSDService(CephService):
                     drive_group.service_id))
                 return None
             env_vars: List[str] = [f"CEPH_VOLUME_OSDSPEC_AFFINITY={drive_group.service_id}"]
+			# 这里进行处理
             ret_msg = self.create_single_host(
                 host, cmd, replace_osd_ids=osd_id_claims.get(host, []), env_vars=env_vars
             )
@@ -44,6 +54,7 @@ class OSDService(CephService):
         return ", ".join(filter(None, ret))
 
     def create_single_host(self, host: str, cmd: str, replace_osd_ids=None, env_vars: Optional[List[str]] = None) -> str:
+	    # 这里调用 ceph-volume 命令
         out, err, code = self._run_ceph_volume_command(host, cmd, env_vars=env_vars)
 
         if code == 1 and ', it is already prepared' in '\n'.join(err):
@@ -58,6 +69,7 @@ class OSDService(CephService):
                     code, '\n'.join(err)))
 
         # check result
+		# 查看结果
         out, err, code = self.mgr._run_cephadm(
             host, 'osd', 'ceph-volume',
             [
@@ -141,6 +153,7 @@ class OSDService(CephService):
                                       osd_id_claims: Optional[List[str]] = None,
                                       preview: bool = False) -> Optional[str]:
         logger.debug(f"Translating DriveGroup <{drive_selection.spec}> to ceph-volume command")
+		# ceph.deployment
         cmd: Optional[str] = translate.to_ceph_volume(drive_selection,
                                                       osd_id_claims, preview=preview).run()
         logger.debug(f"Resulting ceph-volume cmd: {cmd}")

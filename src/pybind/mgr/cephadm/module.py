@@ -537,6 +537,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
                         continue
 
                     # 应用服务 从spec_store 取数据
+					# 比方 有 其他节点的ceph admin 传输来的数据
                     if self._apply_all_services():
                         continue  # did something, refresh
 
@@ -910,6 +911,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
         'cephadm get-pub-key',
         desc='Show SSH public key for connecting to cluster hosts')
     def _get_pub_key(self):
+        self.log.warn('get ssh public key {0}'.format(self.ssh_pub))
         if self.ssh_pub:
             return 0, self.ssh_pub, ''
         else:
@@ -1666,6 +1668,7 @@ To check that the host is reachable:
                         events=self.events.get_for_service(spec.service_name()),
                     )
                 if n in self.spec_store.specs:
+				    # 这里进行分类
                     if dd.daemon_type == 'osd':
                         """
                         The osd count can't be determined by the Placement spec.
@@ -1978,6 +1981,7 @@ To check that the host is reachable:
         refresh_hosts = self.osd_service.resolve_hosts_for_osdspecs(specs=trigger_specs)
         for host in refresh_hosts:
             self.log.info(f"Marking host: {host} for OSDSpec preview refresh.")
+			# 这里加入队列进行执行
             self.cache.osdspec_previews_refresh_queue.append(host)
 
     @trivial_completion
@@ -2100,6 +2104,7 @@ To check that the host is reachable:
                 'Reconfiguring' if reconfig else 'Deploying',
                 daemon_spec.name(), daemon_spec.host))
 
+			# 调用 cephadm depoly 命令
             out, err, code = self._run_cephadm(
                 daemon_spec.host, daemon_spec.name(), 'deploy',
                 [
@@ -2192,8 +2197,10 @@ To check that the host is reachable:
 
         # 配置函数
         config_func = self._config_fn(daemon_type)
-
+        # 远端的在这里进行分发
+		# osd 处理流程
         if daemon_type == 'osd':
+		    # 调用
             self.osd_service.create_from_spec(cast(DriveGroupSpec, spec))
             # TODO: return True would result in a busy loop
             return False
@@ -2201,6 +2208,7 @@ To check that the host is reachable:
         daemons = self.cache.get_daemons_by_service(service_name)
 
         public_network = None
+	
         if daemon_type == 'mon':
             ret, out, err = self.check_mon_command({
                 'prefix': 'config get',
@@ -2472,11 +2480,13 @@ To check that the host is reachable:
         if spec.service_type == 'host':
             return self._add_host(cast(HostSpec, spec))
 
+		# osd 的应用
         if spec.service_type == 'osd':
             # _trigger preview refresh needs to be smart and
             # should only refresh if a change has been detected
             self._trigger_preview_refresh(specs=[cast(DriveGroupSpec, spec)])
 
+		# 核心逻辑
         return self._apply_service_spec(cast(ServiceSpec, spec))
 
     def _plan(self, spec: ServiceSpec):
@@ -2540,6 +2550,7 @@ To check that the host is reachable:
             raise OrchestratorError('cannot scale %s service below 1' % (
                 spec.service_type))
 
+		# 处理 host 信息
         HostAssignment(
             spec=spec,
             hosts=self.inventory.all_specs(),  # All hosts, even those without daemon refresh
@@ -2558,6 +2569,7 @@ To check that the host is reachable:
     def apply(self, specs: List[GenericSpec]) -> List[str]:
         results = []
         for spec in specs:
+		    # 调用应用
             results.append(self._apply(spec))
         return results
 

@@ -1687,8 +1687,8 @@ def get_daemon_args(fsid, daemon_type, daemon_id):
 
     if daemon_type in Ceph.daemons and daemon_type != 'crash':
         r += [
-            '--setuser', 'ceph',
-            '--setgroup', 'ceph',
+            '--setuser', 'root',
+            '--setgroup', 'root',
             '--default-log-to-file=false',
             '--default-log-to-stderr=true',
             '--default-log-stderr-prefix="debug "',
@@ -2037,6 +2037,8 @@ def get_container(fsid: str, daemon_type: str, daemon_id: Union[int, str],
 def extract_uid_gid(img='', file_path='/var/lib/ceph'):
     # type: (str, Union[str, List[str]]) -> Tuple[int, int]
 
+    return int(0), int(0)
+
     if not img:
         img = args.image
 
@@ -2064,8 +2066,7 @@ def deploy_daemon(fsid, daemon_type, daemon_id, c, uid, gid,
                   osd_fsid=None,
                   reconfig=False,
                   ports=None):
-    #看起来这个适合给mon调用,以及仅仅部署只是建立目录的服务类型使用
-    # 现在代码中调用的是启动时候mon服务,以及mgr服务
+    # 启动时候mon服务, 以及mgr服务, add daemon 调用 时会走这个接口 如 osd
     # type: (str, str, Union[int, str], CephContainer, int, int, Optional[str], Optional[str], Optional[str], Optional[bool], Optional[List[int]]) -> None
 
     ports = ports or []
@@ -2113,6 +2114,7 @@ def deploy_daemon(fsid, daemon_type, daemon_id, c, uid, gid,
             f.write(config)
     else:
         # dirs, conf, keyring
+		# osd 等模块
         create_daemon_dirs(
             fsid, daemon_type, daemon_id,
             uid, gid,
@@ -2764,7 +2766,7 @@ def command_bootstrap():
                                            'ceph.client.admin.keyring')
     # 设置免密
     if not args.output_pub_ssh_key:
-        args.output_pub_ssh_key = os.path.join(args.output_dir, 'ceph.pub')
+        args.output_pub_ssh_key = os.path.join(args.output_dir, 'root.pub')
 
     # verify output files
     for f in [args.output_config, args.output_keyring, args.output_pub_ssh_key]:
@@ -2868,7 +2870,7 @@ def command_bootstrap():
     cp.set('global', 'mon host', addr_arg)
     cp.set('global', 'container_image', args.image)
     # add begin 添加 可以删除pool的配置文件
-    cp.set('global', 'mon allow pool delete', True)
+    cp.set('global', 'mon allow pool delete', 'True')
     # add end
     cpf = StringIO()
     cp.write(cpf)
@@ -2883,6 +2885,7 @@ def command_bootstrap():
     # 从 /var/lib/ceph 属性中获取 用户信息和用户组信息
     logger.info('Extracting ceph user uid/gid from container image...')
     (uid, gid) = extract_uid_gid()
+    logger.info('uid %d. gid(%d)' %(uid, gid))    
 
     # create some initial keys
     logger.info('Creating initial keys...')
@@ -3325,18 +3328,7 @@ def registry_login(url, username, password):
 
 def extract_uid_gid_monitoring(daemon_type):
     # type: (str) -> Tuple[int, int]
-
-    if daemon_type == 'prometheus':
-        uid, gid = extract_uid_gid(file_path='/etc/prometheus')
-    elif daemon_type == 'node-exporter':
-        uid, gid = 65534, 65534
-    elif daemon_type == 'grafana':
-        uid, gid = extract_uid_gid(file_path='/var/lib/grafana')
-    elif daemon_type == 'alertmanager':
-        uid, gid = extract_uid_gid(file_path=['/etc/alertmanager', '/etc/prometheus'])
-    else:
-        raise Error("{} not implemented yet".format(daemon_type))
-    return uid, gid
+    return 0, 0
 
 
 @default_image
@@ -3375,6 +3367,7 @@ def command_deploy():
 
         c = get_container(args.fsid, daemon_type, daemon_id,
                           ptrace=args.allow_ptrace)
+        # 部署执行
         deploy_daemon(args.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
                       osd_fsid=args.osd_fsid,
@@ -5747,7 +5740,7 @@ def _get_parser():
     parser_bootstrap.add_argument(
         '--mgr-id',
         required=False,
-        help='mgr id (default: randomly generated)')
+        help='mgr id (default: local hostname)')
     parser_bootstrap.add_argument(
         '--fsid',
         help='cluster FSID')

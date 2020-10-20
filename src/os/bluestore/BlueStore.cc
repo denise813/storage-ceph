@@ -4512,6 +4512,10 @@ static void aio_cb(void *priv, void *priv2)
  * # 使用基类进行转化
  */
   BlueStore::AioContext *c = static_cast<BlueStore::AioContext*>(priv2);
+/** comment by hy 2020-10-21
+ * #   BlueStore::TransContext::aio_finish
+       BlueStore::DeferredBatch::aio_finish
+ */
   c->aio_finish(store);
 }
 
@@ -10496,6 +10500,9 @@ int BlueStore::_do_read(
                              // measure the whole block below.
                              // The error isn't that much...
   vector<bufferlist> compressed_blob_bls;
+/** comment by hy 2020-10-21
+ * # 创建一个读事务的ioc类,等待
+ */
   IOContext ioc(cct, NULL, true); // allow EIO
 /** comment by hy 2020-06-26
  * # 包装异步aio读 根据blob 信息 加载数据
@@ -15432,6 +15439,9 @@ int BlueStore::_do_write(
     goto out;
   }
 
+/** comment by hy 2020-10-20
+ * # gc处理
+ */
   if (wctx.extents_to_gc.empty() ||
       wctx.extents_to_gc.range_start() > offset ||
       wctx.extents_to_gc.range_end() < offset + length) {

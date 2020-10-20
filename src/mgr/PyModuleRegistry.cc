@@ -67,7 +67,7 @@ void PyModuleRegistry::init()
   std::list<std::string> failed_modules;
 
 /** comment by hy 2020-07-31
- * # 从目录中加载模块
+ * # 从目录中加载模块 mgr
  */
   const std::string module_path = g_conf().get_val<std::string>("mgr_module_path");
   std::set<std::string> module_names = probe_modules(module_path);
