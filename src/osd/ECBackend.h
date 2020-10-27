@@ -179,6 +179,9 @@ public:
   void objects_read_async_no_cache(
     const map<hobject_t,extent_set> &to_read,
     Func &&on_complete) {
+/** comment by hy 2020-10-22
+ * # 
+ */
     map<hobject_t,std::list<boost::tuple<uint64_t, uint64_t, uint32_t> > > _to_read;
     for (auto &&hpair: to_read) {
       auto &l = _to_read[hpair.first];
@@ -186,6 +189,9 @@ public:
 	l.emplace_back(extent.first, extent.second, 0);
       }
     }
+/** comment by hy 2020-10-22
+ * # 
+ */
     objects_read_and_reconstruct(
       _to_read,
       false,

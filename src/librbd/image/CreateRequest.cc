@@ -255,6 +255,9 @@ void CreateRequest<I>::send() {
     return;
   }
 
+/** comment by hy 2020-10-23
+ * # 这个是数据pool验证,适用于ecpool 创建 rbd的过程
+ */
   validate_data_pool();
 }
 
@@ -273,6 +276,9 @@ void CreateRequest<I>::validate_data_pool() {
     m_data_io_ctx.set_namespace(m_io_ctx.get_namespace());
   }
 
+/** comment by hy 2020-10-23
+ * # 跳过该阶段直接创建
+ */
   if (!m_config.get_val<bool>("rbd_validate_pool")) {
     add_image_to_directory();
     return;

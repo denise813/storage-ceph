@@ -33,6 +33,8 @@ git clean -dxf
 # c) compares higher than any previous commit
 # d) contains the short hash of the commit
 #
+# 与 make-dist 相同不可以?是因为不相同 无法获取下面的版本信息进行操作?
+# 那么将 
 vers=$(git describe --match "v*" | sed s/^v//)
 ./make-dist $vers
 #
@@ -44,6 +46,7 @@ tar -C $releasedir -jxf $releasedir/ceph_$vers.orig.tar.bz2
 # copy the debian directory over and remove -dbg packages
 # because they are large and take time to build
 #
+# 创建打包目录
 cp -a debian $releasedir/ceph-$vers/debian
 cd $releasedir
 perl -ni -e 'print if(!(/^Package: .*-dbg$/../^$/))' ceph-$vers/debian/control

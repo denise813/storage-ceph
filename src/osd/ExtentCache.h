@@ -214,23 +214,36 @@ private:
       F &&f) {
       auto range = get_containing_range(offset, length);
 
+/** comment by hy 2020-10-22
+ * # 全处理
+ */
       if (range.first == range.second || range.first->offset > offset) {
 	uint64_t extlen = range.first == range.second ?
 	  length : range.first->offset - offset;
 
 	update_action action;
+/** comment by hy 2020-10-22
+ * # 发生偏差,插入到外部指定的丢失信息队列中,以及 action里面
+ */
 	f(offset, extlen, nullptr, &action);
+
 	ceph_assert(!action.bl || action.bl->length() == extlen);
 	if (action.action == update_action::UPDATE_PIN) {
 	  extent *ext = action.bl ?
 	    new extent(offset, *action.bl) :
 	    new extent(offset, extlen);
+/** comment by hy 2020-10-22
+ * # 这里是?
+ */
 	  ext->link(*this, pin);
 	} else {
 	  ceph_assert(!action.bl);
 	}
       }
 
+/** comment by hy 2020-10-22
+ * # 处理范围中的部分丢失?
+ */
       for (auto p = range.first; p != range.second;) {
 	extent *ext = &*p;
 	++p;

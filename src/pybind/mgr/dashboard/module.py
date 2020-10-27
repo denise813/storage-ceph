@@ -297,8 +297,9 @@ class Module(MgrModule, CherryPyConfig):
             __cov.start()
             cherrypy.engine.subscribe('after_request', __cov.save)
             cherrypy.engine.subscribe('stop', __cov.stop)
-
+        # 初始化认证模块
         AuthManager.initialize()
+        # 加载数据库
         load_sso_db()
 
         uri = self.await_configuration()
@@ -309,7 +310,7 @@ class Module(MgrModule, CherryPyConfig):
         # Publish the URI that others may use to access the service we're
         # about to start serving
         self.set_uri(uri)
-
+        # 地址映射
         mapper, parent_urls = generate_routes(self.url_prefix)
 
         config = {}
@@ -318,10 +319,12 @@ class Module(MgrModule, CherryPyConfig):
                 'request.dispatch': mapper
             }
 
+        # 加载信息
         cherrypy.tree.mount(None, config=config)
 
         PLUGIN_MANAGER.hook.setup()
 
+        # 启动过程
         cherrypy.engine.start()
         NotificationQueue.start_queue()
         TaskManager.init()
@@ -337,6 +340,7 @@ class Module(MgrModule, CherryPyConfig):
                 kwargs=dict(tries=10, sleep=60),
             )
         # wait for the shutdown event
+        # 等待退出信号
         self.shutdown_event.wait()
         self.shutdown_event.clear()
         NotificationQueue.stop()

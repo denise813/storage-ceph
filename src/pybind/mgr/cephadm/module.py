@@ -1346,6 +1346,7 @@ To check that the host is reachable:
 
         :param host: host name
         """
+        # 卸载软件包
         self.inventory.rm_host(host)
         self.cache.rm_host(host)
         self._reset_con(host)
@@ -2480,13 +2481,13 @@ To check that the host is reachable:
         if spec.service_type == 'host':
             return self._add_host(cast(HostSpec, spec))
 
-		# osd 的应用
+	# osd 的应用
         if spec.service_type == 'osd':
             # _trigger preview refresh needs to be smart and
             # should only refresh if a change has been detected
             self._trigger_preview_refresh(specs=[cast(DriveGroupSpec, spec)])
 
-		# 核心逻辑
+	# 核心逻辑
         return self._apply_service_spec(cast(ServiceSpec, spec))
 
     def _plan(self, spec: ServiceSpec):
@@ -2550,7 +2551,7 @@ To check that the host is reachable:
             raise OrchestratorError('cannot scale %s service below 1' % (
                 spec.service_type))
 
-		# 处理 host 信息
+	# 处理 host 信息
         HostAssignment(
             spec=spec,
             hosts=self.inventory.all_specs(),  # All hosts, even those without daemon refresh
@@ -2569,7 +2570,7 @@ To check that the host is reachable:
     def apply(self, specs: List[GenericSpec]) -> List[str]:
         results = []
         for spec in specs:
-		    # 调用应用
+	    # 调用应用
             results.append(self._apply(spec))
         return results
 

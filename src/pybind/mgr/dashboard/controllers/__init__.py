@@ -338,6 +338,7 @@ def generate_controller_routes(endpoint, mapper, base_url):
     # adding route with trailing slash
     name += "/"
     url += "/"
+    # 生成 route 与 url, controller 的框架
     mapper.connect(name, url, controller=inst, action=endpoint.action,
                    conditions=conditions)
 
@@ -345,9 +346,11 @@ def generate_controller_routes(endpoint, mapper, base_url):
 
 
 def generate_routes(url_prefix):
+    # 路由分发器
     mapper = cherrypy.dispatch.RoutesDispatcher()
     ctrls = load_controllers()
 
+    # 路由信息
     parent_urls = set()
 
     endpoint_list = []
@@ -358,10 +361,11 @@ def generate_routes(url_prefix):
             endpoint_list.append(endpoint)
 
     endpoint_list = sorted(endpoint_list, key=lambda e: e.url)
+    # 添加 control
     for endpoint in endpoint_list:
         parent_urls.add(generate_controller_routes(endpoint, mapper,
                                                    "{}".format(url_prefix)))
-
+    # 加入路径信息
     logger = logging.getLogger('controller')
     logger.debug("list of parent paths: %s", parent_urls)
     return mapper, parent_urls

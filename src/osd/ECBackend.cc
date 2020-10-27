@@ -807,12 +807,18 @@ bool ECBackend::_handle_message(
     handle_sub_write_reply(op->op.from, op->op, _op->pg_trace);
     return true;
   }
+/** comment by hy 2020-10-22
+ * # 作为主pg进行读取操作
+ */
   case MSG_OSD_EC_READ: {
     auto op = _op->get_req<MOSDECSubOpRead>();
     MOSDECSubOpReadReply *reply = new MOSDECSubOpReadReply;
     reply->pgid = get_parent()->primary_spg_t();
     reply->map_epoch = get_osdmap_epoch();
     reply->min_epoch = get_parent()->get_interval_start_epoch();
+/** comment by hy 2020-10-22
+ * # 读取数据,这边又是同步操作?这里是不是可以改造一下?
+ */
     handle_sub_read(op->op.from, op->op, &(reply->op), _op->pg_trace);
     reply->trace = _op->pg_trace;
     get_parent()->send_message_osd_cluster(
@@ -1009,6 +1015,9 @@ void ECBackend::handle_sub_read(
           (op.subchunks.find(i->first)->second.front().second == 
                                             ec_impl->get_sub_chunk_count())) {
         dout(25) << __func__ << " case1: reading the complete chunk/shard." << dendl;
+/** comment by hy 2020-10-22
+ * # 开始读取
+ */
         r = store->read(
 	  ch,
 	  ghobject_t(i->first, ghobject_t::NO_GEN, shard),
@@ -1516,7 +1525,7 @@ void ECBackend::submit_transaction(
   
   dout(10) << __func__ << ": op " << *op << " starting" << dendl;
 /** comment by hy 2020-09-19
- * # 
+ * # 核心逻辑
  */
   start_rmw(op, std::move(t));
 }
@@ -1707,6 +1716,9 @@ void ECBackend::start_read_op(
     op.trace = _op->pg_trace;
     op.trace.event("start ec read");
   }
+/** comment by hy 2020-10-22
+ * # 
+ */
   do_read_op(op);
 }
 
@@ -1761,6 +1773,7 @@ void ECBackend::do_read_op(ReadOp &op)
     op.in_progress.insert(i->first);
     shard_to_read_map[i->first].insert(op.tid);
     i->second.tid = tid;
+
     MOSDECSubOpRead *msg = new MOSDECSubOpRead;
     msg->set_priority(priority);
     msg->pgid = spg_t(
@@ -1778,6 +1791,9 @@ void ECBackend::do_read_op(ReadOp &op)
     }
     m.push_back(std::make_pair(i->first.osd, msg));
   }
+/** comment by hy 2020-10-22
+ * # 发送给 OSD MOSDECSubOpRead 消息
+ */
   if (!m.empty()) {
     get_parent()->send_message_osd_cluster(m, get_osdmap_epoch());
   }
@@ -1793,6 +1809,9 @@ ECUtil::HashInfoRef ECBackend::get_hash_info(
   if (!ref) {
     dout(10) << __func__ << ": not in cache " << hoid << dendl;
     struct stat st;
+/** comment by hy 2020-10-21
+ * # 获得 对象的属性信息
+ */
     int r = store->stat(
       ch,
       ghobject_t(hoid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard),
@@ -1802,7 +1821,13 @@ ECUtil::HashInfoRef ECBackend::get_hash_info(
     if (r >= 0) {
       dout(10) << __func__ << ": found on disk, size " << st.st_size << dendl;
       bufferlist bl;
+/** comment by hy 2020-10-21
+ * # 加入属性信息,实行的值以 hinfo_key 作为键值进行拷贝
+ */
       if (attrs) {
+/** comment by hy 2020-10-21
+ * # 从指定属性buff中加载属性值
+ */
 	map<string, bufferptr>::const_iterator k = attrs->find(ECUtil::get_hinfo_key());
 	if (k == attrs->end()) {
 	  dout(5) << __func__ << " " << hoid << " missing hinfo attr" << dendl;
@@ -1810,6 +1835,9 @@ ECUtil::HashInfoRef ECBackend::get_hash_info(
 	  bl.push_back(k->second);
 	}
       } else {
+/** comment by hy 2020-10-21
+ * # 从后端加载属性值
+ */
 	r = store->getattr(
 	  ch,
 	  ghobject_t(hoid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard),
@@ -1820,6 +1848,9 @@ ECUtil::HashInfoRef ECBackend::get_hash_info(
 	  bl.clear(); // just in case
 	}
       }
+/** comment by hy 2020-10-21
+ * # hinfo = head info
+ */
       if (bl.length() > 0) {
 	auto bp = bl.cbegin();
         try {
@@ -1848,11 +1879,18 @@ void ECBackend::start_rmw(Op *op, PGTransactionUPtr &&t)
 
 /** comment by hy 2020-09-19
  * # 转化为对应的object 事务
+     PrimaryLogPG::get_dpp = this ecbackend
+     get_write_plan 获取因为对齐而需要处理的头尾对齐
+     这里chunksize 和 底层的 bluestore 的
+     min alloc处理逻辑是一致的
  */
   op->plan = ECTransaction::get_write_plan(
     sinfo,
     std::move(t),
     [&](const hobject_t &i) {
+/** comment by hy 2020-10-21
+ * # 
+ */
       ECUtil::HashInfoRef ref = get_hash_info(i, false);
       if (!ref) {
 	derr << __func__ << ": get_hash_info(" << i << ")"
@@ -1870,6 +1908,7 @@ void ECBackend::start_rmw(Op *op, PGTransactionUPtr &&t)
   waiting_state.push_back(*op);
 /** comment by hy 2020-09-19
  * # 核心逻辑
+     开始执行由于对齐而需要操作的读取,写,以及完成事件
  */
   check_ops();
 }
@@ -1881,10 +1920,12 @@ bool ECBackend::try_state_to_reads()
 
   Op *op = &(waiting_state.front());
 /** comment by hy 2020-09-19
- * # requires_rmw 判断范围已经对齐,以及 cache_invalid 表示 使用缓存
-     还不允许重新
+ * # 有需要读取数据操作,这个cache 表示什么?
  */
   if (op->requires_rmw() && pipeline_state.cache_invalid()) {
+/** comment by hy 2020-10-22
+ * # 判断请求是允许读改写操作
+ */
     ceph_assert(get_parent()->get_pool().allows_ecoverwrites());
     dout(20) << __func__ << ": blocking " << *op
 	     << " because it requires an rmw and the cache is invalid "
@@ -1904,9 +1945,15 @@ bool ECBackend::try_state_to_reads()
   waiting_state.pop_front();
   waiting_reads.push_back(*op);
 
+/** comment by hy 2020-10-22
+ * # 缓存处理
+ */
   if (op->using_cache) {
     cache.open_write_pin(op->pin);
 
+/** comment by hy 2020-10-22
+ * # 
+ */
     extent_set empty;
     for (auto &&hpair: op->plan.will_write) {
       auto to_read_plan_iter = op->plan.to_read.find(hpair.first);
@@ -1916,7 +1963,7 @@ bool ECBackend::try_state_to_reads()
 	to_read_plan_iter->second;
 
 /** comment by hy 2020-09-19
- * # 
+ * # 加载因为数据丢失,而需要从别的地方读取的信息
  */
       extent_set remote_read = cache.reserve_extents_for_rmw(
 	hpair.first,
@@ -1943,7 +1990,7 @@ bool ECBackend::try_state_to_reads()
   if (!op->remote_read.empty()) {
     ceph_assert(get_parent()->get_pool().allows_ecoverwrites());
 /** comment by hy 2020-09-19
- * # 
+ * # 从其他地方读取数据
  */
     objects_read_async_no_cache(
       op->remote_read,
@@ -1952,7 +1999,8 @@ bool ECBackend::try_state_to_reads()
 	  op->remote_read_result.emplace(i.first, i.second.second);
 	}
 /** comment by hy 2020-09-19
- * # 重新放入上一步操作,进行流转到下一步
+ * # 递归调用, 等待 从远端获取数据
+     其实就是循环等待?
  */
 	check_ops();
       });
@@ -2011,7 +2059,8 @@ bool ECBackend::try_reads_to_commit()
   map<hobject_t,extent_map> written;
   if (op->plan.t) {
 /** comment by hy 2020-09-19
- * # 这里
+ * # 从 pg log 分离出 对象事务
+     区分 读改写 以及 append write
  */
     ECTransaction::generate_transactions(
       op->plan,
@@ -2063,6 +2112,9 @@ bool ECBackend::try_reads_to_commit()
   ECSubWrite local_write_op;
   std::vector<std::pair<int, Message*>> messages;
   messages.reserve(get_parent()->get_acting_recovery_backfill_shards().size());
+/** comment by hy 2020-10-23
+ * # 
+ */
   set<pg_shard_t> backfill_shards = get_parent()->get_backfill_shards();
   for (set<pg_shard_t>::const_iterator i =
 	 get_parent()->get_acting_recovery_backfill_shards().begin();
@@ -2073,12 +2125,18 @@ bool ECBackend::try_reads_to_commit()
     map<shard_id_t, ObjectStore::Transaction>::iterator iter =
       trans.find(i->shard);
     ceph_assert(iter != trans.end());
+/** comment by hy 2020-10-23
+ * # 
+ */
     bool should_send = get_parent()->should_send_op(*i, op->hoid);
     const pg_stat_t &stats =
       (should_send || !backfill_shards.count(*i)) ?
       get_info().stats :
       parent->get_shard_info().find(*i)->second.stats;
 
+/** comment by hy 2020-10-23
+ * # 
+ */
     ECSubWrite sop(
       get_parent()->whoami_shard(),
       op->tid,
@@ -2106,6 +2164,9 @@ bool ECBackend::try_reads_to_commit()
       should_write_local = true;
       local_write_op.claim(sop);
     } else {
+/** comment by hy 2020-10-23
+ * # 
+ */
       MOSDECSubOpWrite *r = new MOSDECSubOpWrite(sop);
       r->pgid = spg_t(get_parent()->primary_spg_t().pgid, i->shard);
       r->map_epoch = get_osdmap_epoch();
@@ -2129,6 +2190,9 @@ bool ECBackend::try_reads_to_commit()
       op->trace);
   }
 
+/** comment by hy 2020-10-23
+ * # 相当于bitmap
+ */
   for (auto i = op->on_write.begin();
        i != op->on_write.end();
        op->on_write.erase(i++)) {
@@ -2189,9 +2253,9 @@ bool ECBackend::try_finish_rmw()
 void ECBackend::check_ops()
 {
 /** comment by hy 2020-09-19
- * # try_state_to_reads
+ * # try_state_to_reads 从远程读取需要的数据
      try_reads_to_commit
-     try_finish_rmw
+     try_finish_rmw cache 处理
  */
   while (try_state_to_reads() ||
 	 try_reads_to_commit() ||
@@ -2325,6 +2389,9 @@ void ECBackend::objects_read_async(
       to_read.clear();
     }
   };
+/** comment by hy 2020-10-22
+ * # 这里有回调处理 cb
+ */
   objects_read_and_reconstruct(
     reads,
     fast_read,
@@ -2410,8 +2477,11 @@ void ECBackend::objects_read_and_reconstruct(
 
   map<hobject_t, set<int>> obj_want_to_read;
   set<int> want_to_read;
+/** comment by hy 2020-10-22
+ * # 这个地方有点不明白,这个mapping 是个什么,与chunk 如何联系
+ */
   get_want_to_read_shards(&want_to_read);
-    
+
   map<hobject_t, read_request_t> for_read_op;
   for (auto &&to_read: reads) {
     map<pg_shard_t, vector<pair<int, int>>> shards;
@@ -2423,11 +2493,15 @@ void ECBackend::objects_read_and_reconstruct(
       &shards);
     ceph_assert(r == 0);
 
+/** comment by hy 2020-10-22
+ * # 这个又是什么
+ */
     CallClientContexts *c = new CallClientContexts(
       to_read.first,
       this,
       &(in_progress_client_reads.back()),
       to_read.second);
+
     for_read_op.insert(
       make_pair(
 	to_read.first,
@@ -2439,6 +2513,9 @@ void ECBackend::objects_read_and_reconstruct(
     obj_want_to_read.insert(make_pair(to_read.first, want_to_read));
   }
 
+/** comment by hy 2020-10-22
+ * # 操作流程
+ */
   start_read_op(
     CEPH_MSG_PRIO_DEFAULT,
     obj_want_to_read,

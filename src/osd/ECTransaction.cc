@@ -118,10 +118,16 @@ void ECTransaction::generate_transactions(
   auto &hash_infos = plan.hash_infos;
 
   map<hobject_t, pg_log_entry_t*> obj_to_log;
+/** comment by hy 2020-10-22
+ * # 从 pg log 获取信息 i
+ */
   for (auto &&i: entries) {
     obj_to_log.insert(make_pair(i.soid, &i));
   }
 
+/** comment by hy 2020-10-22
+ * # 检查里面的pg log信息
+ */
   t.safe_create_traverse(
     [&](pair<const hobject_t, PGTransaction::ObjectOperation> &opair) {
       const hobject_t &oid = opair.first;
@@ -189,8 +195,13 @@ void ECTransaction::generate_transactions(
       ceph_assert(hinfo);
       bufferlist old_hinfo;
       encode(*hinfo, old_hinfo);
+/** comment by hy 2020-10-23
+ * # 这是在做什么?
+ */
       xattr_rollback[ECUtil::get_hinfo_key()] = old_hinfo;
-      
+/** comment by hy 2020-10-23
+ * # 空处理
+ */
       if (op.is_none() && op.truncate && op.truncate->first == 0) {
 	ceph_assert(op.truncate->first == 0);
 	ceph_assert(op.truncate->first ==
@@ -260,12 +271,18 @@ void ECTransaction::generate_transactions(
 	entry->mod_desc.create();
       }
 
+/** comment by hy 2020-10-23
+ * # 匹配
+ */
       match(
 	op.init_type,
 	[&](const PGTransaction::ObjectOperation::Init::None &) {},
 	[&](const PGTransaction::ObjectOperation::Init::Create &op) {
 	  for (auto &&st: *transactions) {
 	    if (require_osd_release >= ceph_release_t::octopus) {
+/** comment by hy 2020-10-23
+ * # 变成对象事务进行处理 os::Transaction::create,根据生成操作信息
+ */
 	      st.second.create(
 		coll_t(spg_t(pgid, st.first)),
 		ghobject_t(oid, ghobject_t::NO_GEN, st.first));
@@ -317,7 +334,9 @@ void ECTransaction::generate_transactions(
       ceph_assert(!(op.clear_omap));
       ceph_assert(!(op.omap_header));
       ceph_assert(op.omap_updates.empty());
-
+/** comment by hy 2020-10-23
+ * # 处理其属性值
+ */
       if (!op.attr_updates.empty()) {
 	map<string, bufferlist> to_set;
 	for (auto &&j: op.attr_updates) {
@@ -331,6 +350,9 @@ void ECTransaction::generate_transactions(
 		j.first);
 	    }
 	  }
+/** comment by hy 2020-10-23
+ * # 
+ */
 	  if (obc) {
 	    auto citer = obc->attr_cache.find(j.first);
 	    if (entry) {
@@ -357,6 +379,9 @@ void ECTransaction::generate_transactions(
 	    ceph_assert(!entry);
 	  }
 	}
+/** comment by hy 2020-10-23
+ * # 
+ */
 	for (auto &&st : *transactions) {
 	  st.second.setattrs(
 	    coll_t(spg_t(pgid, st.first)),
@@ -365,6 +390,9 @@ void ECTransaction::generate_transactions(
 	}
 	ceph_assert(!xattr_rollback.empty());
       }
+/** comment by hy 2020-10-23
+ * # 
+ */
       if (entry && !xattr_rollback.empty()) {
 	entry->mod_desc.setattrs(xattr_rollback);
       }
@@ -425,6 +453,9 @@ void ECTransaction::generate_transactions(
 	  new_size,
 	  std::numeric_limits<uint64_t>::max() - new_size);
 
+/** comment by hy 2020-10-23
+ * # 
+ */
 	if (entry && !op.is_fresh_object()) {
 	  uint64_t restore_from = sinfo.logical_to_prev_chunk_offset(
 	    op.truncate->first);
@@ -458,6 +489,9 @@ void ECTransaction::generate_transactions(
 	  ldpp_dout(dpp, 20) << __func__ << ": not saving extents, fresh object"
 			     << dendl;
 	}
+/** comment by hy 2020-10-23
+ * # 
+ */
 	for (auto &&st : *transactions) {
 	  st.second.truncate(
 	    coll_t(spg_t(pgid, st.first)),
@@ -514,6 +548,9 @@ void ECTransaction::generate_transactions(
 	  len += tail;
 	}
 
+/** comment by hy 2020-10-23
+ * # 插入代写地方
+ */
 	to_write.insert(off, len, bl);
 	if (end > new_size)
 	  new_size = end;
@@ -542,6 +579,9 @@ void ECTransaction::generate_transactions(
       for (unsigned i = 0; i < ecimpl->get_chunk_count(); ++i) {
 	want.insert(i);
       }
+/** comment by hy 2020-10-23
+ * # 
+ */
       auto to_overwrite = to_write.intersect(0, append_after);
       ldpp_dout(dpp, 20) << __func__ << ": to_overwrite: "
 			 << to_overwrite
@@ -576,6 +616,9 @@ void ECTransaction::generate_transactions(
 	      restore_from);
 	  }
 	}
+/** comment by hy 2020-10-23
+ * # 
+ */
 	encode_and_write(
 	  pgid,
 	  oid,
@@ -597,6 +640,9 @@ void ECTransaction::generate_transactions(
       ldpp_dout(dpp, 20) << __func__ << ": to_append: "
 			 << to_append
 			 << dendl;
+/** comment by hy 2020-10-23
+ * # 
+ */
       for (auto &&extent: to_append) {
 	ceph_assert(sinfo.logical_offset_is_stripe_aligned(extent.get_off()));
 	ceph_assert(sinfo.logical_offset_is_stripe_aligned(extent.get_len()));

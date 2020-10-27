@@ -808,6 +808,9 @@ public:
    * (behavior is undefined if the object already exists)
    */
   void create(const coll_t& cid, const ghobject_t& oid) {
+/** comment by hy 2020-10-23
+ * # 从操作列表中获取操作
+ */
     Op* _op = _get_next_op();
     _op->op = OP_CREATE;
     _op->cid = _get_coll_id(cid);

@@ -212,16 +212,31 @@ seastar::future<> OSD::start()
   startup_time = ceph::mono_clock::now();
 
   return store->start().then([this] {
+/** comment by hy 2020-10-24
+ * # 加载系统
+ */
     return store->mount();
   }).then([this] {
+/** comment by hy 2020-10-24
+ * # 
+ */
     return store->open_collection(coll_t::meta());
   }).then([this](auto ch) {
+/** comment by hy 2020-10-24
+ * # 
+ */
     meta_coll = make_unique<OSDMeta>(ch, store.get());
     return meta_coll->load_superblock();
   }).then([this](OSDSuperblock&& sb) {
+/** comment by hy 2020-10-24
+ * # 
+ */
     superblock = std::move(sb);
     return get_map(superblock.current_epoch);
   }).then([this](cached_map_t&& map) {
+/** comment by hy 2020-10-24
+ * # 
+ */
     shard_services.update_map(map);
     osdmap_gate.got_map(map->get_epoch());
     osdmap = std::move(map);
@@ -249,7 +264,9 @@ seastar::future<> OSD::start()
                              SocketPolicy::lossless_peer(osd_required));
     cluster_msgr->set_policy(entity_name_t::TYPE_CLIENT,
                              SocketPolicy::stateless_server(0));
-
+/** comment by hy 2020-10-24
+ * # 
+ */
     dispatchers.push_front(this);
     dispatchers.push_front(monc.get());
     dispatchers.push_front(mgrc.get());
@@ -288,6 +305,9 @@ seastar::future<> OSD::start()
     // to handle incoming commands
     return start_asok_admin();
   }).then([this] {
+/** comment by hy 2020-10-24
+ * # 
+ */
     return start_boot();
   });
 }

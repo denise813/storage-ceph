@@ -48,9 +48,21 @@ namespace ECTransaction {
  */
     t->safe_create_traverse(
       [&](pair<const hobject_t, PGTransaction::ObjectOperation> &i) {
+/** comment by hy 2020-10-21
+ * # i = pg log 中信息
+ */
+/** comment by hy 2020-10-21
+ * # get_hinfo 回调函数，获取信息
+ */
 	ECUtil::HashInfoRef hinfo = get_hinfo(i.first);
+/** comment by hy 2020-10-21
+ * # 标记 i 信息
+ */
 	plan.hash_infos[i.first] = hinfo;
 
+/** comment by hy 2020-10-22
+ * # 实际未来执行对齐后的逻辑长度
+ */
 	uint64_t projected_size =
 	  hinfo->get_projected_total_logical_size(sinfo);
 
@@ -64,22 +76,36 @@ namespace ECTransaction {
 	if (i.second.has_source(&source)) {
 	  plan.invalidates_cache = true;
 
+/** comment by hy 2020-10-21
+ * # 获取操作源信息
+ */
 	  ECUtil::HashInfoRef shinfo = get_hinfo(source);
 	  projected_size = shinfo->get_projected_total_logical_size(sinfo);
 	  plan.hash_infos[source] = shinfo;
 	}
 
+/** comment by hy 2020-10-21
+ * # 
+ */
 	auto &will_write = plan.will_write[i.first];
 	if (i.second.truncate &&
 	    i.second.truncate->first < projected_size) {
+/** comment by hy 2020-10-21
+ * # 非条带对齐
+ */
 	  if (!(sinfo.logical_offset_is_stripe_aligned(
 		  i.second.truncate->first))) {
+/** comment by hy 2020-10-21
+ * # 设置的读取的值,进行范围对齐
+ */
 	    plan.to_read[i.first].union_insert(
 	      sinfo.logical_to_prev_stripe_offset(i.second.truncate->first),
 	      sinfo.get_stripe_width());
 
 	    ldpp_dout(dpp, 20) << __func__ << ": unaligned truncate" << dendl;
-
+/** comment by hy 2020-10-22
+ * # 设置写入的值
+ */
 	    will_write.union_insert(
 	      sinfo.logical_to_prev_stripe_offset(i.second.truncate->first),
 	      sinfo.get_stripe_width());
@@ -88,6 +114,9 @@ namespace ECTransaction {
 	    i.second.truncate->first);
 	}
 
+/** comment by hy 2020-10-22
+ * # 原来的正确范围
+ */
 	extent_set raw_write_set;
 	for (auto &&extent: i.second.buffer_updates) {
 	  using BufferUpdate = PGTransaction::ObjectOperation::BufferUpdate;
@@ -99,6 +128,9 @@ namespace ECTransaction {
 	  raw_write_set.insert(extent.get_off(), extent.get_len());
 	}
 
+/** comment by hy 2020-10-22
+ * # 
+ */
 	auto orig_size = projected_size;
 	for (auto extent = raw_write_set.begin();
 	     extent != raw_write_set.end();

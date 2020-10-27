@@ -207,6 +207,18 @@ struct OnReadComplete : public Context {
   ~OnReadComplete() override {}
 };
 
+struct OnAioReadComplete : public Context {
+  PrimaryLogPG *pg;
+  PrimaryLogPG::OpContext *opcontext;
+  OnAioReadComplete(
+    PrimaryLogPG *pg,
+    PrimaryLogPG::OpContext *ctx) : pg(pg), opcontext(ctx) {}
+  void finish(int r) override {
+    opcontext->finish_read(pg);
+  }
+  ~OnAioReadComplete() override {}
+};
+
 class PrimaryLogPG::C_OSD_AppliedRecoveredObject : public Context {
   PrimaryLogPGRef pg;
   ObjectContextRef obc;
@@ -5441,6 +5453,9 @@ void PrimaryLogPG::maybe_create_new_object(
     obs.exists = true;
     ceph_assert(!obs.oi.is_whiteout());
     obs.oi.new_object();
+/** comment by hy 2020-10-22
+ * # 生成 pg log 中的 对象操作结构
+ */
     if (!ignore_transaction)
       ctx->op_t->create(obs.oi.soid);
   } else if (obs.oi.is_whiteout()) {
@@ -6047,6 +6062,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	ctx->user_modify = true;
     }
 
+/** comment by hy 2020-10-21
+ * # 读写流程需要加载extent的操作等
+ */
     // munge -1 truncate to 0 truncate
     if (ceph_osd_op_uses_extent(op.op) &&
         op.extent.truncate_seq == 1 &&
@@ -6089,6 +6107,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
       }
       break;
 
+/** comment by hy 2020-10-21
+ * # 这里ec报告不支持
+ */
     case CEPH_OSD_OP_SYNC_READ:
       if (pool.info.is_erasure()) {
 	result = -EOPNOTSUPP;
@@ -6106,7 +6127,7 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  ctx->data_off = op.extent.offset;
 	}
 /** comment by hy 2020-07-12
- * # 读数据
+ * # 读数据,对于副本进行同步读操作,对于ec本进行放入异步队列中,等待完成
  */
 	result = do_read(ctx, osd_op);
       } else {
@@ -6698,6 +6719,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 
       // -- object data --
 
+/** comment by hy 2020-10-22
+ * # 写流程
+ */
     case CEPH_OSD_OP_WRITE:
       ++ctx->num_write;
       result = 0;
@@ -6742,6 +6766,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  t.substr_of(osd_op.indata, 0, op.extent.length);
 	  osd_op.indata.swap(t);
         }
+/** comment by hy 2020-10-22
+ * # 
+ */
 	if (op.extent.truncate_seq > seq) {
 	  // write arrives before trimtrunc
 	  if (obs.exists && !oi.is_whiteout()) {
@@ -6778,6 +6805,11 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	if (result < 0)
 	  break;
 
+/** comment by hy 2020-10-22
+ * # 将元数据信息放入到上下文中,而这个上下文包括了pg log 
+     需要的对象操作信息
+     这里面的信息来资源对象中的元数据信息
+ */
 	maybe_create_new_object(ctx);
 
 	if (op.extent.length == 0) {
@@ -6825,6 +6857,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
       break;
       
     case CEPH_OSD_OP_WRITEFULL:
+/** comment by hy 2020-10-21
+ * # 写一个完整的对象
+ */
       ++ctx->num_write;
       result = 0;
       { // write full object
@@ -6834,6 +6869,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  result = -EINVAL;
 	  break;
 	}
+/** comment by hy 2020-10-21
+ * # 一个对象的最大值
+ */
 	result = check_offset_and_length(
 	  0, op.extent.length,
           static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
@@ -6843,15 +6881,26 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
 	  op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
 
+/** comment by hy 2020-10-21
+ * # 
+ */
 	maybe_create_new_object(ctx);
 	if (pool.info.is_erasure()) {
+/** comment by hy 2020-10-21
+ * # 纠删阶段该对象信息
+ */
 	  t->truncate(soid, 0);
 	} else if (obs.exists && op.extent.length < oi.size) {
 	  t->truncate(soid, op.extent.length);
 	}
+
+/** comment by hy 2020-10-21
+ * # 对象长度
+ */
 	if (op.extent.length) {
 	  t->write(soid, 0, op.extent.length, osd_op.indata, op.flags);
 	}
+
         if (!skip_data_digest) {
 	  obs.oi.set_data_digest(osd_op.indata.crc32c(-1));
         } else {
@@ -6859,6 +6908,9 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	}
         ctx->clean_regions.mark_data_region_dirty(0,
           std::max((uint64_t)op.extent.length, oi.size));
+/** comment by hy 2020-10-21
+ * # 
+ */
 	write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges,
 	    0, op.extent.length, true);
       }

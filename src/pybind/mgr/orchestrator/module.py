@@ -283,6 +283,7 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule):
         'Add a host')
     def _add_host(self, hostname: str, addr: Optional[str] = None, labels: Optional[List[str]] = None):
         s = HostSpec(hostname=hostname, addr=addr, labels=labels)
+        # 调用添加 host
         completion = self.add_host(s)
         self._orchestrator_wait([completion])
         raise_if_exception(completion)
@@ -293,6 +294,7 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule):
         "name=hostname,type=CephString,req=true",
         'Remove a host')
     def _remove_host(self, hostname):
+        # 调用删除
         completion = self.remove_host(hostname)
         self._orchestrator_wait([completion])
         raise_if_exception(completion)
@@ -664,7 +666,7 @@ Examples:
    
    Creates and applies simple OSDSpec with the unmanaged flag set to <true>
 """
-		# 判断不可共生环境
+        # 判断不可共生环境
         if inbuf and all_available_devices:
             # mutually exclusive
             return HandleCommandResult(-errno.EINVAL, stderr=usage)
@@ -673,12 +675,12 @@ Examples:
             # one parameter must be present
             return HandleCommandResult(-errno.EINVAL, stderr=usage)
 
-		# 使用yml文件的方式 必须指定 -i
+        # 使用yml文件的方式 必须指定 -i
         if inbuf:
             if unmanaged is not None:
                 return HandleCommandResult(-errno.EINVAL, stderr=usage)
             try:
-				# yam 解析
+                # yam 解析
                 drivegroups = yaml.safe_load_all(inbuf)
 
                 dg_specs = []
@@ -688,7 +690,7 @@ Examples:
                         spec.preview_only = True
                     dg_specs.append(spec)
 
-				# 调用子类的 cephadm 的应用接口
+                # 调用子类的 cephadm 的应用接口
                 completion = self.apply(dg_specs)
 				
                 self._orchestrator_wait([completion])
@@ -709,7 +711,7 @@ Examples:
                 msg = 'Failed to read JSON/YAML input: {}'.format(str(e)) + usage
                 return HandleCommandResult(-errno.EINVAL, stderr=msg)
 		
-		# 指定全设备
+        # 指定全设备
         if all_available_devices:
             if unmanaged is None:
                 unmanaged = False
@@ -757,24 +759,24 @@ Usage:
         try:
             host_name, block_device = svc_arg.split(":")
             block_devices = block_device.split(',')
-			# 修改成进一步解析出字典类型的
-			# 这里通过调用 ./src/python-common/ceph/deployment/translate.py
-			# 中的方法实现 ceph-volume 的功能,然道是因为容器中获取不到设备?
-			#data_devices = [x.path for x in self.selection.data_devices()]
+            # 修改成进一步解析出字典类型的
+            # 这里通过调用 ./src/python-common/ceph/deployment/translate.py
+            # 中的方法实现 ceph-volume 的功能,然道是因为容器中获取不到设备?
+            #data_devices = [x.path for x in self.selection.data_devices()]
             #db_devices = [x.path for x in self.selection.db_devices()]
             #wal_devices = [x.path for x in self.selection.wal_devices()]
-			#selection = DriveGroupSpec ./src/python-common/ceph/deployment/drive_group.py
+            #selection = DriveGroupSpec ./src/python-common/ceph/deployment/drive_group.py
 
             devs = DeviceSelection(paths=block_devices)
-			# devs = DeviceSelection(paths=block_devices)
+            # devs = DeviceSelection(paths=block_devices)
             drive_group = DriveGroupSpec(placement=PlacementSpec(
                 host_pattern=host_name), data_devices=devs)
-			#解析完成
+            #解析完成
         except (TypeError, KeyError, ValueError):
             msg = "Invalid host:device spec: '{}'".format(svc_arg) + usage
             return HandleCommandResult(-errno.EINVAL, stderr=msg)
 
-		# 通过 cephadm 调用 .services.osd.OSDService.create_from_spec
+	# 通过 cephadm 调用 .services.osd.OSDService.create_from_spec
         completion = self.create_osds(drive_group)
         self._orchestrator_wait([completion])
         raise_if_exception(completion)

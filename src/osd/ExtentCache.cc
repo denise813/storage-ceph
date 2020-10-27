@@ -132,7 +132,7 @@ extent_set ExtentCache::reserve_extents_for_rmw(
   const extent_set &to_read)
 {
 /** comment by hy 2020-09-19
- * # 有读有写
+ * # 空数据
  */
   if (to_write.empty() && to_read.empty()) {
     return extent_set();
@@ -142,6 +142,9 @@ extent_set ExtentCache::reserve_extents_for_rmw(
  * # 范围集合
  */
   auto &eset = get_or_create(oid);
+/** comment by hy 2020-10-22
+ * # 更新因为数据丢失,需要读取的信息,这里的细节还没有看完
+ */
   extent_set missing;
   for (auto &&res: to_write) {
     eset.traverse_update(
@@ -156,6 +159,9 @@ extent_set ExtentCache::reserve_extents_for_rmw(
 	}
       });
   }
+/** comment by hy 2020-10-22
+ * # 这里把丢失的部分加入进来
+ */
   must_read.intersection_of(
     to_read,
     missing);
