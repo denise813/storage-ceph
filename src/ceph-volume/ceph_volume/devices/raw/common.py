@@ -51,4 +51,9 @@ def create_parser(prog, description):
         dest='osd_id',
         help='The ID of the OSD, usually an integer, like 0',
     )
+    parser.add_argument(
+        '--osd_fsid',
+        dest='osd_fsid',
+        help='The fsid of the OSD, usually uuid, like 00-00-00-00-00',
+    )
     return parser

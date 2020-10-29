@@ -537,7 +537,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
                         continue
 
                     # 应用服务 从spec_store 取数据
-					# 比方 有 其他节点的ceph admin 传输来的数据
+                    # 比方 有 其他节点的ceph admin 传输来的数据
                     if self._apply_all_services():
                         continue  # did something, refresh
 

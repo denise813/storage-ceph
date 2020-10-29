@@ -4621,6 +4621,9 @@ int OSDMap::calc_pg_upmaps(
       if (adjusted_weight == 0) {
         continue;
       }
+/** comment by hy 2020-10-28
+ * # 调节 reweight 权重
+ */
       osd_weight[p.first] += adjusted_weight;
       osd_weight_total += adjusted_weight;
     }

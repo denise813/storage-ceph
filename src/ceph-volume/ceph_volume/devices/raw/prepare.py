@@ -108,7 +108,10 @@ class Prepare(object):
             secrets['dmcrypt_key'] = os.getenv('CEPH_VOLUME_DMCRYPT_SECRET')
             secrets['cephx_lockbox_secret'] = cephx_lockbox_secret # dummy value to make `ceph osd new` not complaining
 
-        osd_fsid = system.generate_uuid()
+        if self.args.osd_fsid != None:
+                osd_fsid = self.args.osd_fsid
+        else :
+                osd_fsid = system.generate_uuid()
         crush_device_class = self.args.crush_device_class
         if crush_device_class:
             secrets['crush_device_class'] = crush_device_class
@@ -120,13 +123,12 @@ class Prepare(object):
         if self.args.block_db:
             db = self.args.block_db
 
-        # reuse a given ID if it exists, otherwise create a new ID
-        self.osd_id = prepare_utils.create_id(
-            osd_fsid, json.dumps(secrets))
-
         #  specify osd_id by args
         if self.args.osd_id != None:
             self.osd_id = self.args.osd_id
+        else :
+        # reuse a given ID if it exists, otherwise create a new ID
+            self.osd_id = prepare_utils.create_id(osd_fsid, json.dumps(secrets))
 
         prepare_bluestore(
             self.args.data,
