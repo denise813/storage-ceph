@@ -201,6 +201,7 @@ extern int crush_add_bucket(struct crush_map *map,
  * @returns a pointer to the newly created bucket or NULL
  */
 struct crush_bucket *crush_make_bucket(struct crush_map *map, int alg, int hash, int type, int size, int *items, int *weights);
+extern int straw3_build_virtual_nodes(struct crush_bucket_straw3 * bucket);
 extern struct crush_choose_arg *crush_make_choose_args(struct crush_map *map, int num_positions);
 extern void crush_destroy_choose_args(struct crush_choose_arg *args);
 /** @ingroup API

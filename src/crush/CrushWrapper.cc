@@ -3004,6 +3004,40 @@ void CrushWrapper::encode(bufferlist& bl, uint64_t features) const
 	}
       }
       break;
+    case CRUSH_BUCKET_STRAW3:
+      {
+	__u32 *weights;
+	const crush_bucket_straw3 * bucket =
+		reinterpret_cast<crush_bucket_straw3*>(crush->buckets[i]);
+	if (encode_compat_choose_args &&
+		arg_map.args[i].weight_set_positions > 0) {
+		weights = arg_map.args[i].weight_set[0].weights;
+	} else {
+		weights = bucket->item_weights;
+	}
+	for (unsigned j=0; j<crush->buckets[i]->size; j++) {
+		encode(weights[j], bl);
+	}
+      }
+      break;
+   case CRUSH_BUCKET_COMPOSE:
+      {
+        __u32 *weights;
+	__u32 virtual_nodes;
+	if (encode_compat_choose_args &&
+	    arg_map.args[i].weight_set_positions > 0) {
+	  weights = arg_map.args[i].weight_set[0].weights;
+	} else {
+	  weights = (reinterpret_cast<crush_bucket_compose*>(crush->buckets[i]))->item_weights;
+	}
+	virtual_nodes =
+	  (reinterpret_cast<crush_bucket_compose*>(crush->buckets[i]))->virtual_nodes;
+	  encode(per_virtual_nodes, bl);
+	for (unsigned j=0; j<crush->buckets[i]->size; j++) {
+	  encode(weights[j], bl);
+	}
+      }
+      break;
 
     default:
       ceph_abort();
@@ -3258,6 +3292,12 @@ void CrushWrapper::decode_crush_bucket(crush_bucket** bptr, bufferlist::const_it
   case CRUSH_BUCKET_STRAW2:
     size = sizeof(crush_bucket_straw2);
     break;
+  case CRUSH_BUCKET_STRAW3:
+    size = sizeof(crush_bucket_straw3);
+    break;
+  case CRUSH_BUCKET_COMPOSE:
+    size = sizeof(crush_bucket_compose);
+    break;
   default:
     {
       char str[128];
@@ -3321,6 +3361,26 @@ void CrushWrapper::decode_crush_bucket(crush_bucket** bptr, bufferlist::const_it
   case CRUSH_BUCKET_STRAW2: {
     crush_bucket_straw2* cbs = reinterpret_cast<crush_bucket_straw2*>(bucket);
     cbs->item_weights = (__u32*)calloc(1, bucket->size * sizeof(__u32));
+    for (unsigned j = 0; j < bucket->size; ++j) {
+      decode(cbs->item_weights[j], blp);
+    }
+    break;
+  }
+
+  case CRUSH_BUCKET_STRAW3: {
+    crush_bucket_straw3* cbs = reinterpret_cast<crush_bucket_straw3*>(bucket);
+    cbs->item_weights = (__u32*)calloc(1, bucket->size * sizeof(__u32));
+    for (unsigned j = 0; j < bucket->size; ++j) {
+      decode(cbs->item_weights[j], blp);
+    }
+    straw3_build_virtual_nodes(cbs);
+    break;
+  }
+
+  case CRUSH_BUCKET_COMPOSE: {
+    crush_bucket_compose* cbs = reinterpret_cast<crush_bucket_compose*>(bucket);
+    cbs->item_weights = (__u32*)calloc(1, bucket->size * sizeof(__u32));
+    decode(cbs->virtual_nodes, blp);
     for (unsigned j = 0; j < bucket->size; ++j) {
       decode(cbs->item_weights[j], blp);
     }

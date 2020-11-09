@@ -765,7 +765,10 @@ pg_t pg_t::get_ancestor(unsigned old_pg_num) const
   int old_bits = cbits(old_pg_num);
   int old_mask = (1 << old_bits) - 1;
   pg_t ret = *this;
-  ret.m_seed = ceph_stable_mod(m_seed, old_pg_num, old_mask);
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//  ret.m_seed = ceph_stable_mod(m_seed, old_pg_num, old_mask);
+  ret.m_seed = ceph_conhash_mod(m_seed, old_pg_num, old_mask);
+/* modify end by hy, 2020-11-02 */
   return ret;
 }
 
@@ -791,7 +794,10 @@ bool pg_t::is_split(unsigned old_pg_num, unsigned new_pg_num, set<pg_t> *childre
 	continue;
       if (s >= new_pg_num)
 	break;
-      if ((unsigned)ceph_stable_mod(s, old_pg_num, old_mask) == m_seed) {
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//      if ((unsigned)ceph_stable_mod(s, old_pg_num, old_mask) == m_seed) {
+      if ((unsigned)ceph_conhash_mod(s, old_pg_num, old_mask) == m_seed) {
+/* modify end by hy, 2020-11-02 */
 	split = true;
 	if (children)
 	  children->insert(pg_t(s, m_pool));
@@ -803,7 +809,10 @@ bool pg_t::is_split(unsigned old_pg_num, unsigned new_pg_num, set<pg_t> *childre
     int old_bits = cbits(old_pg_num);
     int old_mask = (1 << old_bits) - 1;
     for (unsigned x = old_pg_num; x < new_pg_num; ++x) {
-      unsigned o = ceph_stable_mod(x, old_pg_num, old_mask);
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//      unsigned o = ceph_stable_mod(x, old_pg_num, old_mask);
+      unsigned o = ceph_conhash_mod(x, old_pg_num, old_mask);
+/* modify end by hy, 2020-11-02 */
       if (o == m_seed) {
 	split = true;
 	children->insert(pg_t(x, m_pool));
@@ -1783,7 +1792,10 @@ uint32_t pg_pool_t::hash_key(const string& key, const string& ns) const
 
 uint32_t pg_pool_t::raw_hash_to_pg(uint32_t v) const
 {
-  return ceph_stable_mod(v, pg_num, pg_num_mask);
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//  return ceph_stable_mod(v, pg_num, pg_num_mask);
+  return ceph_conhash_mod(v, pg_num, pg_num_mask);
+/* modify end by hy, 2020-11-02 */
 }
 
 /*
@@ -1791,7 +1803,10 @@ uint32_t pg_pool_t::raw_hash_to_pg(uint32_t v) const
  */
 pg_t pg_pool_t::raw_pg_to_pg(pg_t pg) const
 {
-  pg.set_ps(ceph_stable_mod(pg.ps(), pg_num, pg_num_mask));
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//  pg.set_ps(ceph_stable_mod(pg.ps(), pg_num, pg_num_mask));
+  pg.set_ps(ceph_conhash_mod(pg.ps(), pg_num, pg_num_mask));
+/* modify end by hy, 2020-11-02 */
   return pg;
 }
   
@@ -1804,17 +1819,32 @@ ps_t pg_pool_t::raw_pg_to_pps(pg_t pg) const
 {
   if (flags & FLAG_HASHPSPOOL) {
     // Hash the pool id so that pool PGs do not overlap.
-    return
-      crush_hash32_2(CRUSH_HASH_RJENKINS1,
-		     ceph_stable_mod(pg.ps(), pgp_num, pgp_num_mask),
-		     pg.pool());
+/** comment by hy 2020-10-31
+ * # pg id + pool id
+ */
+/* modify begin by hy, 2020-10-31, BugId:123 原因: */
+//    return
+//      crush_hash32_2(CRUSH_HASH_RJENKINS1,
+//		     ceph_stable_mod(pg.ps(), pgp_num, pgp_num_mask),
+//		     pg.pool());
+     return
+       crush_hash32_2(CRUSH_HASH_RJENKINS1,
+                      ceph_conhash_mod(pg.ps(), pgp_num, pgp_num_mask),
+                      pg.pool());
+/* modify end by hy, 2020-10-31 */
   } else {
     // Legacy behavior; add ps and pool together.  This is not a great
     // idea because the PGs from each pool will essentially overlap on
     // top of each other: 0.5 == 1.4 == 2.3 == ...
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//    return
+//      ceph_stable_mod(pg.ps(), pgp_num, pgp_num_mask) +
+//      pg.pool();
     return
-      ceph_stable_mod(pg.ps(), pgp_num, pgp_num_mask) +
+      ceph_conhash_mod(pg.ps(), pgp_num, pgp_num_mask) +
       pg.pool();
+
+/* modify end by hy, 2020-11-02 */
   }
 }
 

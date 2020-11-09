@@ -2368,7 +2368,7 @@ void RGWGetObj::execute()
   if (attr_iter != attrs.end() && !skip_manifest) {
 /** comment by hy 2020-03-19
  * # 这是单个大对象?
-     static  large object
+     static large object
  */
     is_slo = true;
     op_ret = handle_slo_manifest(attr_iter->second);
@@ -2388,7 +2388,7 @@ void RGWGetObj::execute()
   }
 
 /** comment by hy 2020-03-19
- * # j校正非法范围
+ * # 校正非法范围
  */
   op_ret = read_op.range_to_ofs(s->obj_size, ofs, end);
   if (op_ret < 0)

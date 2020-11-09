@@ -7,6 +7,7 @@
 
 #include "crush/crush.h"
 #include "builder.h"
+#include "list.h"
 
 #define dprintk(args...) /* printf(args) */
 
@@ -644,7 +645,334 @@ err:
         return NULL;
 }
 
+LIST_HEAD(qsort_stacks);
 
+struct straw3_qsort_patition {
+	struct list_head head;
+	int start;
+	int end;
+};
+
+static int straw3_qsort_patition(__u32 * node_data, int start, int end)
+{
+	int guard = node_data[start];
+	int i = start + 1;
+	int tmp = 0;
+
+	while(i <= end){
+		if (node_data[i] < node_data[guard] && i > guard) {
+			tmp = node_data[guard];
+			node_data[i] = node_data[guard];
+			node_data[guard] = tmp;
+			i = (guard < i) ? guard : i;
+			guard = i;
+		}
+		if (node_data[i] > node_data[guard] && i < guard) {
+			tmp = node_data[guard];
+			node_data[i] = node_data[guard];
+			node_data[guard] = tmp;
+			i = (guard < i) ? guard : i;
+			guard = i;
+		}
+		i++;
+	}
+
+	return guard;
+}
+
+static void straw3_qsort_push(int start, int end)
+{
+	int i;
+	straw3_qsort_patition * entry = malloc(sizeof(straw3_qsort_patition));
+	INIT_LIST_HEAD(&entry->head);
+	entry->start = start;
+	entry->end = end;
+	qsort_stacks.list_add(entry->head);
+}
+
+static void straw3_qsort_pop(int* start, int* end)
+{
+	struct list_head node;
+	qsort_stacks.list_del(&node);
+	straw3_qsort_patition *entry = list_entry(node, straw3_qsort_patition, head);
+	*start = entry->start;
+	*end = entry->end;
+	free(entry);
+	return;
+}
+
+static void straw3_create_qsort(__u32 * node_data, int node_num)
+{
+	int start = 0;
+	int end = node_num;
+	int guard = 0;
+	int itor_start = 0;
+	int itor_end = 0;
+
+	straw3_qsort_push(start, end);
+	while(!qsort_stacks.list_empty()) {
+		straw3_qsort_pop(&itor_start, &itor_end);
+		guard = straw3_qsort_patition(node_data, itor_start, itor_end);
+		if (itor_start < guard) {
+			straw3_qsort_push(itor_start, guard);
+		}
+		if (itor_end > guard) {
+			straw3_qsort_push(guard, itor_end);
+		}
+	}
+}
+
+LIST_HEAD(heap_stacks);
+
+struct straw3_heap_patition {
+	struct list_head head;
+	int root;
+};
+
+static void straw3_heap_push(int root)
+{
+	straw3_heap_patition * entry = malloc(sizeof(straw3_heap_patition));
+	INIT_LIST_HEAD(&entry->head);
+	entry->root = root;
+	heap_stacks.list_add(&entry->head);
+}
+
+static void straw3_heap_pop(int *root)
+{
+	struct list_head node;
+	heap_stacks.list_del(&node);
+	straw3_heap_patition *entry = list_entry(node, straw3_heap_patition, head);
+	*root = entry->root;
+	free(entry);
+	return;
+}
+
+static void straw3_down_heap(_u32 * node_data, int root, int node_num)
+{
+	int tmp = 0;
+	int itor = 0;
+	int itor_left = 0;
+	int itor_right = 0;
+	int min = 0;
+	int end = node_num - 1;
+
+	while (itor < end) {
+		itor_left = 2 * itor + 1;
+		itor_right = 2 * itor + 2;
+		min = itor_left;
+		if (itor_left > end) {
+			break;
+		}
+		if (node_data[itor_left] > node_data[itor_right] &&
+			itor_right < end) {
+			min = itor_right;
+		}
+		if (node_data[min] < node_data[itor]) {
+			tmp = node_data[min];
+			node_data[min] = node_data[itor];
+			node_data[itor] = tmp;
+		}
+		itor = itor_left;
+	}
+	return;
+}
+
+static void straw3_create_heap(__u32 * node_data, int node_num)
+{
+	int tmp = 0;
+
+	for(int i=node_num/2-1; i>=0; i--){
+		straw3_down_heap(node_data, i, node_num);
+	}
+
+	for(int i=node_num-1; i>=0; i--) {
+		tmp = node_data[i];
+		node_data[i] = node_data[0];
+		node_data[0] = tmp;
+		straw3_down_heap(node_data, 0, node_num);
+	}
+
+	return;
+}
+
+void straw3_sort_nodes(__u32 * node_data, int node_num)
+{
+	straw3_create_qsort(node_data, node_num);
+}
+
+
+unsigned int straw3_hash_virtual_node(int bucket_id, int item_id, int node_id)
+{
+	return crush_hash32_3(0, bucket_id, item_id, node_id);
+}
+
+unsigned int straw3_get_vnodes_num(unsigned int weight)
+{
+	return weight;
+}
+
+int straw3_build_virtual_nodes(struct crush_bucket_straw3 * bucket)
+{
+	int r = 0;
+	unsigned int i = 0, j = 0, nodes = 0;
+
+	void * _realloc = NULL;
+	if (bucket->h.size == 0) {
+		bucket->item_node_vules = NULL;
+		goto l_out;
+	}
+	if ((bucket->item_node_vules = malloc(sizeof(__u32*)* bucket->h.size * 2)) == NULL) {
+		r = -ENOMEM;
+		goto l_out;
+	}
+
+	for (i=0; i <bucket->h.size; i++) {
+		if (bucket->item_weights[i] == 0) {
+			bucket->item_node_vules[i] = NULL;
+			continue;
+		}
+		// unsort
+		nodes = straw3_get_vnodes_num(bucket->item_weights[i]);
+		if ((bucket->item_node_vules[i] = malloc(sizeof(__u32)*nodes)) == NULL) {
+			r = -ENOMEM;
+			goto l_e_free_node_vules;
+		}
+	}
+
+	for (i=0; i <bucket->h.size; i++) {
+		nodes = straw3_get_vnodes_num(bucket->item_weights[i]);
+		// unsort
+		for (j = 0; j < nodes; j++){
+			bucket->item_node_vules[i][j] = straw3_hash_virtual_node(
+				bucket->h.id, bucket->h.items[i], j);
+		}
+	}
+
+	for (i=0; i <bucket->h.size; i++) {
+		straw3_sort_nodes(bucket->item_node_vules[i], nodes);
+	}
+
+l_out:
+	return r;
+
+l_e_free_node_vules:
+	if (i == 0) {
+		goto l_e_free_nodes;
+	}
+	for (int j=(i - 1); j >= 0; j--) {
+		free(bucket->item_node_vules[j]);
+		bucket->item_node_vules[j] = NULL;
+	}
+l_e_free_nodes:
+	free(bucket->item_node_vules);
+	bucket->item_node_vules = NULL;
+	goto l_out;
+}
+
+
+struct crush_bucket_straw3 *
+crush_make_straw3_bucket(struct crush_map *map,
+			 int hash,
+			 int type,
+			 int size,
+			 int *items,
+			 int *weights)
+{
+	struct crush_bucket_straw3 *bucket;
+	int i;
+
+	bucket = malloc(sizeof(*bucket));
+	if (!bucket)
+		return NULL;
+	memset(bucket, 0, sizeof(*bucket));
+	bucket->h.alg = CRUSH_BUCKET_STRAW3;
+	bucket->h.hash = hash;
+	bucket->h.type = type;
+	bucket->h.size = size;
+
+	bucket->h.weight = 0;
+
+    bucket->h.items = malloc(sizeof(__s32)*size);
+    if (!bucket->h.items)
+    	goto l_e_free_bucket;
+	bucket->item_weights = malloc(sizeof(__u32)*size);
+    if (!bucket->item_weights)
+    	goto l_e_free_items;
+
+/** comment by hy 2020-10-31
+ * # 权重等于子权重之和 weight
+     设置子权重 item_weights
+ */
+	for (i=0; i<size; i++) {
+		bucket->h.items[i] = items[i];
+		bucket->h.weight += weights[i];
+		bucket->item_weights[i] = weights[i];
+	}
+	return bucket;
+l_e_free_items:
+        free(bucket->h.items);
+l_e_free_bucket:
+        free(bucket);
+        return NULL;
+}
+
+struct crush_bucket_compose *
+crush_make_compose_bucket(struct crush_map *map,
+			 int hash,
+			 int type,
+			 int size,
+			 int *items,
+			 int *weights)
+{
+	struct crush_bucket_compose *bucket;
+	struct crush_bucket_straw3 *bucket;
+	int i;
+
+	bucket = malloc(sizeof(*bucket));
+	if (!bucket)
+		return NULL;
+	memset(bucket, 0, sizeof(*bucket));
+	bucket->h.alg = CRUSH_BUCKET_COMPOSE;
+	bucket->h.hash = hash;
+	bucket->h.type = type;
+	bucket->h.size = size;
+	bucket->per_virtual_nodes = 8;
+
+	bucket->h.weight = 0;
+
+    bucket->h.items = malloc(sizeof(__s32)*size);
+    if (!bucket->h.items)
+    	goto l_e_free_bucket;
+	bucket->item_weights = malloc(sizeof(__u32)*size);
+    if (!bucket->item_weights)
+    	goto l_e_free_items;
+
+/** comment by hy 2020-10-31
+ * # 权重等于子权重之和 weight
+     设置子权重 item_weights
+ */
+	for (i=0; i<size; i++) {
+		bucket->h.items[i] = items[i];
+		bucket->h.weight += weights[i];
+		bucket->item_weights[i] = weights[i];
+	}
+
+	r = straw3_build_virtual_nodes(bucket);
+	if (r == -ENOMEM) {
+		goto l_e_free_item_weights;
+	}
+
+	return bucket;
+
+l_e_free_item_weights:
+	free(bucket->item_weights);
+
+l_e_free_items:
+	free(bucket->h.items);
+l_e_free_bucket:
+	free(bucket);
+	return NULL;
+}
 
 struct crush_bucket*
 crush_make_bucket(struct crush_map *map,
@@ -672,6 +1000,10 @@ crush_make_bucket(struct crush_map *map,
 		return (struct crush_bucket *)crush_make_straw_bucket(map, hash, type, size, items, weights);
 	case CRUSH_BUCKET_STRAW2:
 		return (struct crush_bucket *)crush_make_straw2_bucket(map, hash, type, size, items, weights);
+	case CRUSH_BUCKET_STRAW3:
+		return (struct crush_bucket *)crush_make_straw3_bucket(map, hash, type, size, items, weights);
+	case CRUSH_BUCKET_COMPOSE:
+		return (struct crush_bucket *)crush_make_compose_bucket(map, hash, type, size, items, weights);
 	}
 	return 0;
 }
@@ -871,6 +1203,70 @@ int crush_add_straw2_bucket_item(struct crush_map *map,
 	return 0;
 }
 
+int crush_add_straw3_bucket_item(struct crush_map *map,
+				 struct crush_bucket_straw3 *bucket,
+				 int item, int weight)
+{
+	int newsize = bucket->h.size + 1;
+	int nodes = 0;
+	int j = 0;
+
+	void *_realloc = NULL;
+
+	if ((_realloc = realloc(bucket->h.items, sizeof(__s32)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->h.items = _realloc;
+	}
+	if ((_realloc = realloc(bucket->item_weights, sizeof(__u32)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->item_weights = _realloc;
+	}
+
+	bucket->h.items[newsize-1] = item;
+	bucket->item_weights[newsize-1] = weight;
+
+	if (crush_addition_is_unsafe(bucket->h.weight, weight))
+		return -ERANGE;
+
+	bucket->h.weight += weight;
+	bucket->h.size++;
+
+	if ((_realloc = realloc(bucket->item_node_vules, sizeof(__u32*)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->item_node_vules = _realloc;
+	}
+
+	if (bucket->item_weights[newsize-1] == 0){
+		bucket->item_node_vules[newsize-1] = NULL;
+		return 0;
+	}
+
+	nodes = straw3_get_vnodes_num(bucket->item_weights[newsize-1]);
+	if ((bucket->item_node_vules[newsize-1] = malloc(sizeof(__s32)*nodes)) == NULL) {
+		return -ENOMEM;
+	}
+
+	for (j = 0; j < nodes; j++) {
+		bucket->item_node_vules[newsize-1][j] = straw3_hash_virtual_node(
+			bucket->h.id, bucket->h.items[newsize-1], j);
+	}
+
+	straw3_sort_nodes(bucket->item_node_vules[newsize-1], nodes);
+
+	return 0;
+}
+
+int crush_add_compose_bucket_item(struct crush_map *map,
+				 struct crush_bucket_compose *bucket,
+				 int item, int weight)
+{
+	return crush_add_straw3_bucket_item(
+		map, (struct crush_bucket_straw3 *)bucket, item, weight);
+}
+
 int crush_bucket_add_item(struct crush_map *map,
 			  struct crush_bucket *b, int item, int weight)
 {
@@ -885,6 +1281,10 @@ int crush_bucket_add_item(struct crush_map *map,
 		return crush_add_straw_bucket_item(map, (struct crush_bucket_straw *)b, item, weight);
 	case CRUSH_BUCKET_STRAW2:
 		return crush_add_straw2_bucket_item(map, (struct crush_bucket_straw2 *)b, item, weight);
+	case CRUSH_BUCKET_STRAW3:
+		return crush_add_straw3_bucket_item(map, (struct crush_bucket_straw3 *)b, item, weight);
+	case CRUSH_BUCKET_COMPOSE:
+		return crush_add_compose_bucket_item(map, (struct crush_bucket_compose *)b, item, weight);
 	default:
 		return -1;
 	}
@@ -1124,6 +1524,71 @@ int crush_remove_straw2_bucket_item(struct crush_map *map,
 	return 0;
 }
 
+int crush_remove_straw3_bucket_item(struct crush_map *map,
+				struct crush_bucket_straw3 *bucket, int item)
+{
+	int newsize = bucket->h.size - 1;
+	unsigned i, j;
+
+	for (i = 0; i < bucket->h.size; i++) {
+		if (bucket->h.items[i] == item) {
+/** comment by hy 2020-10-31
+ * # 去除节点权重
+ */
+			if (bucket->item_weights[i] < bucket->h.weight)
+				bucket->h.weight -= bucket->item_weights[i];
+			else
+				bucket->h.weight = 0;
+/** comment by hy 2020-10-31
+ * # 去除信息
+ */
+			for (j = i; j < bucket->h.size - 1; j++) {
+				bucket->h.items[j] = bucket->h.items[j+1];
+				bucket->item_weights[j] = bucket->item_weights[j+1];
+			}
+			break;
+		}
+	}
+	if (i == bucket->h.size)
+		return -ENOENT;
+
+	bucket->h.size--;
+	if (!newsize) {
+		/* don't bother reallocating a 0-length array. */
+		return 0;
+	}
+
+	void *_realloc = NULL;
+
+	if ((_realloc = realloc(bucket->h.items, sizeof(__s32)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->h.items = _realloc;
+	}
+	if ((_realloc = realloc(bucket->item_weights, sizeof(__u32)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->item_weights = _realloc;
+	}
+
+	free(bucket->item_node_vules[newsize]);
+	bucket->item_node_vules[newsize] = NULL;
+	if ((_realloc = realloc(bucket->item_node_vules, sizeof(__u32*)*newsize)) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->item_node_vules = _realloc;
+	}
+
+	return 0;
+}
+
+int crush_remove_compose_bucket_item(struct crush_map *map,
+				struct crush_bucket_compose *bucket, int item)
+{
+	return crush_remove_straw3_bucket_item(
+		map, (struct crush_bucket_straw3 *)bucket, item);
+}
+
 int crush_bucket_remove_item(struct crush_map *map, struct crush_bucket *b, int item)
 {
 	switch (b->alg) {
@@ -1137,6 +1602,10 @@ int crush_bucket_remove_item(struct crush_map *map, struct crush_bucket *b, int 
 		return crush_remove_straw_bucket_item(map, (struct crush_bucket_straw *)b, item);
 	case CRUSH_BUCKET_STRAW2:
 		return crush_remove_straw2_bucket_item(map, (struct crush_bucket_straw2 *)b, item);
+	case CRUSH_BUCKET_STRAW3:
+		return crush_remove_straw3_bucket_item(map, (struct crush_bucket_straw3 *)b, item);
+	case CRUSH_BUCKET_COMPOSE:
+		return crush_remove_compose_bucket_item(map, (struct crush_bucket_compose *)b, item);
 	default:
 		return -1;
 	}
@@ -1249,6 +1718,54 @@ int crush_adjust_straw2_bucket_item_weight(struct crush_map *map,
 	return diff;
 }
 
+int crush_adjust_straw3_bucket_item_weight(struct crush_map *map,
+				      struct crush_bucket_straw3 *bucket,
+					   int item, int weight)
+{
+	unsigned idx;
+	int diff;
+	int new_nodes = 0;
+	int old_nodes = 0;
+
+	for (idx = 0; idx < bucket->h.size; idx++)
+		if (bucket->h.items[idx] == item)
+			break;
+	if (idx == bucket->h.size)
+		return 0;
+
+	diff = weight - bucket->item_weights[idx];
+	old_nodes = straw3_get_vnodes_num(bucket->item_weights[idx]);
+	new_nodes = straw3_get_vnodes_num(weight);
+	bucket->item_weights[idx] = weight;
+	bucket->h.weight += diff;
+
+	void *_realloc = NULL;
+	if (_realloc = realloc(bucket->item_node_vules[idx],
+		sizeof(__s32)*new_nodes) == NULL) {
+		return -ENOMEM;
+	} else {
+		bucket->item_node_vules[idx] = _realloc;
+	}
+
+	for (int j = 0; j < new_nodes; j++) {
+		bucket->item_node_vules[idx][j] = straw3_hash_virtual_node(
+			bucket->h.id, idx, j);
+	}
+
+	straw3_sort_nodes(bucket->item_node_vules[idx], new_nodes);
+
+	return diff;
+}
+
+int crush_adjust_compose_bucket_item_weight(struct crush_map *map,
+				    struct crush_bucket_compose * bucket,
+				    int item, int weight)
+{
+
+	return crush_adjust_straw3_bucket_item_weight(
+		map, (struct crush_bucket_straw3 *)bucket, item, weight);
+}
+
 int crush_bucket_adjust_item_weight(struct crush_map *map,
 				    struct crush_bucket *b,
 				    int item, int weight)
@@ -1270,6 +1787,14 @@ int crush_bucket_adjust_item_weight(struct crush_map *map,
 	case CRUSH_BUCKET_STRAW2:
 		return crush_adjust_straw2_bucket_item_weight(map,
 							      (struct crush_bucket_straw2 *)b,
+							     item, weight);
+	case CRUSH_BUCKET_STRAW3:
+		return crush_adjust_straw3_bucket_item_weight(map,
+							      (struct crush_bucket_straw3 *)b,
+							     item, weight);
+	case CRUSH_BUCKET_COMPOSE:
+		return crush_adjust_compose_bucket_item_weight(map,
+							      (struct crush_bucket_compose *)b,
 							     item, weight);
 	default:
 		return -1;
@@ -1398,6 +1923,49 @@ static int crush_reweight_straw2_bucket(struct crush_map *map, struct crush_buck
 	return 0;
 }
 
+static int crush_reweight_straw3_bucket(struct crush_map *map, struct crush_bucket_straw3 *bucket)
+{
+	unsigned i;
+	unsigned nodes;
+
+	bucket->h.weight = 0;
+	for (i = 0; i < bucket->h.size; i++) {
+		int id = bucket->h.items[i];
+		if (id < 0) {
+			struct crush_bucket *c = map->buckets[-1-id];
+			crush_reweight_bucket(map, c);
+			bucket->item_weights[i] = c->weight;
+		}
+
+                if (crush_addition_is_unsafe(bucket->h.weight, bucket->item_weights[i]))
+                        return -ERANGE;
+
+                bucket->h.weight += bucket->item_weights[i];
+		void *_realloc = NULL;
+		nodes = straw3_get_vnodes_num(bucket->item_weights[i]);
+		if ((_realloc = realloc(bucket->item_node_vules[i],
+			sizeof(__s32)*nodes)) == NULL) {
+			return -ENOMEM;
+		} else {
+			bucket->item_node_vules[i] = _realloc;
+		}
+
+		for (int j = 0; j < nodes; i++) {
+			bucket->item_node_vules[i][j] = straw3_hash_virtual_node(
+				bucket->h.id, bucket->h.items[i], j);
+		}
+
+		straw3_sort_nodes(bucket->item_node_vules[i], nodes);
+	}
+
+	return 0;
+}
+
+static int crush_reweight_compose_bucket(struct crush_map *map, struct crush_bucket_compose *bucket)
+{
+	return crush_reweight_straw3_bucket(map, bucket);
+}
+
 int crush_reweight_bucket(struct crush_map *map, struct crush_bucket *b)
 {
 	switch (b->alg) {
@@ -1411,6 +1979,10 @@ int crush_reweight_bucket(struct crush_map *map, struct crush_bucket *b)
 		return crush_reweight_straw_bucket(map, (struct crush_bucket_straw *)b);
 	case CRUSH_BUCKET_STRAW2:
 		return crush_reweight_straw2_bucket(map, (struct crush_bucket_straw2 *)b);
+	case CRUSH_BUCKET_STRAW3:
+		return crush_reweight_straw3_bucket(map, (struct crush_bucket_straw3 *)b);
+	case CRUSH_BUCKET_COMPOSE:
+		return crush_reweight_compose_bucket(map, (struct crush_bucket_compose *)b);
 	default:
 		return -1;
 	}
@@ -1532,5 +2104,7 @@ void set_optimal_crush_map(struct crush_map *map) {
     (1 << CRUSH_BUCKET_UNIFORM) |
     (1 << CRUSH_BUCKET_LIST) |
     (1 << CRUSH_BUCKET_STRAW) |
-    (1 << CRUSH_BUCKET_STRAW2));
+    (1 << CRUSH_BUCKET_STRAW2)|
+    (1 << CRUSH_BUCKET_STRAW3) |
+    (1 << CRUSH_BUCKET_COMPOSE));
 }

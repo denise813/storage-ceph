@@ -224,6 +224,8 @@ enum crush_algorithm {
          * optimal data movement between nested items when modified.
          */
 	CRUSH_BUCKET_STRAW2 = 5,
+	CRUSH_BUCKET_STRAW3 = 6,
+	CRUSH_BUCKET_COMPOSE = 7,
 };
 extern const char *crush_bucket_alg_name(int alg);
 
@@ -234,7 +236,10 @@ extern const char *crush_bucket_alg_name(int alg);
 #define CRUSH_LEGACY_ALLOWED_BUCKET_ALGS (	\
 		(1 << CRUSH_BUCKET_UNIFORM) |	\
 		(1 << CRUSH_BUCKET_LIST) |	\
-		(1 << CRUSH_BUCKET_STRAW))
+		(1 << CRUSH_BUCKET_STRAW)|	\
+		(1 << CRUSH_BUCKET_STRAW2)|	\
+		(1 << CRUSH_BUCKET_STRAW3)|	\
+		(1 << CRUSH_BUCKET_COMPOSE))
 
 /** @ingroup API
  *
@@ -404,6 +409,18 @@ struct crush_bucket_straw2 {
 	__u32 *item_weights;   /*!< 16.16 fixed point weight for each item */
 };
 
+struct crush_bucket_straw3 {
+        struct crush_bucket h; /*!< generic bucket information */
+	__u32 *item_weights;   /*!< 16.16 fixed point weight for each item */
+	__u32 **item_node_vules;
+};
+
+struct crush_bucket_compose {
+        struct crush_bucket h; /*!< generic bucket information */
+	__u32 *item_weights;   /*!< 16.16 fixed point weight for each item */
+	__u32 **item_node_vules;
+};
+
 
 
 /** @ingroup API
@@ -544,6 +561,9 @@ struct crush_map {
  *
  * @returns the 16.16 fixed point item weight
  */
+extern void straw3_sort_nodes(__u32 * nodes_data, int node_num);
+extern unsigned int straw3_hash_virtual_node(int bucket_id, int item_id, int node_id);
+extern unsigned int straw3_get_vnodes_num(unsigned int weight);
 extern int crush_get_bucket_item_weight(const struct crush_bucket *b, int pos);
 extern void crush_destroy_bucket_uniform(struct crush_bucket_uniform *b);
 extern void crush_destroy_bucket_list(struct crush_bucket_list *b);
@@ -590,6 +610,10 @@ static inline const char *crush_alg_name(int alg)
 		return "straw";
 	case CRUSH_BUCKET_STRAW2:
 		return "straw2";
+	case CRUSH_BUCKET_STRAW3:
+		return "straw3";
+	case CRUSH_BUCKET_COMPOSE:
+		return "compose";
 	default:
 		return "unknown";
 	}

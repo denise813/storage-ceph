@@ -383,8 +383,8 @@ int process_request(rgw::sal::RGWRadosStore* const store,
      其基类
      rgw::dmclock::Scheduler
      对应 dmc::SyncScheduler::schedule_request
-       dmc::SyncScheduler::schedule_request_impl
-       实际 SyncScheduler::add_request
+     dmc::SyncScheduler::schedule_request_impl
+     实际 SyncScheduler::add_request
 
         放入的 scheduler 指定的队列中,是等待监控码
  */

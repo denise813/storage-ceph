@@ -188,7 +188,9 @@ public:
       (1 << CRUSH_BUCKET_UNIFORM) |
       (1 << CRUSH_BUCKET_LIST) |
       (1 << CRUSH_BUCKET_STRAW) |
-      (1 << CRUSH_BUCKET_STRAW2);
+      (1 << CRUSH_BUCKET_STRAW2) |
+      (1 << CRUSH_BUCKET_STRAW3) |
+      (1 << CRUSH_BUCKET_COMPOSE);
   }
   void set_tunables_jewel() {
     crush->choose_local_tries = 0;
@@ -201,7 +203,9 @@ public:
       (1 << CRUSH_BUCKET_UNIFORM) |
       (1 << CRUSH_BUCKET_LIST) |
       (1 << CRUSH_BUCKET_STRAW) |
-      (1 << CRUSH_BUCKET_STRAW2);
+      (1 << CRUSH_BUCKET_STRAW2) |
+      (1 << CRUSH_BUCKET_STRAW3) |
+      (1 << CRUSH_BUCKET_COMPOSE);
   }
 
   void set_tunables_legacy() {
@@ -314,7 +318,9 @@ public:
       crush->allowed_bucket_algs == ((1 << CRUSH_BUCKET_UNIFORM) |
 				      (1 << CRUSH_BUCKET_LIST) |
 				      (1 << CRUSH_BUCKET_STRAW) |
-				      (1 << CRUSH_BUCKET_STRAW2));
+				      (1 << CRUSH_BUCKET_STRAW2)|
+				      (1 << CRUSH_BUCKET_STRAW3)|
+				      (1 << CRUSH_BUCKET_COMPOSE));
   }
   bool has_jewel_tunables() const {
     return
@@ -327,7 +333,9 @@ public:
       crush->allowed_bucket_algs == ((1 << CRUSH_BUCKET_UNIFORM) |
 				      (1 << CRUSH_BUCKET_LIST) |
 				      (1 << CRUSH_BUCKET_STRAW) |
-				      (1 << CRUSH_BUCKET_STRAW2));
+				      (1 << CRUSH_BUCKET_STRAW2)|
+				      (1 << CRUSH_BUCKET_STRAW3)|
+				      (1 << CRUSH_BUCKET_COMPOSE));
   }
 
   bool has_optimal_tunables() const {
@@ -383,16 +391,23 @@ public:
   // default bucket types
   unsigned get_default_bucket_alg() const {
     // in order of preference
+/** comment by hy 2020-11-03
+ * # 注意这里的顺序,第一个表示默认的优先级
+ */
     if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_STRAW2))
       return CRUSH_BUCKET_STRAW2;
     if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_STRAW))
       return CRUSH_BUCKET_STRAW;
+    if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_STRAW3))
+      return CRUSH_BUCKET_STRAW3;
     if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_TREE))
       return CRUSH_BUCKET_TREE;
     if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_LIST))
       return CRUSH_BUCKET_LIST;
     if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_UNIFORM))
       return CRUSH_BUCKET_UNIFORM;
+    if (crush->allowed_bucket_algs & (1 << CRUSH_BUCKET_COMPOSE))
+      return CRUSH_BUCKET_COMPOSE;
     return 0;
   }
 
@@ -1509,6 +1524,32 @@ public:
       carg.ids_size = 0;
       if (b && b->alg == CRUSH_BUCKET_STRAW2) {
 	crush_bucket_straw2 *sb = reinterpret_cast<crush_bucket_straw2*>(b);
+	carg.weight_set_positions = positions;
+	carg.weight_set = static_cast<crush_weight_set*>(calloc(sizeof(crush_weight_set),
+						    carg.weight_set_positions));
+	// initialize with canonical weights
+	for (int pos = 0; pos < positions; ++pos) {
+	  carg.weight_set[pos].size = b->size;
+	  carg.weight_set[pos].weights = (__u32*)calloc(4, b->size);
+	  for (unsigned i = 0; i < b->size; ++i) {
+	    carg.weight_set[pos].weights[i] = sb->item_weights[i];
+	  }
+	}
+      } else if (b && b->alg == CRUSH_BUCKET_STRAW3) {
+	crush_bucket_straw3 *sb = reinterpret_cast<crush_bucket_straw3*>(b);
+	carg.weight_set_positions = positions;
+	carg.weight_set = static_cast<crush_weight_set*>(calloc(sizeof(crush_weight_set),
+						    carg.weight_set_positions));
+	// initialize with canonical weights
+	for (int pos = 0; pos < positions; ++pos) {
+	  carg.weight_set[pos].size = b->size;
+	  carg.weight_set[pos].weights = (__u32*)calloc(4, b->size);
+	  for (unsigned i = 0; i < b->size; ++i) {
+	    carg.weight_set[pos].weights[i] = sb->item_weights[i];
+	  }
+	}
+	  } else if (b && b->alg == CRUSH_BUCKET_COMPOSE) {
+	crush_bucket_straw3 *sb = reinterpret_cast<crush_bucket_compose*>(b);
 	carg.weight_set_positions = positions;
 	carg.weight_set = static_cast<crush_weight_set*>(calloc(sizeof(crush_weight_set),
 						    carg.weight_set_positions));

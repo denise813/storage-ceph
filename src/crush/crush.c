@@ -14,6 +14,8 @@ const char *crush_bucket_alg_name(int alg)
 	case CRUSH_BUCKET_TREE: return "tree";
 	case CRUSH_BUCKET_STRAW: return "straw";
 	case CRUSH_BUCKET_STRAW2: return "straw2";
+	case CRUSH_BUCKET_STRAW3: return "straw3";
+	case CRUSH_BUCKET_COMPOSE: return "compose";
 	default: return "unknown";
 	}
 }
@@ -39,6 +41,10 @@ int crush_get_bucket_item_weight(const struct crush_bucket *b, int p)
 		return ((struct crush_bucket_straw *)b)->item_weights[p];
 	case CRUSH_BUCKET_STRAW2:
 		return ((struct crush_bucket_straw2 *)b)->item_weights[p];
+	case CRUSH_BUCKET_STRAW3:
+		return ((struct crush_bucket_straw3 *)b)->item_weights[p];
+	case CRUSH_BUCKET_COMPOSE:
+		return ((struct crush_bucket_compose *)b)->item_weights[p];
 	}
 	return 0;
 }
@@ -79,6 +85,25 @@ void crush_destroy_bucket_straw2(struct crush_bucket_straw2 *b)
 	kfree(b);
 }
 
+void crush_destroy_bucket_straw3(struct crush_bucket_straw3 *b)
+{
+	for (int i=0; i<b->h.size; i++) {
+		free(b->item_node_vules[i]);
+		b->item_node_vules[i] = NULL;
+	}
+	free(b->item_node_vules);
+	b->item_node_vules = NULL;
+	kfree(b->item_weights);
+	kfree(b->h.items);
+	kfree(b);
+}
+
+void crush_destroy_bucket_compose(struct crush_bucket_compose *b)
+{
+	crush_destroy_bucket_straw3((struct crush_bucket_straw3 *)b);
+}
+
+
 void crush_destroy_bucket(struct crush_bucket *b)
 {
 	switch (b->alg) {
@@ -96,6 +121,12 @@ void crush_destroy_bucket(struct crush_bucket *b)
 		break;
 	case CRUSH_BUCKET_STRAW2:
 		crush_destroy_bucket_straw2((struct crush_bucket_straw2 *)b);
+		break;
+	case CRUSH_BUCKET_STRAW3:
+		crush_destroy_bucket_straw3((struct crush_bucket_straw3 *)b);
+		break;
+	case CRUSH_BUCKET_COMPOSE:
+		crush_destroy_bucket_compose((struct crush_bucket_compose *)b);
 		break;
 	}
 }

@@ -482,18 +482,21 @@ double calc_straw2_stddev(int *weights, int n, bool verbose)
   double stddev = 0;
   double exptotal = 0;
   if (verbose)
-    cout << "osd\tweight\tcount\tadjusted\n";
+    cout << "osd\tweight\tcount\tdiff %\tadjusted\n";
   std::streamsize p = cout.precision();
   cout << std::setprecision(4);
   for (int i=0; i<n; ++i) {
     double w = (double)weights[i] / (double)0x10000;
     double adj = (double)sum[i] * avgweight / w;
+    double diff = (double)(sum[i] - (expected * w / avgweight)) * 100 /
+        (expected * w / avgweight);
     stddev += (adj - expected) * (adj - expected);
     exptotal += adj;
     if (verbose)
       cout << i
 	   << "\t" << w
 	   << "\t" << sum[i]
+	   << "\t" << (int)diff
 	   << "\t" << (int)adj
 	   << std::endl;
   }
@@ -612,6 +615,7 @@ TEST_F(CRUSHTest, straw2_reweight) {
   c->finalize();
 
   int total = 1000000;
+  int changed_num = 0;
   for (int i=0; i<total; ++i) {
     vector<int> out0, out1;
     c->do_rule(rule0, i, out0, 1, reweight, 0);
@@ -628,21 +632,28 @@ TEST_F(CRUSHTest, straw2_reweight) {
     } else if (out0[0] != changed) {
       ASSERT_EQ(out0[0], out1[0]);
     }
+    if (out0[0] == changed && out1[0] != changed) {
+      changed_num++;
+    }
   }
 
   double expected = (double)total / (double)n;
   cout << "expect\t\t\t" << expected << std::endl;
+  cout << "change\t\t\t" << changed_num << std::endl;
   double stddev = 0;
-  cout << "osd\tweight\tcount\tadjusted\n";
+  cout << "osd\tweight\tcount\tdiff %\tadjusted\n";
   std::streamsize p = cout.precision();
   cout << std::setprecision(4);
   for (int i=0; i<n; ++i) {
     double w = (double)weights[i] / (double)0x10000;
+    double diff = (double)(sum[i] - (expected * w / avgweight)) * 100 /
+    (expected * w / avgweight);
     double adj = (double)sum[i] * avgweight / w;
     stddev += (adj - expected) * (adj - expected);
     cout << i
 	 << "\t" << w
 	 << "\t" << sum[i]
+	 << "\t" << (int)diff
 	 << "\t" << (int)adj
 	 << std::endl;
   }
@@ -656,3 +667,247 @@ TEST_F(CRUSHTest, straw2_reweight) {
     cout << "     vs " << estddev << std::endl;
   }
 }
+
+double calc_straw3_stddev(int *weights, int n, bool verbose)
+{
+  std::unique_ptr<CrushWrapper> c(new CrushWrapper);
+  const int ROOT_TYPE = 2;
+  c->set_type_name(ROOT_TYPE, "root");
+  const int HOST_TYPE = 1;
+  c->set_type_name(HOST_TYPE, "host");
+  const int OSD_TYPE = 0;
+  c->set_type_name(OSD_TYPE, "osd");
+
+  int items[n];
+  for (int i=0; i <n; ++i) {
+    items[i] = i;
+  }
+
+  c->set_max_devices(n);
+
+  string root_name0("root0");
+  int root0;
+  crush_bucket *b0 = crush_make_bucket(c->get_crush_map(),
+				       CRUSH_BUCKET_STRAW3, CRUSH_HASH_RJENKINS1,
+				       ROOT_TYPE, n, items, weights);
+  crush_add_bucket(c->get_crush_map(), 0, b0, &root0);
+  c->set_item_name(root0, root_name0);
+
+  string name0("rule0");
+  int rule0 = c->add_simple_rule(name0, root_name0, "osd", "",
+				       "firstn", pg_pool_t::TYPE_REPLICATED);
+
+  int sum[n];
+  double totalweight = 0;
+  vector<unsigned> reweight(n);
+  for (int i=0; i<n; ++i) {
+    sum[i] = 0;
+    reweight[i] = 0x10000;
+    totalweight += weights[i];
+  }
+  totalweight /= (double)0x10000;
+  double avgweight = totalweight / n;
+
+  c->finalize();
+
+  int total = 1000000;
+  for (int i=0; i<total; ++i) {
+    vector<int> out;
+    c->do_rule(rule0, i, out, 1, reweight, 0);
+    sum[out[0]]++;
+  }
+
+  double expected = (double)total / (double)n;
+  if (verbose)
+    cout << "expect\t\t\t" << expected << std::endl;
+  double stddev = 0;
+  double exptotal = 0;
+  if (verbose)
+    cout << "osd\tweight\tcount\tdiff %\tadjusted\n";
+  std::streamsize p = cout.precision();
+  cout << std::setprecision(4);
+  for (int i=0; i<n; ++i) {
+    double w = (double)weights[i] / (double)0x10000;
+    double adj = (double)sum[i] * avgweight / w;
+    double diff = (double)(sum[i] - (expected * w / avgweight)) * 100 /
+        (expected * w / avgweight);
+    stddev += (adj - expected) * (adj - expected);
+    exptotal += adj;
+    if (verbose)
+      cout << i
+	   << "\t" << w
+	   << "\t" << sum[i]
+	   << "\t" << (int)diff
+	   << "\t" << (int)adj
+	   << std::endl;
+  }
+  cout << std::setprecision(p);
+  {
+    stddev = sqrt(stddev / (double)n);
+    if (verbose)
+      cout << "std dev " << stddev << std::endl;
+
+    double p = 1.0 / (double)n;
+    double estddev = sqrt(exptotal * p * (1.0 - p));
+    if (verbose)
+      cout << "     vs " << estddev << "\t(expected)" << std::endl;
+  }
+  return stddev;
+}
+
+
+TEST_F(CRUSHTest, straw3_stddev)
+{
+  int n = 15;
+  int weights[n];
+  cout << "maxskew\tstddev\n";
+  for (double step = 1.0; step < 2; step += .25) {
+    int w = 0x10000;
+    for (int i = 0; i < n; ++i) {
+      weights[i] = w;
+      w *= step;
+    }
+    double stddev = calc_straw3_stddev(weights, n, true);
+    cout << ((double)weights[n-1]/(double)weights[0])
+	 << "\t" << stddev << std::endl;
+  }
+}
+
+TEST_F(CRUSHTest, straw3_reweight) {
+  // when we adjust the weight of an item in a straw2 bucket,
+  // we should *only* see movement from or to that item, never
+  // between other items.
+  int weights[] = {
+    0x10000,
+    0x10000,
+    0x20000,
+    0x20000,
+    0x30000,
+    0x50000,
+    0x8000,
+    0x20000,
+    0x10000,
+    0x10000,
+    0x20000,
+    0x10000,
+    0x10000,
+    0x20000,
+    0x300000,
+    0x10000,
+    0x20000
+  };
+  int n = 15;
+
+  std::unique_ptr<CrushWrapper> c(new CrushWrapper);
+  const int ROOT_TYPE = 2;
+  c->set_type_name(ROOT_TYPE, "root");
+  const int HOST_TYPE = 1;
+  c->set_type_name(HOST_TYPE, "host");
+  const int OSD_TYPE = 0;
+  c->set_type_name(OSD_TYPE, "osd");
+
+  int items[n];
+  for (int i=0; i <n; ++i) {
+    items[i] = i;
+    //weights[i] = 0x10000;
+  }
+
+  c->set_max_devices(n);
+
+  string root_name0("root0");
+  int root0;
+  crush_bucket *b0 = crush_make_bucket(c->get_crush_map(),
+				       CRUSH_BUCKET_STRAW3, CRUSH_HASH_RJENKINS1,
+				       ROOT_TYPE, n, items, weights);
+  EXPECT_EQ(0, crush_add_bucket(c->get_crush_map(), 0, b0, &root0));
+  EXPECT_EQ(0, c->set_item_name(root0, root_name0));
+
+  string name0("rule0");
+  int rule0 = c->add_simple_rule(name0, root_name0, "osd", "",
+				       "firstn", pg_pool_t::TYPE_REPLICATED);
+  EXPECT_EQ(0, rule0);
+
+  int changed = 1;
+  weights[changed] = weights[changed] / 10 * (rand() % 10);
+
+  string root_name1("root1");
+  int root1;
+  crush_bucket *b1 = crush_make_bucket(c->get_crush_map(),
+				       CRUSH_BUCKET_STRAW3, CRUSH_HASH_RJENKINS1,
+				       ROOT_TYPE, n, items, weights);
+  EXPECT_EQ(0, crush_add_bucket(c->get_crush_map(), 0, b1, &root1));
+  EXPECT_EQ(0, c->set_item_name(root1, root_name1));
+
+  string name1("rule1");
+  int rule1 = c->add_simple_rule(name1, root_name1, "osd", "",
+				       "firstn", pg_pool_t::TYPE_REPLICATED);
+  EXPECT_EQ(1, rule1);
+
+  int sum[n];
+  double totalweight = 0;
+  vector<unsigned> reweight(n);
+  for (int i=0; i<n; ++i) {
+    sum[i] = 0;
+    reweight[i] = 0x10000;
+    totalweight += weights[i];
+  }
+  totalweight /= (double)0x10000;
+  double avgweight = totalweight / n;
+
+  c->finalize();
+
+  int total = 1000000;
+  int changed_num = 0;
+  for (int i=0; i<total; ++i) {
+    vector<int> out0, out1;
+    c->do_rule(rule0, i, out0, 1, reweight, 0);
+    ASSERT_EQ(1u, out0.size());
+
+    c->do_rule(rule1, i, out1, 1, reweight, 0);
+    ASSERT_EQ(1u, out1.size());
+
+    sum[out1[0]]++;
+    //sum[rand()%n]++;
+
+    if (out1[0] == changed) {
+      ASSERT_EQ(changed, out0[0]);
+    } else if (out0[0] != changed) {
+      ASSERT_EQ(out0[0], out1[0]);
+    }
+
+    if (out0[0] == changed && out1[0] != changed) {
+      changed_num++;
+    }
+  }
+
+  double expected = (double)total / (double)n;
+  cout << "expect\t\t\t" << expected << std::endl;
+  cout << "change\t\t\t" << changed_num << std::endl;
+  double stddev = 0;
+  cout << "osd\tweight\tcount\tdiff %\tadjusted\n";
+  std::streamsize p = cout.precision();
+  cout << std::setprecision(4);
+  for (int i=0; i<n; ++i) {
+    double w = (double)weights[i] / (double)0x10000;
+    double adj = (double)sum[i] * avgweight / w;
+    double diff = (double)(sum[i] - (expected * w / avgweight)) * 100 /
+        (expected * w / avgweight);
+    stddev += (adj - expected) * (adj - expected);
+    cout << i
+	 << "\t" << w
+	 << "\t" << sum[i]
+	 << "\t" << (int)diff
+	 << "\t" << (int)adj
+	 << std::endl;
+  }
+  cout << std::setprecision(p);
+  {
+    stddev = sqrt(stddev / (double)n);
+    cout << "std dev " << stddev << std::endl;
+
+    double p = 1.0 / (double)n;
+    double estddev = sqrt((double)total * p * (1.0 - p));
+    cout << "     vs " << estddev << std::endl;
+  }
+}
+

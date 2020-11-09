@@ -63,7 +63,8 @@ static int civetweb_callback(struct mg_connection* conn)
   const struct mg_request_info* const req_info = mg_get_request_info(conn);
 /** comment by hy 2020-02-08
  * # 调用process函数
-     req_info->user_data = (class RGWCivetWebFrontend) this 
+     req_info->user_data = (class RGWCivetWebFrontend) this
+     RGWCivetWebFrontend::process
  */
   return static_cast<RGWCivetWebFrontend *>(req_info->user_data)->process(conn);
 }
@@ -93,6 +94,7 @@ int RGWCivetWebFrontend::process(struct mg_connection*  const conn)
   //assert (scheduler != nullptr);
 /** comment by hy 2020-02-08
  * # 处理请求
+     这里分成重要的处理类分发操作
  */
   int ret = process_request(env.store, env.rest, &req, env.uri_prefix,
                             *env.auth_registry, &client_io, env.olog,

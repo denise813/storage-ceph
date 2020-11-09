@@ -383,6 +383,63 @@ static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
 	return bucket->h.items[high];
 }
 
+static inline __s64 straw3_generate_exponential_distribution(
+	int type, unsigned int u_x, unsigned int weight, __u32 * nodes)
+{
+	unsigned int u_z_item = 0;
+	__s64 distribution = U32_MAX;
+	unsigned int start = 0;
+	unsigned int end = straw3_get_vnodes_num(weight);
+	unsigned int mid = 0;
+
+	for (; start < end;){
+		mid = (start + end) / 2;
+		u_z_item = *(nodes + mid);
+		if (u_x > u_z_item) {start = mid; continue;}
+		if (u_x == u_z_item) {distribution = 0;break;}
+		distribution = u_z_item - u_x;
+		end = mid;
+	}
+	if (distribution == U32_MAX) {distribution = U32_MAX - u_x + nodes[0];}
+	//printf("weight=%x, new_weight=%d\n", weight, new_weight);
+	return (__s64)distribution;
+}
+
+static int bucket_straw3_choose(const struct crush_bucket_straw3 *bucket,
+				int x, int r, const struct crush_choose_arg *arg,
+                                int position)
+{
+	unsigned int i, high = 0;
+	unsigned int u_x = 0;
+	__s64 distribution, min_distribution = S64_MAX;
+        __u32 *weights = get_choose_arg_weights(bucket, arg, position);
+
+	u_x = crush_hash32_2(bucket->h.hash, x, r);
+	for (i = 0; i < bucket->h.size; i++) {
+		if (weights[i]) {
+			distribution = straw3_generate_exponential_distribution(
+				bucket->h.hash, u_x, weights[i], bucket->item_node_vules[i]);
+		} else {
+			distribution = S64_MAX;
+		}
+
+		if (i == 0 || distribution < min_distribution) {
+			high = i;
+			min_distribution = distribution;
+		}
+		if (min_distribution == 0) {
+			break;
+		}
+#if 0
+		printf("\ndetail x=%08x r=%08x weights[%d]=%d size=%08x "
+                        "draw=%016llx high_draw=%016llx high=%d\n",
+                        x, r, i, weights[i], bucket->h.size,
+                        draw, high_draw, high);
+#endif
+	}
+
+	return bucket->h.items[high];
+}
 
 static int crush_bucket_choose(const struct crush_bucket *in,
 			       struct crush_work_bucket *work,
@@ -414,6 +471,20 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 		return bucket_straw2_choose(
 			(const struct crush_bucket_straw2 *)in,
 			x, r, arg, position);
+	case CRUSH_BUCKET_STRAW3:
+/** comment by hy 2020-04-02
+ * # 对所有待选元素计算值
+ */
+		return bucket_straw3_choose(
+			(const struct crush_bucket_straw3 *)in,
+			x, r, arg, position);
+	case CRUSH_BUCKET_COMPOSE:
+/** comment by hy 2020-04-02
+ * # 对所有待选元素计算值
+ */
+		return bucket_compose_choose(
+			(const struct crush_bucket_compose *)in, x, r);
+
 	default:
 		dprintk("unknown bucket %d alg %d\n", in->id, in->alg);
 		return in->items[0];
@@ -443,7 +514,9 @@ static int is_out(const struct crush_map *map,
 /**
  * crush_choose_firstn - choose numrep distinct items of given type
  * @map: the crush_map
- * @bucket: the bucket we are choose an item from
+ * @work input items
+ * @bucket: the bucket we are choose an item from 是否选择这个 bucket
+ * @ weight : osd wight 0-1
  * @x: crush input value
  * @numrep: the number of items to choose
  * @type: the type of item to choose
@@ -507,9 +580,25 @@ parent_r %d stable %d\n",
 
 			/* choose through intervening buckets */
 			flocal = 0;
+/** comment by hy 2020-11-01
+ * # 选择到子节点
+ */
 			do {
 				collide = 0;
 				retry_bucket = 0;
+/** comment by hy 2020-11-01
+ * # parent_r = 0 rep 表示 副本号 r 表示 迭代次数号
+     如 副本 3 迭代 为 第二次 可能 r = 4
+     rep=0, r=0 ---> ceph0, chooseleaf
+     rep=0, r=0 ---> osd.0, OK
+     rep=1, r=1 ---> ceph1, chooseleaf
+     rep=1, r=1 ---> osd.2, OK
+     执行 MAX_TRIES 次
+     rep=2, r=2 ---> ceph0, collide
+     rep=2, r=3 ---> ceph1, collide
+     rep=2, r=4 ---> ceph2, chooseleaf
+     rep=2, r=2 ---> osd.4, OK
+ */
 				r = rep + parent_r;
 				/* r' = r + f_total */
 				r += ftotal;
@@ -542,6 +631,9 @@ parent_r %d stable %d\n",
 				}
 
 				/* desired type? */
+/** comment by hy 2020-11-01
+ * # 获取类型
+ */
 				if (item < 0)
 					itemtype = map->buckets[-1-item]->type;
 				else
@@ -549,6 +641,9 @@ parent_r %d stable %d\n",
 				dprintk("  item %d type %d\n", item, itemtype);
 
 				/* keep going? */
+/** comment by hy 2020-11-01
+ * # 没有到隔离类型
+ */
 				if (itemtype != type) {
 					if (item >= 0 ||
 					    (-1-item) >= map->max_buckets) {
@@ -562,18 +657,21 @@ parent_r %d stable %d\n",
 				}
 
 /** comment by hy 2020-04-02
- * # 选重复了
+ * # 选重复了, 就标准冲突
  */
 				/* collision? */
-				for (i = 0; i < outpos; i++) {
-					if (out[i] == item) {
-						collide = 1;
-						break;
+				if (in->alg != CRUSH_BUCKET_COMPOSE) {
+					for (i = 0; i < outpos; i++) {
+						if (out[i] == item) {
+							collide = 1;
+							break;
+						}
 					}
 				}
 
 /** comment by hy 2020-04-02
- * # 权重一样就会,冲突了
+ * # 没有冲突,并且是叶子节点,有节点输出,无节点从根开始再来一次
+     vary_r = chooseleaf_vary_r参数设置成大于0 可以在递归调用中传入不同的r值
  */
 				reject = 0;
 				if (!collide && recurse_to_leaf) {
@@ -583,6 +681,9 @@ parent_r %d stable %d\n",
 							sub_r = r >> (vary_r-1);
 						else
 							sub_r = 0;
+/** comment by hy 2020-11-01
+ * # weight 表示 osd 的那个 0-1 的权重, 这里递归调用开始
+ */
 						if (crush_choose_firstn(
 							    map,
 							    work,
@@ -607,6 +708,9 @@ parent_r %d stable %d\n",
 		                        }
 				}
 
+/** comment by hy 2020-11-02
+ * # 判断是不是 out
+ */
 				if (!reject && !collide) {
 					/* out? */
 					if (itemtype == 0)
@@ -692,6 +796,9 @@ static void crush_choose_indep(const struct crush_map *map,
 		bucket->id, x, outpos, numrep);
 
 	/* initially my result is undefined */
+/** comment by hy 2020-11-01
+ * # 清空输出结果
+ */
 	for (rep = outpos; rep < endpos; rep++) {
 		out[rep] = CRUSH_ITEM_UNDEF;
 		if (out2)
@@ -714,6 +821,9 @@ static void crush_choose_indep(const struct crush_map *map,
 		}
 #endif
 		for (rep = outpos; rep < endpos; rep++) {
+/** comment by hy 2020-11-01
+ * # 该位置已经选择完成
+ */
 			if (out[rep] != CRUSH_ITEM_UNDEF)
 				continue;
 
@@ -746,6 +856,9 @@ static void crush_choose_indep(const struct crush_map *map,
 					break;
 				}
 
+/** comment by hy 2020-11-01
+ * # 开始选择
+ */
 				item = crush_bucket_choose(
 					in, work->work[-1-in->id],
 					x, r,
@@ -785,8 +898,11 @@ static void crush_choose_indep(const struct crush_map *map,
 
 				/* collision? */
 				collide = 0;
+/** comment by hy 2020-11-02
+ * # 组合算法 不同的r 是在一个item中
+ */
 				for (i = outpos; i < endpos; i++) {
-					if (out[i] == item) {
+					if (out[i] == item && in->alg != CRUSH_BUCKET_COMPOSE) {
 						collide = 1;
 						break;
 					}
@@ -925,8 +1041,14 @@ void crush_init_workspace(const struct crush_map *m, void *v) {
     step emit #结束
   测试范例
     crushtool -i mycrushmap --test --min-x 0 --max-x 9 --num-rep 3 --ruleset 0 \
-      --show_mappings
+      --show_mappings --show-statistics
  */
+/** comment by hy 2020-10-31
+ * # *cwin 输入的拓扑信息
+     *weight 拓扑 osd 对应的权重
+     weight_max 是*weight 空间大小
+ */
+
 int crush_do_rule(const struct crush_map *map,
 		  int ruleno, int x, int *result, int result_max,
 		  const __u32 *weight, int weight_max,
@@ -934,11 +1056,17 @@ int crush_do_rule(const struct crush_map *map,
 {
 	int result_len;
 	struct crush_work *cw = cwin;
+/** comment by hy 2020-10-31
+ * # a放在输入的 选择 bucket 上
+ */
 	int *a = (int *)((char *)cw + map->working_size);
+/** comment by hy 2020-10-31
+ * # 输出的偏移
+ */
 	int *b = a + result_max;
 	int *c = b + result_max;
 /** comment by hy 2020-04-02
- * # 选择 的 bucket
+ * # 选择 的 bucket, w osd 的信息
  */
 	int *w = a;
 	int *o = b;
@@ -1095,7 +1223,7 @@ int crush_do_rule(const struct crush_map *map,
 					else
 						recurse_tries = choose_tries;
 /** comment by hy 2020-04-02
- * # 开始选择
+ * # 开始选择 curstep->arg2 隔离类型
  */
 					osize += crush_choose_firstn(
 						map,
@@ -1118,7 +1246,20 @@ int crush_do_rule(const struct crush_map *map,
 						choose_args);
 				} else {
 /** comment by hy 2020-03-13
- * # 纠删码
+ * # 纠删码 10
+     EC的indep类rule的流程大体上与firstn类似，只是需要为没选出的item留好位置
+     trial 0: result = [UNDEF, UNDEF, UNDEF]
+     trial 1: rep=0, r=0 ---> ceph0, chooseleaf
+              |_ rep=0, r=0 ---> osd.0, OK
+              rep=1, r=1 ---> ceph0, collide
+              rep=2, r=2 ---> ceph2, chooseleaf
+              |_ rep=2, r=2 ---> osd.4, OK
+     result = [0, UNDEF, 4]
+     trial 2: rep=0, r=3 ---> not UNDEF, continue
+              rep=1, r=4 ---> ceph1, chooseleaf
+              |_ rep=1, r=1 ---> osd.2, OK
+              rep=2, r=5 ---> not UNDEF, continue
+     result = [0, 2, 4], return
  */
 					out_size = ((numrep < (result_max-osize)) ?
 						    numrep : (result_max-osize));

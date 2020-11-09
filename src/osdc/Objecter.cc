@@ -1404,18 +1404,27 @@ void Objecter::handle_osd_map(MOSDMap *m)
   }
 
   // resend requests
+/** comment by hy 2020-11-03
+ * # 数据类重发队列
+ */
   for (map<ceph_tid_t, Op*>::iterator p = need_resend.begin();
        p != need_resend.end(); ++p) {
     Op *op = p->second;
     OSDSession *s = op->session;
     bool mapped_session = false;
     if (!s) {
+/** comment by hy 2020-11-03
+ * # 与对应的osd 建立连接,pg 多 对应的与osd 的连接也多
+ */
       int r = _map_session(&op->target, &s, sul);
       ceph_assert(r == 0);
       mapped_session = true;
     } else {
       get_session(s);
     }
+/** comment by hy 2020-11-03
+ * # 建立关联
+ */
     OSDSession::unique_lock sl(s->lock);
     if (mapped_session) {
       _session_op_assign(s, op);
@@ -1432,6 +1441,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
     sl.unlock();
     put_session(s);
   }
+/** comment by hy 2020-11-03
+ * # 控制类消息进行重发
+ */
   for (list<LingerOp*>::iterator p = need_resend_linger.begin();
        p != need_resend_linger.end(); ++p) {
     LingerOp *op = *p;
@@ -1441,6 +1453,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
       _send_linger(op, sul);
     }
   }
+/** comment by hy 2020-11-03
+ * # 命令进行重发
+ */
   for (map<ceph_tid_t,CommandOp*>::iterator p = need_resend_command.begin();
        p != need_resend_command.end(); ++p) {
     CommandOp *c = p->second;
@@ -1467,6 +1482,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
     waiting_for_map.erase(p++);
   }
 
+/** comment by hy 2020-11-03
+ * # 订阅等待之后的map信息
+ */
   monc->sub_got("osdmap", osdmap->get_epoch());
 
   if (!waiting_for_map.empty()) {
@@ -1880,6 +1898,9 @@ int Objecter::_get_session(int osd, OSDSession **session, shunique_lock& sul)
     return 0;
   }
 
+/** comment by hy 2020-11-03
+ * # 连接全部在内存中
+ */
   map<int,OSDSession*>::iterator p = osd_sessions.find(osd);
   if (p != osd_sessions.end()) {
     OSDSession *s = p->second;
@@ -2501,7 +2522,8 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   OSDSession *s = NULL;
 
 /** comment by hy 2020-02-18
- * # 计算对象目标osd 是否需要更新map
+ * # 计算对象目标osd 是否需要更新map RECALC_OP_TARGET_POOL_DNE 
+     表示要变化了,需要check
  */
   bool check_for_latest_map = _calc_target(&op->target, nullptr)
     == RECALC_OP_TARGET_POOL_DNE;
@@ -2585,6 +2607,9 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
  */
   _session_op_assign(s, op);
 
+/** comment by hy 2020-11-03
+ * # 检查没问题,发送操作
+ */
   if (need_send) {
 /** comment by hy 2020-02-18
  * # 创建一条包含op的消息 并 发送消息
@@ -2943,20 +2968,24 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   }
 
   // apply tiering
-/** comment by hy 2020-02-18
- * # 检查cache tier,如果有对应的缓存设置target_oloc.pool
+  t->target_oid = t->base_oid;
+  t->target_oloc = t->base_oloc;
+/** comment by hy 2020-11-02
+ * # 检查cache tier,如果有对应的缓存设置 target_oloc.pool
      如果是写并且有读缓存,
          设置target_oloc.pool为 cache tier 对应的pool
      如果是写并且有写缓存,
          设置target_oloc.pool为 cache tier 对应的pool
+     这里可以指定 读和写 的缓存 pool
  */
-  t->target_oid = t->base_oid;
-  t->target_oloc = t->base_oloc;
   if ((t->flags & CEPH_OSD_FLAG_IGNORE_OVERLAY) == 0) {
     if (is_read && pi->has_read_tier())
       t->target_oloc.pool = pi->read_tier;
     if (is_write && pi->has_write_tier())
       t->target_oloc.pool = pi->write_tier;
+/** comment by hy 2020-11-02
+ * # 得到 cache pool 信息,变换 pi 为 cache pool
+ */
     pi = osdmap->get_pg_pool(t->target_oloc.pool);
     if (!pi) {
       t->osd = -1;
@@ -2973,7 +3002,10 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   } else {
 /** comment by hy 2020-02-18
  * # 获取目标对象所在的pg
-     OSDMap::object_locator_to_pg
+     生成 pg 的 ps
+     OSDMap::object_locator_to_pg 将对象 通过 hash 映射到 pg 这个 pg 
+     是 不是 pg_id 而是 一个 hash 值,后期 将需要将这个值 
+     变成 稳定除余后的值
  */
     int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc,
 					   pgid);
@@ -2995,13 +3027,20 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   unsigned pg_num_pending = pi->get_pg_num_pending();
   int up_primary, acting_primary;
   vector<int> up, acting;
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
 /** comment by hy 2020-02-18
- * # 经典的稳定除余
+ * # 经典的稳定除余,将计算出来的pg值进行稳定除余数,得到 
+     pg 对应的id
  */
-  ps_t actual_ps = ceph_stable_mod(pgid.ps(), pg_num, pg_num_mask);
+//  ps_t actual_ps = ceph_stable_mod(pgid.ps(), pg_num, pg_num_mask);
+  ps_t actual_ps  = ceph_conhash_mod(pgid.ps(), pg_num, pg_num_mask);
+/* modify end by hy, 2020-11-02 */
   pg_t actual_pgid(actual_ps, pgid.pool());
   pg_mapping_t pg_mapping;
   pg_mapping.epoch = osdmap->get_epoch();
+/** comment by hy 2020-11-02
+ * # 查找 指定 map 列表 pg -> 映射到 别的 pg 的列表
+ */
   if (lookup_pg_mapping(actual_pgid, &pg_mapping)) {
     up = pg_mapping.up;
     up_primary = pg_mapping.up_primary;
@@ -3009,17 +3048,27 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     acting_primary = pg_mapping.acting_primary;
   } else {
 /** comment by hy 2020-02-18
- * # 通过crush算分,获取该pg对应的osd列表
+ * # 通过crush算分,获取该pg对应的osd列表, 这里
+     的数据已经变成普通的我们认识的pg信息
  */
     osdmap->pg_to_up_acting_osds(actual_pgid, &up, &up_primary,
                                  &acting, &acting_primary);
+/** comment by hy 2020-11-02
+ * # 
+ */
     pg_mapping_t pg_mapping(osdmap->get_epoch(),
                             up, up_primary, acting, acting_primary);
     update_pg_mapping(actual_pgid, std::move(pg_mapping));
   }
+/** comment by hy 2020-11-03
+ * # 这个是什么
+ */
   bool sort_bitwise = osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE);
   bool recovery_deletes = osdmap->test_flag(CEPH_OSDMAP_RECOVERY_DELETES);
-  unsigned prev_seed = ceph_stable_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
+/* modify begin by hy, 2020-11-02, BugId:123 原因: */
+//  unsigned prev_seed = ceph_stable_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
+  unsigned prev_seed = ceph_conhash_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
+/* modify end by hy, 2020-11-02 */
   pg_t prev_pgid(prev_seed, pgid.pool());
 /** comment by hy 2020-02-18
  * # 从工作时间区间,判断故障
@@ -3079,6 +3128,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       prev_pgid.is_merge_target(t->pg_num, pg_num);
   }
 
+/** comment by hy 2020-11-03
+ * # 
+ */
   if (legacy_change || split_or_merge || force_resend) {
     t->pgid = pgid;
     t->acting = acting;
@@ -3091,9 +3143,15 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     t->pg_num_mask = pg_num_mask;
     t->pg_num_pending = pg_num_pending;
     spg_t spgid(actual_pgid);
+/** comment by hy 2020-11-03
+ * # ec 处理
+ */
     if (pi->is_erasure()) {
       for (uint8_t i = 0; i < acting.size(); ++i) {
         if (acting[i] == acting_primary) {
+/** comment by hy 2020-11-03
+ * # 这里acting 是什么?这里也就是可以认为一份数据往多个地方发送
+ */
           spgid.reset_shard(shard_id_t(i));
           break;
         }
@@ -3113,7 +3171,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       int osd;
       ceph_assert(is_read && acting[0] == acting_primary);
 /** comment by hy 2020-02-18
- * # 平衡度和距离读都是针对于副本pool？
+ * # 平衡读和就近读都是针对于副本pool？
  */
       if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
 /** comment by hy 2020-02-18
@@ -3135,7 +3193,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 	int best_locality = 0;
 	for (unsigned i = 0; i < acting.size(); ++i) {
 /** comment by hy 2020-02-18
- * # 获取距离
+ * # 获取就近读
  */
 	  int locality = osdmap->crush->get_common_ancestor_distance(
 		 cct, acting[i], crush_location);
