@@ -664,6 +664,7 @@ void KernelDevice::_aio_thread()
       既调用 aio_cb
                  BlueStore::TransContext::aio_finish
                  BlueStore::DeferredBatch::aio_finish
+                 BlueStore::ReadContext::aio_finish
       事务回调是触发状态机继续下一步
       延迟写回调从延迟事务中找到下一批继续提交
  */

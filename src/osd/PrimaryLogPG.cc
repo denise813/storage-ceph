@@ -4218,7 +4218,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   if (result == -EINPROGRESS || pending_async_reads) {
     // come back later.
     if (pending_async_reads) {
-      ceph_assert(pool.info.is_erasure());
+      //ceph_assert(pool.info.is_erasure());
       in_progress_async_reads.push_back(make_pair(op, ctx));
       ctx->start_async_reads(this);
     }
@@ -5876,6 +5876,7 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
     ctx->op_finishers[ctx->current_osd_subop_num].reset(
       new ReadFinisher(osd_op));
   } else {
+#if 0
 /** comment by hy 2020-06-26
  * # 读取对象
  */
@@ -5906,6 +5907,14 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
     }
     dout(10) << " read got " << r << " / " << op.extent.length
 	     << " bytes from obj " << soid << dendl;
+#else
+    pgbackend->objects_read_async(
+      soid, op.extent.offset, op.extent.length, op.flags, &osd_op.outdata,
+      new OnAioReadComplete(this, ctx));
+    in_progress_async_reads.push_back(make_pair(op, ctx));
+    ctx->op_finishers[ctx->current_osd_subop_num].reset(
+      new ReadFinisher(osd_op));
+#endif
   }
   if (result >= 0) {
     ctx->delta_stats.num_rd_kb += shift_round_up(op.extent.length, 10);

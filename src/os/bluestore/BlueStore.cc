@@ -10144,6 +10144,180 @@ std::vector<ceph::buffer::v15_2_0::list, std::allocator<ceph::buffer::v15_2_0
   return r;
 }
 
+  void BlueStore::_do_aio_read(
+    OnodeRef o,
+    const ghobject_t * oid,
+    uint64_t offset,
+    size_t length,
+    bufferlist* bl,
+    uint32_t op_flags,
+    Context * on_complete)
+  {
+    FUNCTRACE(cct);
+    int r = 0;
+    int read_cache_policy = 0; // do not bypass clean or dirty cache
+  
+    dout(20) << __func__ << " 0x" << std::hex << offset << "~" << length
+             << " size 0x" << o->onode.size << " (" << std::dec
+             << o->onode.size << ")" << dendl;
+  
+    if (offset >= o->onode.size) {
+      on_complete->complete(r);
+      return;
+    }
+  
+    // generally, don't buffer anything, unless the client explicitly requests
+    // it.
+  /** comment by hy 2020-04-22
+   * # 设置是否缓存,默认读有缓存的,但是还要结合请求
+       这里是不是可以改造读取设备缓冲?
+   */
+    bool buffered = false;
+    if (op_flags & CEPH_OSD_OP_FLAG_FADVISE_WILLNEED) {
+      dout(20) << __func__ << " will do buffered read" << dendl;
+      buffered = true;
+    } else if (cct->_conf->bluestore_default_buffered_read &&
+               (op_flags & (CEPH_OSD_OP_FLAG_FADVISE_DONTNEED |
+                            CEPH_OSD_OP_FLAG_FADVISE_NOCACHE)) == 0) {
+      dout(20) << __func__ << " defaulting to buffered read" << dendl;
+      buffered = true;
+    }
+  
+    if (offset + length > o->onode.size) {
+      length = o->onode.size - offset;
+    }
+  
+    o->extent_map.fault_range(db, offset, length);
+  
+    // for deep-scrub, we only read dirty cache and bypass clean cache in
+    // order to read underlying block device in case there are silent disk errors.
+    if (op_flags & CEPH_OSD_OP_FLAG_BYPASS_CLEAN_CACHE) {
+      dout(20) << __func__ << " will bypass cache and do direct read" << dendl;
+      read_cache_policy = BufferSpace::BYPASS_CLEAN_CACHE;
+    }
+
+    ReadContext * readcontext = new ReadContext(cct, on_complete , o,
+    oid, offset, length, buffered, bl);
+  /** comment by hy 2020-06-26
+   * # 加载blob缓存空间,等待写数据
+   */
+    _read_cache(readcontext->o, readcontext->offset, readcontext->length, 
+        read_cache_policy, readcontext->ready_regions, readcontext->blobs2read);
+
+  /** comment by hy 2020-06-26
+   * # 包装异步aio读 根据blob 信息 加载数据
+   */
+    r = _prepare_read_ioc(readcontext->blobs2read,
+        &readcontext->compressed_blob_bls, &(readcontext->ioc));
+    // we always issue aio for reading, so errors other than EIO are not allowed
+    if (r < 0) {
+      on_complete->complete(r);
+      return;
+    }
+  
+    int64_t num_ios = length;
+
+    if (readcontext->ioc.has_pending_aios()) {
+      num_ios = -readcontext->ioc.get_num_ios();
+  /** comment by hy 2020-09-02
+   * # 提交读取的submit
+   */
+      bdev->aio_submit(&(readcontext->ioc));
+      dout(20) << __func__ << " waiting for aio" << dendl;
+    }
+    return;
+  }
+
+  int BlueStore::_finish_aio_read(const ghobject_t* oid, OnodeRef o,
+    uint64_t offset,
+    size_t length,
+    ready_regions_t& ready_regions,
+    vector<bufferlist>& compressed_blob_bls,
+    blobs2read_t& blobs2read,
+    bool buffered,
+    bufferlist* bl){
+    bool csum_error = false;
+/** comment by hy 2020-06-26
+ * # 干净的缓冲,解压还原数据
+ */
+    int r = _generate_read_result_bl(o, offset, length, ready_regions,
+				  compressed_blob_bls, blobs2read,
+				  buffered, &csum_error, *bl);
+    if (csum_error) {
+      r = -EIO;
+      goto l_out;
+    }
+    r = bl->length();
+    if (r >= 0 && _debug_data_eio(*oid)) {
+      derr << __func__ << " " << " " << *oid << " INJECT EIO" << dendl;
+      r = -EIO;
+      goto l_out;
+    } else if (oid->hobj.pool > 0 &&  /* FIXME, see #23029 */
+               cct->_conf->bluestore_debug_random_read_err &&
+               (rand() % (int)(cct->_conf->bluestore_debug_random_read_err *
+               100.0)) == 0) {
+      dout(0) << __func__ << ": inject random EIO" << dendl;
+      r = -EIO;
+      goto l_out;
+    }
+
+l_out:
+    return r;
+  }
+
+/* modify begin by hy, 2020-12-14, BugId:123 原因: 异步读 */
+  void BlueStore::aread(
+    CollectionHandle &c_,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t length,
+    bufferlist* bl,
+    uint32_t op_flags,
+    Context * on_complete)
+  {
+    int r;
+    auto start = mono_clock::now();
+/** comment by hy 2020-07-12
+* # 获取pg容器引用计数添加
+ 加载pg 是在对象处理前处理
+*/
+    Collection *c = static_cast<Collection *>(c_.get());
+    const coll_t &cid = c->get_cid();
+    dout(15) << __func__ << " " << cid << " " << oid
+       << " 0x" << std::hex << offset << "~" << length << std::dec
+       << dendl;
+    if (!c->exists) {
+       on_complete->complete(-ENOENT);
+        return;
+       
+    }
+
+    bl->clear();
+    {
+      std::shared_lock l(c->lock);
+       auto start1 = mono_clock::now();
+/** comment by hy 2020-07-12
+* # 读取元数据
+*/
+       OnodeRef o = c->get_onode(oid, false);
+       log_latency("get_onode@read",
+         l_bluestore_read_onode_meta_lat,
+         mono_clock::now() - start1,
+         cct->_conf->bluestore_log_op_age);
+      if (!o || !o->exists) {
+        on_complete->complete(-ENOENT);
+        return;
+      }
+
+/** comment by hy 2020-09-09
+* # 缓冲盘处理读流程这里进行处理缓冲
+*/
+      _do_aio_read(o, &oid, offset, length, bl, op_flags, on_complete);
+    }
+    return;
+  }
+/* modify end by hy, 2020-12-14 */
+
 void BlueStore::_read_cache(
   OnodeRef o,
   uint64_t offset,

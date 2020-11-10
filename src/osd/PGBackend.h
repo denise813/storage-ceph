@@ -580,6 +580,16 @@ typedef std::shared_ptr<const OSDMap> OSDMapRef;
 		pair<bufferlist*, Context*> > > &to_read,
      Context *on_complete, bool fast_read = false) = 0;
 
+/* modify begin by hy, 2020-12-14, BugId:123 原因: 异步读 */
+   virtual void objects_read_async(
+     const hobject_t &hoid,
+     uint64_t off,
+     uint64_t len,
+     uint32_t op_flags,
+     bufferlist *bl,
+     Context *on_complete) {};
+/* modify end by hy, 2020-12-14 */
+
    virtual bool auto_repair_supported() const = 0;
    int be_scan_list(
      ScrubMap &map,
