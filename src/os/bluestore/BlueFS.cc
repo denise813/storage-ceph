@@ -380,6 +380,9 @@ void BlueFS::_add_block_extent(unsigned id, uint64_t offset, uint64_t length,
   ceph_assert(id < bdev.size());
   ceph_assert(bdev[id]);
   ceph_assert(bdev[id]->get_size() >= offset + length);
+/** comment by hy 2020-11-12
+ * # 分配的空间
+ */
   block_all[id].insert(offset, length);
 
 /** comment by hy 2020-07-28
@@ -591,7 +594,7 @@ int BlueFS::mkfs(uuid_d osd_uuid, const bluefs_layout_t& layout)
   log_file->fnode.ino = 1;
   log_file->vselector_hint = vselector->get_hint_for_log();
 /** comment by hy 2020-07-28
- * # 分配 wal文件 磁盘的pextent 并和文件关联
+ * # 分配 wal文件 磁盘的 pextent 并和文件关联
  */
   int r = _allocate(
     vselector->select_prefer_bdev(log_file->vselector_hint),
@@ -694,6 +697,9 @@ void BlueFS::_init_alloc()
     alloc[id] = Allocator::create(cct, cct->_conf->bluefs_allocator,
 				  bdev[id]->get_size(),
 				  alloc_size[id], name);
+/** comment by hy 2020-11-12
+ * # 从磁盘 free manager 中加载信息得到 block_all?
+ */
     interval_set<uint64_t>& p = block_all[id];
     for (interval_set<uint64_t>::iterator q = p.begin(); q != p.end(); ++q) {
       alloc[id]->init_add_free(q.get_start(), q.get_len());
@@ -3391,8 +3397,10 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
     extents.reserve(4);  // 4 should be (more than) enough for most allocations
 /** comment by hy 2020-04-22
  * # 真正分配空间的操作
-     BitmapAllocator::allocate
+     eg BitmapAllocator::allocate
      分配的空间放入 PExtentVector中
+     len = log 大小?
+     z这里处理的是wal 的信息
  */
     alloc_len = alloc[id]->allocate(round_up_to(len, alloc_size[id]),
 				    alloc_size[id], hint, &extents);
@@ -3406,6 +3414,9 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
  */
       alloc[id]->release(extents);
     }
+/** comment by hy 2020-11-12
+ * # 这里元数据处理?
+ */
     if (id != BDEV_SLOW) {
 /** comment by hy 2020-04-22
  * # 空间不足，递归降级到下一级的设备
@@ -3425,6 +3436,9 @@ int BlueFS::_allocate(uint8_t id, uint64_t len,
 	    << "; fallback to slow device expander "
 	    << std::dec << dendl;
     extents.clear();
+/** comment by hy 2020-11-12
+ * # 获取数据盘,将加载的pextent map 转化到分配器中
+ */
     if (_expand_slow_device(len, extents) == 0) {
       id = _get_slow_device_id();
       for (auto& e : extents) {

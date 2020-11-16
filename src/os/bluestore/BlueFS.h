@@ -374,6 +374,7 @@ private:
 /* modify end by hy, 2020-09-02 */
 /** comment by hy 2020-04-22
  * # bdev对应的磁盘空间
+     interval_set 是ceph 定义 的一种map 类
  */
   vector<interval_set<uint64_t> > block_all;  ///< extents in bdev we own
 /** comment by hy 2020-04-22

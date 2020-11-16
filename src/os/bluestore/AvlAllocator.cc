@@ -36,6 +36,9 @@ uint64_t AvlAllocator::_block_picker(const Tree& t,
 				     uint64_t align)
 {
   const auto compare = t.key_comp();
+/** comment by hy 2020-11-12
+ * # 从数中获取信息
+ */
   for (auto rs = t.lower_bound(range_t{*cursor, size}, compare);
        rs != t.end(); ++rs) {
     uint64_t offset = p2roundup(rs->start, align);
@@ -52,6 +55,9 @@ uint64_t AvlAllocator::_block_picker(const Tree& t,
      return -1ULL;
    }
    *cursor = 0;
+/** comment by hy 2020-11-12
+ * # 从头开始获取?
+ */
    return _block_picker(t, cursor, size, align);
 }
 
@@ -188,7 +194,7 @@ int64_t AvlAllocator::_allocate(
   while (allocated < want) {
     uint64_t offset, length;
 /** comment by hy 2020-07-30
- * # 
+ * # 开始分配
  */
     int r = _allocate(std::min(max_alloc_size, want - allocated),
       unit, &offset, &length);
@@ -218,6 +224,9 @@ int AvlAllocator::_allocate(
     if (max_size < unit) {
       return -ENOSPC;
     }
+/** comment by hy 2020-11-12
+ * # 多少单元,这个单元是 每个块设备的最小分配大小
+ */
     size = p2align(max_size, unit);
     ceph_assert(size > 0);
     force_range_size_alloc = true;
@@ -229,8 +238,17 @@ int AvlAllocator::_allocate(
    * not guarantee that other allocations sizes may exist in the same
    * region.
    */
+/** comment by hy 2020-11-12
+ * # 以2n的大小分配空间
+ */
   const uint64_t align = size & -size;
   ceph_assert(align != 0);
+/** comment by hy 2020-11-12
+ * # cbits  结果是最高位1的下标
+     cursor 指向空间对齐的最大值
+     比方3, 对齐后 分配空间为 4
+     4 对应的是 为 2
+ */
   uint64_t *cursor = &lbas[cbits(align) - 1];
 
   const int free_pct = num_free * 100 / num_total;
@@ -245,6 +263,10 @@ int AvlAllocator::_allocate(
     *cursor = 0;
     start = _block_picker(range_size_tree, cursor, size, unit);
   } else {
+/** comment by hy 2020-11-12
+ * # 从树中找到对应的索引,从索引开始找到合理的空间值,
+     如果没找到就从 0 号索引开始
+ */
     start = _block_picker(range_tree, cursor, size, unit);
   }
   if (start == -1ULL) {
@@ -346,6 +368,9 @@ int64_t AvlAllocator::allocate(
     max_alloc_size = p2align(uint64_t(cap), (uint64_t)block_size);
   }
   std::lock_guard l(lock);
+/** comment by hy 2020-11-12
+ * # 加载出extent 信息
+ */
   return _allocate(want, unit, max_alloc_size, hint, extents);
 }
 

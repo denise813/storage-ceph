@@ -116,6 +116,9 @@ Allocator *Allocator::create(CephContext* cct, string type,
   } else if (type == "avl") {
     return new AvlAllocator(cct, size, block_size, name);
   } else if (type == "hybrid") {
+/** comment by hy 2020-11-11
+ * # 默认的方法类型
+ */
     return new HybridAllocator(cct, size, block_size,
       cct->_conf.get_val<uint64_t>("bluestore_hybrid_alloc_mem_cap"),
       name);
