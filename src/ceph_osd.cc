@@ -268,6 +268,9 @@ int main(int argc, const char **argv)
   char *end;
   const char *id = g_conf()->name.get_id().c_str();
   int whoami = strtol(id, &end, 10);
+/** comment by hy 2020-11-20
+ * # 设置数据盘路径
+ */
   std::string data_path = g_conf().get_val<std::string>("osd_data");
   if (*end || end == id || whoami < 0) {
     derr << "must specify '-i #' where # is the osd number" << dendl;

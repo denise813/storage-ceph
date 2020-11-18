@@ -35,7 +35,7 @@ def prepare_dmcrypt(key, device, device_type, fsid):
 
     return '/dev/mapper/{}'.format(mapping)
 
-def prepare_bluestore(block, wal, db, secrets, osd_id, fsid, tmpfs):
+def prepare_bluestore(block, cache, wal, db, secrets, osd_id, fsid, tmpfs):
     """
     :param block: The name of the logical volume for the bluestore data
     :param wal: a regular/plain disk or logical volume, to be used for block.wal
@@ -49,6 +49,8 @@ def prepare_bluestore(block, wal, db, secrets, osd_id, fsid, tmpfs):
     if secrets.get('dmcrypt_key'):
         key = secrets['dmcrypt_key']
         block = prepare_dmcrypt(key, block, 'block', fsid)
+        if (cache != None):
+                cache = prepare_dmcrypt(key, cache, 'cache', fsid)
         wal = prepare_dmcrypt(key, wal, 'wal', fsid)
         db = prepare_dmcrypt(key, db, 'db', fsid)
 
@@ -56,6 +58,9 @@ def prepare_bluestore(block, wal, db, secrets, osd_id, fsid, tmpfs):
     prepare_utils.create_osd_path(osd_id, tmpfs=tmpfs)
     # symlink the block
     prepare_utils.link_block(block, osd_id)
+    # symlink the cache
+    if (cache != None):
+        prepare_utils.link_cache(cache, osd_id)
     # get the latest monmap
     prepare_utils.get_monmap(osd_id)
     # write the OSD keyring if it doesn't exist already
@@ -65,7 +70,8 @@ def prepare_bluestore(block, wal, db, secrets, osd_id, fsid, tmpfs):
         osd_id, fsid,
         keyring=cephx_secret,
         wal=wal,
-        db=db
+        db=db,
+        cache=cache,
     )
 
 
@@ -130,8 +136,13 @@ class Prepare(object):
         # reuse a given ID if it exists, otherwise create a new ID
             self.osd_id = prepare_utils.create_id(osd_fsid, json.dumps(secrets))
 
+        cache = None
+        if self.args.block_cache != None:
+                cache = elf.args.block_cache
+
         prepare_bluestore(
             self.args.data,
+            cache,
             wal,
             db,
             secrets,
@@ -162,6 +173,7 @@ class Prepare(object):
         if not self.argv:
             print(sub_command_help)
             return
+        # 解析参数得到参数名称
         self.args = parser.parse_args(self.argv)
         if not self.args.bluestore:
             terminal.error('must specify --bluestore (currently the only supported backend)')

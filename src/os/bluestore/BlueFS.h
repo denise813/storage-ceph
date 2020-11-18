@@ -594,6 +594,9 @@ public:
   }
   void get_vselector_paths(const std::string& base,
                            BlueFSVolumeSelector::paths& res) const {
+/** comment by hy 2020-11-20
+ * # 对于bluestore 初始化的时候设置为 RocksDBBlueFSVolumeSelector
+ */
     return vselector->get_paths(base, res);
   }
 

@@ -18,6 +18,11 @@ def create_parser(prog, description):
         help='a raw device to use for the OSD',
     )
     parser.add_argument(
+        '--cache',
+        dest='block_cache',
+        help='a cache decvice for raw device',
+    )
+    parser.add_argument(
         '--bluestore',
         action='store_true',
         help='Use BlueStore backend')

@@ -2632,6 +2632,9 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_CREATE)
     .set_description("uuid label for a new OSD"),
 
+/** comment by hy 2020-11-20
+ * # 数据信息信息
+ */
     Option("osd_data", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("/var/lib/ceph/osd/$cluster-$id")
     .set_flag(Option::FLAG_NO_MON_UPDATE)
@@ -4345,6 +4348,30 @@ std::vector<Option> get_global_options() {
     .set_flag(Option::FLAG_CREATE)
     .set_description("Create bluestore_block_path if it doesn't exist")
     .add_see_also("bluestore_block_path").add_see_also("bluestore_block_size"),
+
+/* add begin by hy, 2020-11-19, BugId:123 原因: */
+/** comment by hy 2020-09-09
+ * # cache 设备路径
+ */
+    Option("bluestore_bcache_path", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("")
+    .set_flag(Option::FLAG_CREATE)
+    .set_description("Path to cache device/file"),
+
+/** comment by hy 2020-04-13
+ * # 测试参数 2G
+ */
+    Option("bluestore_bcache_size", Option::TYPE_SIZE, Option::LEVEL_DEV)
+    .set_default(10_G)
+    .set_flag(Option::FLAG_CREATE)
+    .set_description("Size of file to create for tire"),
+
+    Option("bluestore_bcache_create", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(true)
+    .set_flag(Option::FLAG_CREATE)
+    .set_description("Create bluestore_bcache_path if it doesn't exist")
+    .add_see_also("bluestore_bcache_path").add_see_also("bluestore_bcache_size"),
+/* add end by hy, 2020-11-19 */
 
     Option("bluestore_block_db_path", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("")

@@ -2079,11 +2079,17 @@ private:
  * # 这里我想改成多个设备,每个设备怎么分
      故障如何处理
  */
+#if 1
   BlockDevice *bdev = nullptr;
-
   std::string freelist_type;
   FreelistManager *fm = nullptr;
   Allocator *alloc = nullptr;
+#else
+  BlockDevice *tiredev = nullptr;
+  FreelistManager *tirefm = nullptr;
+  Allocator *tirealloc = nullptr;
+#endif
+
   uuid_d fsid;
   int path_fd = -1;  ///< open handle to $path
   int fsid_fd = -1;  ///< open handle (locked) to $path/fsid

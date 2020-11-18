@@ -44,6 +44,7 @@
 #include "perfglue/heap_profiler.h"
 #include "common/blkdev.h"
 #include "common/numa.h"
+#include "TireDevice.h"
 
 #if defined(WITH_LTTNG)
 #define TRACEPOINT_DEFINE
@@ -5260,12 +5261,29 @@ int BlueStore::_open_bdev(bool create)
 {
   ceph_assert(bdev == NULL);
   string p = path + "/block";
+  int r = 0;
 
 /** comment by hy 2020-08-31
  * # 设置延迟的时候调用 aio_cb
  */
-  bdev = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this), discard_cb, static_cast<void*>(this));
-  int r = bdev->open(p);
+
+/* modify begin by hy, 2020-11-19, BugId:123 原因: */
+/** comment by hy 2020-11-19
+ * # 这里创建 缓存 符号链接文件
+ */
+  r = _setup_block_symlink_or_file("cache", cct->_conf->bluestore_bcache_path,
+				   cct->_conf->bluestore_bcache_size,
+				   cct->_conf->bluestore_bcache_create);
+  if (r >= 0){
+    string cache = path + "/cache";
+    bdev =  new TireDevice(cct, p, cache, aio_cb,
+      static_cast<void*>(this), discard_cb, static_cast<void*>(this));
+  } else {
+    bdev = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this), discard_cb, static_cast<void*>(this));
+  }
+/* modify end by hy, 2020-11-19 */
+
+  r = bdev->open(p);
   if (r < 0)
     goto fail;
 
@@ -5289,6 +5307,8 @@ int BlueStore::_open_bdev(bool create)
   block_mask = ~(block_size - 1);
   block_size_order = ctz(block_size);
   ceph_assert(block_size == 1u << block_size_order);
+
+  // 在这里添加判断打开缓存盘 默认的缓存盘名称等于 cache
 /** comment by hy 2020-06-22
  * # 设置延迟处理
  */
@@ -5342,9 +5362,16 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
   bluestore_bdev_label_t label;
 
   ceph_assert(fm == NULL);
+  // 配置文件中将设置 为缓存的空闲管理
+  // 默认的设置在这里进行修改,这里初始化的时候将
+  // 两个设备需要传入便宜操作
+  // (缓存以及后端设备都要搞进去,约定的两个链接)
   fm = FreelistManager::create(cct, freelist_type, PREFIX_ALLOC);
   ceph_assert(fm);
   if (t) {
+/** comment by hy 2020-11-18
+ * # 这里可以认为磁盘头
+ */
     // create mode. initialize freespace
     dout(20) << __func__ << " initializing freespace" << dendl;
     {
@@ -5361,12 +5388,22 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
 /** comment by hy 2020-09-13
  * # BitmapFreelistManager::create
  */
+/** comment by hy 2020-11-18
+ * # 这里分级存储的空闲块管理,接口不变分级存储就自己获取来处理
+     也就是说第一个参数只能忽略
+ */
     fm->create(bdev->get_size(), (int64_t)min_alloc_size, t);
 
     // allocate superblock reserved space.  note that we do not mark
     // bluefs space as allocated in the freelist; we instead rely on
     // bluefs_extents.
     auto reserved = _get_ondisk_reserved();
+/** comment by hy 2020-11-18
+ * # 进行保留分配
+     分级存储这个地方在
+     后端设备以及缓存设备都预留一定的空间
+     这里 0 是一个特别的标识
+ */
     fm->allocate(0, reserved, t);
 
     if (cct->_conf->bluestore_bluefs) {
@@ -5377,6 +5414,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
 	       << " for bluefs" << dendl;
     }
 
+/** comment by hy 2020-11-18
+ * # 将数据填充满
+ */
     if (cct->_conf->bluestore_debug_prefill > 0) {
       uint64_t end = bdev->get_size() - reserved;
       dout(1) << __func__ << " pre-fragmenting freespace, using "
@@ -5388,6 +5428,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
       r /= 1.0 - r;
       bool stop = false;
 
+/** comment by hy 2020-11-18
+ * # 对齐
+ */
       while (!stop && start < end) {
 	uint64_t l = (rand() % max_b + 1) * min_alloc_size;
 	if (start + l > end) {
@@ -5418,6 +5461,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
 	start += l + u;
       }
     }
+/** comment by hy 2020-11-18
+ * # 这里下到数据盘中
+ */
     r = _write_out_fm_meta(0, false, &label);
     ceph_assert(r == 0);
   } else {
@@ -5430,6 +5476,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
       return r;
     }
   }
+/** comment by hy 2020-11-18
+ * # 
+ */
   r = fm->init(label, db, read_only);
   if (r < 0) {
     derr << __func__ << " freelist init failed: " << cpp_strerror(r) << dendl;
@@ -5442,6 +5491,9 @@ int BlueStore::_open_fm(KeyValueDB::Transaction t, bool read_only)
   // in data loss and/or assertions
   // Probably user altered the device size somehow.
   // The only fix for now is to redeploy OSD.
+/** comment by hy 2020-11-18
+ * # 
+ */
   if (fm->get_size() >= bdev->get_size() + min_alloc_size) {
     ostringstream ss;
     ss << "slow device size mismatch detected, "
@@ -5497,6 +5549,9 @@ int BlueStore::_open_alloc()
 
   if (bluefs) {
     bluefs_extents.clear();
+/** comment by hy 2020-11-18
+ * # 分配中的获取信息
+ */
     auto r = bluefs->get_block_extents(bluefs_layout.shared_bdev,
                                        &bluefs_extents);
     if (r < 0) {
@@ -5510,6 +5565,9 @@ int BlueStore::_open_alloc()
 	     << dendl;
   }
 
+/** comment by hy 2020-11-18
+ * # 磁盘分配
+ */
   alloc = Allocator::create(cct, cct->_conf->bluestore_allocator,
                             bdev->get_size(),
                             min_alloc_size, "block");
@@ -5524,16 +5582,31 @@ int BlueStore::_open_alloc()
 
   dout(1) << __func__ << " opening allocation metadata" << dendl;
   // initialize from freelist
+/** comment by hy 2020-11-18
+ * # 清理游标
+ */
   fm->enumerate_reset();
   uint64_t offset, length;
+/** comment by hy 2020-11-18
+ * # 下一个有效偏移，可以理解为有数据段信息
+ */
   while (fm->enumerate_next(db, &offset, &length)) {
+/** comment by hy 2020-11-18
+ * # 分配空间, 这个用于标记分配情况
+ */
     alloc->init_add_free(offset, length);
     ++num;
     bytes += length;
   }
+/** comment by hy 2020-11-18
+ * # 清理游标
+ */
   fm->enumerate_reset();
 
   // also mark bluefs space as allocated
+/** comment by hy 2020-11-18
+ * # 这个 init_rm_free 和 init_add_free 有什么区别?
+ */
   for (auto e = bluefs_extents.begin(); e != bluefs_extents.end(); ++e) {
     alloc->init_rm_free(e.get_start(), e.get_len());
   }
@@ -5790,7 +5863,7 @@ int BlueStore::_minimal_open_bluefs(bool create)
   bfn = path + "/block";
   // never trim here
 /** comment by hy 2020-07-28
- * # 将设备添加到对应的数组中并设置io上下文实例
+ * # 将设备添加到对应的数组中并设置io上下文实例, 这是blue
  */
   r = bluefs->add_block_device(bluefs_layout.shared_bdev, bfn, false,
 			       true /* shared with bluestore */);
@@ -6195,6 +6268,10 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
     }
     bluefs->set_slow_device_expander(this);
     BlueFSVolumeSelector::paths paths;
+/** comment by hy 2020-11-20
+ * # 这里返回 db 以及 db.slow, 是不是 slow 是数据盘?
+     path 里面是名称 和 空间大小
+ */
     bluefs->get_vselector_paths(fn, paths);
 
     if (bluefs_layout.shared_bdev == BlueFS::BDEV_SLOW) {
@@ -6207,9 +6284,15 @@ int BlueStore::_open_db(bool create, bool to_repair_db, bool read_only)
           db_paths << " ";
         }
         first = false;
+/** comment by hy 2020-11-20
+ * # 放入流中
+ */
         db_paths << p.first << "," << p.second;
 
       }
+/** comment by hy 2020-11-20
+ * # 这里多个路径的处理
+ */
       kv_options["db_paths"] = db_paths.str();
       dout(1) << __func__ << " set db_paths to " << db_paths.str() << dendl;
     }
@@ -6568,6 +6651,9 @@ int BlueStore::_balance_bluefs_freespace()
     while (reclaim > 0) {
       // NOTE: this will block and do IO.
       PExtentVector extents;
+/** comment by hy 2020-11-20
+ * # 
+ */
       int r = bluefs->reclaim_blocks(bluefs_layout.shared_bdev, reclaim,
 				     &extents);
       if (r < 0) {
@@ -6940,7 +7026,7 @@ int BlueStore::mkfs()
 
 
 /** comment by hy 2020-08-25
- * # 创建设备
+ * # 创建设备, 分级存储的修改点
  */
   r = _open_bdev(true);
   if (r < 0)
@@ -6957,6 +7043,9 @@ int BlueStore::mkfs()
       min_alloc_size = cct->_conf->bluestore_min_alloc_size_ssd;
     }
   }
+/** comment by hy 2020-11-19
+ * # 分级存储的修改点
+ */
   _validate_bdev();
 
   // make sure min_alloc_size is power of 2 aligned.
@@ -6969,7 +7058,7 @@ int BlueStore::mkfs()
     goto out_close_bdev;
   }
 
-/** comment by hy 2020-08-25
+/** !!!comment by hy 2020-08-25
  * # 初始化 BlueFS 文件系统
             bluestore 的 rocksdb 环境
       重要流程
@@ -7005,6 +7094,9 @@ int BlueStore::mkfs()
     }
     ondisk_format = latest_ondisk_format;
     _prepare_ondisk_format_super(t);
+/** comment by hy 2020-11-20
+ * # 
+ */
     db->submit_transaction_sync(t);
   }
 
@@ -12860,7 +12952,7 @@ void BlueStore::_kv_sync_thread()
 	  ceph::make_timespan(cct->_conf->bluestore_bluefs_balance_interval)) {
 	bluefs_last_balance = after_flush;
 /** comment by hy 2020-05-30
- * # 更新 文件系统 bitmap
+ * # 更新 文件系统 bitmap,清理不必要的空间
  */
 	int r = _balance_bluefs_freespace();
 	ceph_assert(r >= 0);
@@ -17394,6 +17486,10 @@ uint8_t RocksDBBlueFSVolumeSelector::select_prefer_bdev(void* h) {
 
 void RocksDBBlueFSVolumeSelector::get_paths(const std::string& base, paths& res) const
 {
+/** comment by hy 2020-11-20
+ * # 第一是 db, 第二.slow
+     这里的db 包含 db.wal信息, db.block
+ */
   res.emplace_back(base, l_totals[LEVEL_DB - LEVEL_FIRST]);
   res.emplace_back(base + ".slow", l_totals[LEVEL_SLOW - LEVEL_FIRST]);
 }

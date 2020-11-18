@@ -746,6 +746,9 @@ BC%8F%E5%AD%98%E5%82%A8%E4%B9%8BSSD%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86/
 	discard(p.get_start(), p.get_len());
       }
 
+/** comment by hy 2020-11-20
+ * # 调用器对应的回调函数 BlueStore::handle_discard
+ */
       discard_callback(discard_callback_priv, static_cast<void*>(&discard_finishing));
       discard_finishing.clear();
       l.lock();

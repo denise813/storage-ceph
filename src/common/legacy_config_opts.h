@@ -940,6 +940,11 @@ OPTION(bluestore_bluefs_db_compatibility, OPT_BOOL)
 OPTION(bluestore_block_path, OPT_STR)
 OPTION(bluestore_block_size, OPT_U64)  // 10gb for testing
 OPTION(bluestore_block_create, OPT_BOOL)
+/* add begin by hy, 2020-11-19, BugId:123 原因: */
+OPTION(bluestore_bcache_path, OPT_STR)
+OPTION(bluestore_bcache_size, OPT_U64)  // 10gb for testing
+OPTION(bluestore_bcache_create, OPT_BOOL)
+/* add end by hy, 2020-11-19 */
 OPTION(bluestore_block_db_path, OPT_STR)
 OPTION(bluestore_block_db_size, OPT_U64)   // rocksdb ssts (hot/warm)
 OPTION(bluestore_block_db_create, OPT_BOOL)

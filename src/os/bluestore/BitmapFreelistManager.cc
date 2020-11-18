@@ -428,7 +428,13 @@ bool BitmapFreelistManager::enumerate_next(KeyValueDB *kvdb, uint64_t *offset, u
   // initial base case is a bit awkward
   if (enumerate_offset == 0 && enumerate_bl_pos == 0) {
     dout(10) << __func__ << " start" << dendl;
+/** comment by hy 2020-11-18
+ * # 根据 前缀获取 cf 获取 迭代器
+ */
     enumerate_p = kvdb->get_iterator(bitmap_prefix);
+/** comment by hy 2020-11-18
+ * # 第一个元素
+ */
     enumerate_p->lower_bound(string());
     // we assert that the first block is always allocated; it's true,
     // and it simplifies our lives a bit.
@@ -438,6 +444,9 @@ bool BitmapFreelistManager::enumerate_next(KeyValueDB *kvdb, uint64_t *offset, u
     _key_decode_u64(p, &enumerate_offset);
     enumerate_bl = enumerate_p->value();
     ceph_assert(enumerate_offset == 0);
+/** comment by hy 2020-11-18
+ * # 迭代器指向第一个元素
+ */
     ceph_assert(get_next_set_bit(enumerate_bl, 0) == 0);
   }
 
@@ -448,6 +457,9 @@ bool BitmapFreelistManager::enumerate_next(KeyValueDB *kvdb, uint64_t *offset, u
 
   // skip set bits to find offset
   while (true) {
+/** comment by hy 2020-11-18
+ * # 从0开始
+ */
     enumerate_bl_pos = get_next_clear_bit(enumerate_bl, enumerate_bl_pos);
     if (enumerate_bl_pos >= 0) {
       *offset = _get_offset(enumerate_offset, enumerate_bl_pos);
@@ -461,6 +473,9 @@ bool BitmapFreelistManager::enumerate_next(KeyValueDB *kvdb, uint64_t *offset, u
 	     << std::dec << dendl;
     enumerate_p->next();
     enumerate_bl.clear();
+/** comment by hy 2020-11-18
+ * # 第一个偏移
+ */
     if (!enumerate_p->valid()) {
       enumerate_offset += bytes_per_key;
       enumerate_bl_pos = 0;
@@ -482,6 +497,9 @@ bool BitmapFreelistManager::enumerate_next(KeyValueDB *kvdb, uint64_t *offset, u
   }
 
   // skip clear bits to find the end
+/** comment by hy 2020-11-18
+ * # 另一个情况,异常设置
+ */
   uint64_t end = 0;
   if (enumerate_p->valid()) {
     while (true) {

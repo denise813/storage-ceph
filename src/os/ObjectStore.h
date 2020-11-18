@@ -59,6 +59,9 @@ const int SKIP_MOUNT_OMAP = 1 << 1;
 
 class ObjectStore {
 protected:
+/** comment by hy 2020-11-20
+ * # 数组存储路径
+ */
   std::string path;
 
 public:

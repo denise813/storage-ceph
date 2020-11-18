@@ -370,6 +370,10 @@ def link_block(block_device, osd_id):
     _link_device(block_device, 'block', osd_id)
 
 
+def link_cache(cache_device, osd_id):
+    _link_device(cache_device, 'cache', osd_id)
+
+
 def link_wal(wal_device, osd_id, osd_uuid=None):
     _validate_bluestore_device(wal_device, 'bluefs wal', osd_uuid)
     _link_device(wal_device, 'block.wal', osd_id)
@@ -406,7 +410,7 @@ def get_osdspec_affinity():
     return os.environ.get('CEPH_VOLUME_OSDSPEC_AFFINITY', '')
 
 
-def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
+def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False, cache=False):
     """
     Create the files for the OSD to function. A normal call will look like:
 
@@ -455,6 +459,11 @@ def osd_mkfs_bluestore(osd_id, fsid, keyring=None, wal=False, db=False):
             ['--bluestore-block-db-path', db]
         )
         # system.chown(db)
+    # 这里加不加好像意义不大
+    if cache:
+        base_command.extend(
+            ['--bluestore-block-cache-path', cache]
+        )
 
     if get_osdspec_affinity():
         base_command.extend(['--osdspec-affinity', get_osdspec_affinity()])

@@ -851,8 +851,10 @@ EOF
             else
                 mkdir -p $CEPH_DEV_DIR/osd$osd
                 if [ -n "${bluestore_dev[$osd]}" ]; then
-                    dd if=/dev/zero of=${bluestore_dev[$osd]} bs=1M count=1
-                    ln -s ${bluestore_dev[$osd]} $CEPH_DEV_DIR/osd$osd/block
+                    dd if=/dev/zero of=${bluestore_dev[$osd]}_block bs=1M count=1
+                    ln -s ${bluestore_dev[$osd]}_block $CEPH_DEV_DIR/osd$osd/block
+		    dd if=/dev/zero of=${bluestore_dev[$osd]}_cache bs=1M count=1
+		    ln -s ${bluestore_dev[$osd]}_cache $CEPH_DEV_DIR/osd$osd/cache
                     wconf <<EOF
         bluestore fsck on mount = false
 EOF
