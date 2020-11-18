@@ -1885,23 +1885,6 @@ public:
     }
   };
 
-  struct ReadBatch final : public AioContext {
-    PrimaryLogPG *pg;
-    PrimaryLogPG::OpContext *opcontext;
-    IOContext ioc;                   ///< our aios
-
-/** comment by hy 2020-10-25
- * # allow EIO
- */
-    ReadBatch(CephContext *cct, Context * onread_complate)
-      : ioc(cct, this, true), pg (pg) {}
-
-    void aio_finish(int r) override {
-    //OnReadComplete 
-      opcontext->finish_read(pg);
-    }
-  };
-
   class OpSequencer : public RefCountedObject {
   public:
     ceph::mutex qlock = ceph::make_mutex("BlueStore::OpSequencer::qlock");
