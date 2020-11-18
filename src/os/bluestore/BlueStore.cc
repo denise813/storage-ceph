@@ -10172,6 +10172,9 @@ void BlueStore::_read_cache(
  */
     BlobRef& bptr = lp->blob;
     unsigned l_off = pos - lp->logical_offset;
+/** comment by hy 2020-11-17
+ * # 获取 blob 里面的偏移
+ */
     unsigned b_off = l_off + lp->blob_offset;
     unsigned b_len = std::min(left, lp->length - l_off);
 
@@ -10256,6 +10259,9 @@ int BlueStore::_prepare_read_ioc(
   vector<bufferlist>* compressed_blob_bls,
   IOContext* ioc)
 {
+/** comment by hy 2020-11-17
+ * # 获取的偏移,这个偏移是 blob的偏移还不是磁盘的偏移
+ */
   for (auto& p : blobs2read) {
     const BlobRef& bptr = p.first;
     regions2read_t& r2r = p.second;
@@ -10270,7 +10276,7 @@ int BlueStore::_prepare_read_ioc(
       compressed_blob_bls->push_back(bufferlist());
       bufferlist& bl = compressed_blob_bls->back();
 /** comment by hy 2020-06-26
- * # 读数据
+ * # 读数据,读取整个 blob 信息
  */
       auto r = bptr->get_blob().map(
         0, bptr->get_blob().get_ondisk_length(),
@@ -10302,6 +10308,10 @@ int BlueStore::_prepare_read_ioc(
                  << dendl;
 
         // read it
+/** comment by hy 2020-11-17
+ * # 偏移来至于 req 这个是 blob 的偏移
+     bluestore_blob_t::map
+ */
         auto r = bptr->get_blob().map(
           req.r_off, req.r_len,
           [&](uint64_t offset, uint64_t length) {
@@ -10470,7 +10480,10 @@ int BlueStore::_do_read(
 
   auto start = mono_clock::now();
 /** comment by hy 2020-06-26
- * # 获取对应的范围 key
+ * # 获取对应的范围 key,逻辑偏移
+     从 获取le 其中包括 ->blob 信息
+     blob 包括 到磁盘的映射关系
+     以后可以通过 blob -> pv
  */
   o->extent_map.fault_range(db, offset, length);
   log_latency(__func__,
@@ -13256,6 +13269,11 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     throttle.log_state_latency(txc, logger, l_bluestore_state_deferred_queued_lat);
   }
   uint64_t start = 0, pos = 0;
+/** comment by hy 2020-11-23
+ * # 如果这里改成重数据库中获取数据并将数据放入后端存储中
+     读逻辑也将修改,这个小文件不一定是最新的,所以如果是小文件就和bitmap 
+     信息一起存放,多一个标识位置，还要多缓存盘位置,读这种加载缓存应该如何处理?
+ */
 /** comment by hy 2020-08-03
  * # bufferlist 对齐
  */
@@ -13272,7 +13290,7 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
 	  logger->inc(l_bluestore_deferred_write_bytes, bl.length());
 /** comment by hy 2020-04-22
  * # 准备所有txc的写buffer
-     这个涉及对齐等行为
+     这个涉及对齐等行为, 开始的偏移 start 数据bl
  */
 	  int r = bdev->aio_write(start, bl, &b->ioc, false);
 	  ceph_assert(r == 0);
@@ -13288,6 +13306,9 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
     dout(20) << __func__ << "   seq " << i->second.seq << " 0x"
 	     << std::hex << pos << "~" << i->second.bl.length() << std::dec
 	     << dendl;
+/** comment by hy 2020-11-23
+ * # 一开始设置偏移数据 bl=0 pos = 0
+ */
     if (!bl.length()) {
       start = pos;
     }
@@ -15046,7 +15067,9 @@ int BlueStore::_do_alloc_write(
 	logger->inc(l_bluestore_write_small_deferred);
       } else {
 /** comment by hy 2020-02-05
- * # 到达处理间隔,安装对应的map进行操作
+ * # 到达处理间隔,安装对应的map进行操作, 
+     写现在一定用的是map_bl,在这进行修改为将原来的放入垃圾区域
+     地址进行更新
  */
 	b->get_blob().map_bl(
 	  b_off, *l,

@@ -29,7 +29,9 @@
  * *include* ones that invalidate iterators when they are modified (e.g.,
  * flat_map and btree_map).
  */
-
+/** comment by hy 2020-11-18
+ * # 解释一个map 结构
+ */
 template<typename T, typename Map = std::map<T,T>>
 class interval_set {
  public:

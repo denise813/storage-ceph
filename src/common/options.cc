@@ -4649,6 +4649,9 @@ std::vector<Option> get_global_options() {
     .set_default(1024)
     .set_description(""),
 
+/** comment by hy 2020-11-23
+ * # 延迟的最大值
+ */
     Option("bluestore_max_deferred_txc", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(32)
     .set_description("Max transactions with deferred writes that can accumulate before we force flush deferred writes"),
