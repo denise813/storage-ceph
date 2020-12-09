@@ -123,12 +123,8 @@ class Prepare(object):
         if self.args.block_db:
             db = self.args.block_db
 
-        #  specify osd_id by args
-        if self.args.osd_id != None:
-            self.osd_id = self.args.osd_id
-        else :
         # reuse a given ID if it exists, otherwise create a new ID
-            self.osd_id = prepare_utils.create_id(osd_fsid, json.dumps(secrets))
+        self.osd_id = prepare_utils.create_id(osd_fsid, json.dumps(secrets))
 
         prepare_bluestore(
             self.args.data,
