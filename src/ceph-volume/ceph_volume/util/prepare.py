@@ -159,10 +159,7 @@ def create_id(fsid, json_secrets, osd_id=None):
         'osd', 'new', fsid
     ]
     if osd_id is not None:
-        if osd_id_available(osd_id):
-            cmd.append(osd_id)
-        else:
-            raise RuntimeError("The osd ID {} is already in use or does not exist.".format(osd_id))
+        cmd.append(osd_id)
     stdout, stderr, returncode = process.call(
         cmd,
         stdin=json_secrets,
