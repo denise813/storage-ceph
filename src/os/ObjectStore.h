@@ -467,6 +467,15 @@ public:
      ceph::buffer::list& bl,
      uint32_t op_flags = 0) = 0;
 
+   virtual void aread(
+    CollectionHandle &c_,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t length,
+    uint32_t op_flags,
+    bufferlist* bl,
+    Context * on_readcomplete) {};
+
   /**
    * fiemap -- get extent std::map of data of an object
    *

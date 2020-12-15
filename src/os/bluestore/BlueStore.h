@@ -2760,6 +2760,14 @@ public:
     size_t len,
     bufferlist& bl,
     uint32_t op_flags = 0) override;
+  void aread(
+    CollectionHandle &c_,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t length,
+    uint32_t op_flags,
+    bufferlist* bl,
+    Context * on_complete) override;
 
 private:
 
@@ -2807,8 +2815,63 @@ private:
     }
   };
 
+  
   typedef list<read_req_t> regions2read_t;
   typedef map<BlueStore::BlobRef, regions2read_t> blobs2read_t;
+
+public:
+  void _do_aio_read(
+    OnodeRef o,
+    const ghobject_t* oid,
+    uint64_t offset,
+    size_t length,
+    bufferlist* bl,
+    uint32_t op_flags,
+    Context * on_complete);
+    int _finish_aio_read(const ghobject_t* oid, OnodeRef o,
+      uint64_t offset,
+      size_t length,
+      ready_regions_t& ready_regions,
+      vector<bufferlist>& compressed_blob_bls,
+      blobs2read_t& blobs2read,
+      bool buffered,
+      bufferlist* bl);
+
+private:
+  struct ReadContext final : public AioContext {
+    IOContext ioc;		       ///< our aios
+    Context * on_complete;
+    typedef std::chrono::time_point<mono_clock> time_point;
+    time_point start;
+    OnodeRef o;
+    const ghobject_t* oid;
+    uint64_t offset;
+    size_t length;
+    bufferlist * bl;
+    ready_regions_t ready_regions;
+    blobs2read_t blobs2read;
+    vector<bufferlist> compressed_blob_bls;
+    bool buffered;
+
+/** comment by hy 2020-10-25
+ * # allow EIO
+ */
+    ReadContext(CephContext* cct, Context * onread_complate, OnodeRef& o,
+	const ghobject_t* oid, uint64_t offset, size_t length,
+	bool buffered, bufferlist* bl)
+	: ioc(cct, this, true), on_complete(onread_complate), o(o),
+	offset(offset), length(length), buffered(buffered), bl(bl),
+	oid(oid){
+	start = mono_clock::now();
+    }
+
+    void aio_finish(BlueStore *store) override {
+    
+      int r = store->_finish_aio_read(oid, o, offset, length, ready_regions,
+        compressed_blob_bls, blobs2read, buffered, bl);
+      on_complete->complete(r);
+    }
+  };
 
   void _read_cache(
     OnodeRef o,

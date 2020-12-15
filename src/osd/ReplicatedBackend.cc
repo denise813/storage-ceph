@@ -276,8 +276,21 @@ void ReplicatedBackend::objects_read_async(
   Context *on_complete,
   bool fast_read)
 {
-  ceph_abort_msg("async read is not used by replica pool");
+   ceph_abort_msg("async read is not used by replica pool");
 }
+
+/* modify begin by hy, 2020-12-14, BugId:123 原因: 异步读 */
+void ReplicatedBackend::objects_read_async(
+  const hobject_t &hoid,
+  uint64_t off,
+  uint64_t len,
+  uint32_t op_flags,
+  bufferlist *bl,
+  Context *on_complete)
+{
+  store->aread(ch, ghobject_t(hoid), off, len, op_flags, bl, on_complete);
+}
+/* modify end by hy, 2020-12-14s */
 
 class C_OSD_OnOpCommit : public Context {
   ReplicatedBackend *pg;
