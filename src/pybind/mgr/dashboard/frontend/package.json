@@ -96,7 +96,7 @@
     "detect-browser": "5.0.0",
     "file-saver": "^2.0.2",
     "fork-awesome": "1.1.7",
-    "lodash": "4.17.20",
+    "lodash": "4.17.21",
     "moment": "2.24.0",
     "ng-block-ui": "2.1.8",
     "ng-bootstrap-form-validation": "5.0.0",
@@ -144,6 +144,6 @@
   "resolutions": {
     "mem": "4.3.0",
     "fsevents": "2.1.2",
-    "lodash": "4.17.20"
+    "lodash": "4.17.21"
   }
 }
