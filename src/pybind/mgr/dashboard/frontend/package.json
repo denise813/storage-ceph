@@ -92,7 +92,7 @@
     "angular-tree-component": "8.5.6",
     "async-mutex": "0.1.4",
     "bootstrap": "4.4.1",
-    "chart.js": "2.8.0",
+    "chart.js": "2.9.4",
     "detect-browser": "5.0.0",
     "file-saver": "^2.0.2",
     "fork-awesome": "1.1.7",
