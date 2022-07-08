@@ -97,7 +97,7 @@
     "file-saver": "^2.0.2",
     "fork-awesome": "1.1.7",
     "lodash": "4.17.20",
-    "moment": "2.24.0",
+    "moment": "2.29.4",
     "ng-block-ui": "2.1.8",
     "ng-bootstrap-form-validation": "5.0.0",
     "ng-click-outside": "6.0.0",
