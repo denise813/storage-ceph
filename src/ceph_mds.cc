@@ -200,9 +200,15 @@ int main(int argc, const char **argv)
     forker.exit(1);
   global_init_chdir(g_ceph_context);
 
+/** comment by hy 2022-02-16
+ * # 对应得消息处理化
+ */
   msgr->start();
 
   // start mds
+/** comment by hy 2022-02-16
+ * # 处理消息的回调接口 ms_dispatch2
+ */
   mds = new MDSDaemon(g_conf()->name.get_id().c_str(), msgr, &mc);
 
   // in case we have to respawn...

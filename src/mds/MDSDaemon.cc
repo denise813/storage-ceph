@@ -484,6 +484,9 @@ int MDSDaemon::init()
   monc->set_want_keys(CEPH_ENTITY_TYPE_MON | CEPH_ENTITY_TYPE_OSD |
                       CEPH_ENTITY_TYPE_MDS | CEPH_ENTITY_TYPE_MGR);
   int r = 0;
+/** comment by hy 2022-02-16
+ * # 
+ */
   r = monc->init();
   if (r < 0) {
     derr << "ERROR: failed to init monc: " << cpp_strerror(-r) << dendl;

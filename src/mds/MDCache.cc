@@ -9148,6 +9148,17 @@ void MDCache::do_open_ino(inodeno_t ino, open_ino_info_t& info, int err)
     }
     info.check_peers = false;
     info.checking = MDS_RANK_NONE;
+/** comment by hy 2022-02-16
+ * # 发送消息
+     对端MDS将返回MMDSOpenInoReply消息，若查找到，将返回inode及其
+     祖先节点inode信息，若没有找到将返回错误码，
+     返回消息由MDCache::handle_open_ino_reply进行处理
+     handle_open_ino_reply中，将对端mds
+     rank加入checked列表，将checking置空。
+     若对端返回了错误码，则重新执行do_open_ino，
+     这将重新在另一个MDS开展上述查找逻辑
+     若对端返回了inode，则执行open_ino_finish流程
+ */
     do_open_ino_peer(ino, info);
   } else if (info.fetch_backtrace) {
     info.check_peers = true;
@@ -9358,6 +9369,10 @@ void MDCache::open_ino(inodeno_t ino, int64_t pool, MDSContext* fin,
       info.checking = mds->get_nodeid();
       _open_ino_traverse_dir(ino, info, 0);
     } else {
+/** comment by hy 2022-02-16
+ * # 对端的mds接收到MMDSOpenIno消息后，由MDCache::handle_open_ino处理
+     如果为找到调用 _open_ino_traverse_dir 记载
+ */
       do_open_ino(ino, info, 0);
     }
   }

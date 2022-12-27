@@ -2389,6 +2389,9 @@ void Server::handle_client_request(const cref_t<MClientRequest> &req)
     req->releases.clear();
   }
 
+/** comment by hy 2022-02-16
+ * # 消息流程
+ */
   dispatch_client_request(mdr);
   return;
 }
@@ -2449,7 +2452,10 @@ void Server::dispatch_client_request(MDRequestRef& mdr)
     respond_to_request(mdr, mdr->more()->slave_error);
     return;
   }
-  
+
+/** comment by hy 2022-02-16
+ * # 消息处理
+ */
   if (is_full) {
     if (req->get_op() == CEPH_MDS_OP_SETLAYOUT ||
         req->get_op() == CEPH_MDS_OP_SETDIRLAYOUT ||
@@ -3847,10 +3853,17 @@ void Server::handle_client_lookup_ino(MDRequestRef& mdr,
     return;
   }
   if (!in) {
+/** comment by hy 2022-02-16
+ * # mdcache中未找到 调用open_ino进行异步加载
+ */
     mdcache->open_ino(ino, (int64_t)-1, new C_MDS_LookupIno2(this, mdr), false);
     return;
   }
 
+/** comment by hy 2022-02-16
+ * #  
+若路径中存在快照，则递归打开各级snaprealm，以确保拿到最新快照信息
+ */
   if (mdr && in->snaprealm && !in->snaprealm->have_past_parents_open() &&
       !in->snaprealm->open_parents(new C_MDS_RetryRequest(mdcache, mdr))) {
     return;
@@ -3864,12 +3877,18 @@ void Server::handle_client_lookup_ino(MDRequestRef& mdr,
   CDentry *dn = in->get_projected_parent_dn();
   CInode *diri = dn ? dn->get_dir()->inode : NULL;
 
+/** comment by hy 2022-02-16
+ * # 对于want_parent || want_dentry情形，pin dn并表明需要读锁
+ */
   MutationImpl::LockOpVec lov;
   if (dn && (want_parent || want_dentry)) {
     mdr->pin(dn);
     lov.add_rdlock(&dn->lock);
   }
 
+/** comment by hy 2022-02-16
+ * # 对于非loner客户端，可能还需要对authlock和xattrlock 加读锁
+ */
   unsigned mask = req->head.args.lookupino.mask;
   if (mask) {
     Capability *cap = in->get_client_cap(mdr->get_client());

@@ -1102,6 +1102,9 @@ bool MDSRank::_dispatch(const cref_t<Message> &m, bool new_msg)
         while (k--) ++p;
         dest = *p;
       } while (dest == whoami);
+/** comment by hy 2022-02-16
+ * # 
+ */
       mdcache->migrator->export_dir_nicely(dir,dest);
     }
   }
@@ -1226,6 +1229,9 @@ void MDSRank::handle_message(const cref_t<Message> &m)
  */
     switch (m->get_type()) {
       // SERVER
+/** comment by hy 2022-02-16
+ * # 客户端和SLAVE发来的普通的请求，由Server负责
+ */
     case CEPH_MSG_CLIENT_SESSION:
     case CEPH_MSG_CLIENT_RECONNECT:
     case CEPH_MSG_CLIENT_RECLAIM:
@@ -1249,6 +1255,9 @@ void MDSRank::handle_message(const cref_t<Message> &m)
 
     case MSG_MDS_TABLE_REQUEST:
       ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
+/** comment by hy 2022-02-16
+* # Table request
+*/
       {
         const cref_t<MMDSTableRequest> &req = ref_cast<MMDSTableRequest>(m);
         if (req->op < 0) {
